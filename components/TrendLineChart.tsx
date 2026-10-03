@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 
@@ -29,7 +30,10 @@ function buildPath(values: number[], width: number, height: number, max: number)
     .join(' ');
 }
 
-export default function TrendLineChart({ data, width = 300, height = 140 }: TrendLineChartProps) {
+export default function TrendLineChart({ data, width: widthProp, height = 140 }: TrendLineChartProps) {
+  // Fit the card it is placed in; 300 is only the first-paint fallback.
+  const [measuredWidth, setMeasuredWidth] = useState(300);
+  const width = widthProp ?? measuredWidth;
   const paddingBottom = 20;
   const chartHeight = height - paddingBottom;
   const maxValue = Math.max(1, ...data.map((point) => Math.max(point.income, point.expense)));
@@ -48,9 +52,11 @@ export default function TrendLineChart({ data, width = 300, height = 140 }: Tren
   );
 
   const stepX = data.length > 1 ? width / (data.length - 1) : 0;
+  // A single point (e.g. a one-day custom period) is centred rather than pinned to the left edge.
+  const xAt = (index: number) => (data.length > 1 ? index * stepX : width / 2);
 
   return (
-    <View>
+    <View onLayout={(event) => setMeasuredWidth(Math.max(120, Math.floor(event.nativeEvent.layout.width)))}>
       <Svg width={width} height={height}>
         <Line x1={0} y1={chartHeight} x2={width} y2={chartHeight} stroke="#E2E5DE" strokeWidth={1} />
         {incomePath !== '' && <Path d={incomePath} stroke="#16A34A" strokeWidth={2} fill="none" />}
@@ -58,7 +64,7 @@ export default function TrendLineChart({ data, width = 300, height = 140 }: Tren
         {data.map((point, index) => (
           <Circle
             key={`${point.label}-income`}
-            cx={index * stepX}
+            cx={xAt(index)}
             cy={chartHeight - (point.income / maxValue) * chartHeight}
             r={3}
             fill="#16A34A"
@@ -67,7 +73,7 @@ export default function TrendLineChart({ data, width = 300, height = 140 }: Tren
         {data.map((point, index) => (
           <Circle
             key={`${point.label}-expense`}
-            cx={index * stepX}
+            cx={xAt(index)}
             cy={chartHeight - (point.expense / maxValue) * chartHeight}
             r={3}
             fill="#D95C5C"
@@ -78,7 +84,7 @@ export default function TrendLineChart({ data, width = 300, height = 140 }: Tren
             return null;
           }
           return (
-            <SvgText key={`${point.label}-label`} x={index * stepX} y={height - 4} fontSize={9} fill="#66708B" textAnchor="middle">
+            <SvgText key={`${point.label}-label`} x={xAt(index)} y={height - 4} fontSize={9} fill="#66708B" textAnchor="middle">
               {point.label}
             </SvgText>
           );

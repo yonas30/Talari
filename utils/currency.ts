@@ -65,14 +65,16 @@ export function getCurrentPeriodSummary(transactions: Transaction[], referenceDa
   };
 }
 
-// Any recorded financial activity (income, expense, transfer, goal contribution) counts for its
-// calendar day. Day keys are local - see utils/dates.ts for the UTC bug this replaces.
+// Any financial activity the user records (income, expense, transfer, goal contribution) counts for
+// its calendar day. Rows generated automatically by recurring rules do not: the user must actually
+// record something (V2 Part N). Day keys are local - see utils/dates.ts for the UTC bug this replaces.
 export function calculateBuilderStreak(transactions: Transaction[], today = new Date()): number {
-  if (transactions.length === 0) {
+  const recorded = transactions.filter((transaction) => !transaction.isAutomatic);
+  if (recorded.length === 0) {
     return 0;
   }
 
-  const activeDays = new Set(transactions.map((transaction) => transaction.date));
+  const activeDays = new Set(recorded.map((transaction) => transaction.date));
   const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
   // Today may not be logged yet; the streak is still alive if yesterday was.

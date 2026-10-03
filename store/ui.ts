@@ -22,7 +22,8 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   isDrawerOpen: false,
-  isBalanceHidden: false,
+  // Balances start hidden every launch; the eye button reveals them (V2 Part I).
+  isBalanceHidden: true,
   notifications: [],
   openDrawer: () => set({ isDrawerOpen: true }),
   closeDrawer: () => set({ isDrawerOpen: false }),

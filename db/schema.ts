@@ -33,6 +33,7 @@ export const transactions = sqliteTable('transactions', {
   date: text('date').notNull(),
   timestamp: text('timestamp').notNull(),
   note: text('note'),
+  isAutomatic: integer('is_automatic', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

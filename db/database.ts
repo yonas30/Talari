@@ -88,6 +88,7 @@ export async function initializeDatabase(): Promise<void> {
       date TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       note TEXT,
+      is_automatic INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -163,6 +164,13 @@ export async function initializeDatabase(): Promise<void> {
       created_at TEXT NOT NULL
     );
   `);
+
+  // Added after the V2 schema shipped, so databases created earlier need the column added in place
+  // (dropping the table again would wipe real data).
+  const transactionColumns = database.getAllSync('PRAGMA table_info(transactions)') as { name: string }[];
+  if (!transactionColumns.some((column) => column.name === 'is_automatic')) {
+    database.execSync('ALTER TABLE transactions ADD COLUMN is_automatic INTEGER NOT NULL DEFAULT 0');
+  }
 
   const countResult = database.getAllSync('SELECT COUNT(*) AS count FROM categories') as Array<{ count: number }>;
   const totalCategories = Number(countResult[0]?.count ?? 0);
@@ -270,6 +278,7 @@ type TransactionRow = {
   date: string;
   timestamp: string;
   note: string | null;
+  is_automatic: number;
   created_at: string;
   updated_at: string;
 };
@@ -292,6 +301,7 @@ function mapTransactionRow(row: TransactionRow): Transaction {
     date: row.date,
     timestamp: row.timestamp,
     note: row.note,
+    isAutomatic: Boolean(row.is_automatic),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -331,8 +341,8 @@ export async function insertTransaction(transaction: Transaction): Promise<void>
   database.runSync(
     `INSERT INTO transactions
       (id, type, amount, currency, amount_etb, exchange_rate, category, source, account,
-       from_account, from_goal_id, to_account, to_goal_id, date, timestamp, note, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       from_account, from_goal_id, to_account, to_goal_id, date, timestamp, note, is_automatic, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     transaction.id,
     transaction.type,
     transaction.amount,
@@ -349,6 +359,8 @@ export async function insertTransaction(transaction: Transaction): Promise<void>
     transaction.date,
     transaction.timestamp,
     transaction.note,
+    // Backups made before this column existed have no value.
+    transaction.isAutomatic ? 1 : 0,
     transaction.createdAt,
     transaction.updatedAt,
   );
@@ -877,6 +889,7 @@ export async function generateDueRecurringTransactions(): Promise<{
             source: rule.source || 'Recurring',
             date: dateString,
             note: rule.note,
+            isAutomatic: true,
           },
           rates,
         );

@@ -17,3 +17,9 @@ export function todayKey(): string {
 export function parseDateKey(key: string): Date {
   return new Date(`${key}T00:00:00`);
 }
+
+export function addDays(date: Date, days: number): Date {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  next.setDate(next.getDate() + days);
+  return next;
+}

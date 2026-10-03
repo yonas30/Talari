@@ -15,6 +15,7 @@ import { alertLedgerError } from '../utils/alerts';
 import { getBalances, LedgerError } from '../utils/balances';
 import { getRateToETB } from '../utils/currency';
 import { todayKey } from '../utils/dates';
+import { formatETB } from '../utils/format';
 
 const TYPE_LABELS: Record<TransactionType, string> = {
   expense: 'Expense',
@@ -40,10 +41,6 @@ function fromEndpointValue(value: string): { account: TransferEndpoint; goalId: 
     return { account: 'goal', goalId: value.slice(5) };
   }
   return { account: value === 'saved' ? 'saved' : 'available', goalId: null };
-}
-
-function formatETB(value: number): string {
-  return `ETB ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 interface TransactionFormProps {

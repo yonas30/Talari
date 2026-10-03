@@ -10,8 +10,13 @@ import { useFinanceStore } from '../store/finance';
 import { useUiStore } from '../store/ui';
 import { getBalances } from '../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress, getCurrentPeriodSummary } from '../utils/currency';
+import { formatDateKey, formatETB, formatNumber, HIDDEN_AMOUNT, transactionTitle } from '../utils/format';
 import { getDashboardMessage } from '../utils/motivation';
 import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../utils/reports';
+
+// Money amounts in transaction cards stop scaling past this multiplier so extreme accessibility
+// font sizes can't push them out of the card; other text keeps scaling normally.
+const MONEY_MAX_FONT_SCALE = 1.3;
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -22,7 +27,7 @@ function getGreeting(): string {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { transactions, exchangeRates, homeCurrency, origin, monthlySnapshots, isReady, budgets } = useFinanceStore();
+  const { transactions, exchangeRates, goals, homeCurrency, origin, isReady, budgets } = useFinanceStore();
   const notifications = useUiStore((state) => state.notifications);
   const isBalanceHidden = useUiStore((state) => state.isBalanceHidden);
   const toggleBalanceVisibility = useUiStore((state) => state.toggleBalanceVisibility);
@@ -70,13 +75,11 @@ export default function HomeScreen() {
     upsertNotifications(nextNotifications);
   }, [budgetAlerts, upsertNotifications]);
 
-  const periodSummary = getCurrentPeriodSummary(transactions);
-  // Ledger-derived (V2 Part C). Home's full Total/Available/Saved layout is Step 4.
+  // Every figure below is derived from the ledger on each render (V2 Part C) - nothing is cached.
   const balances = useMemo(() => getBalances(transactions), [transactions]);
-  const totalSavings = balances.saved;
-
-  const builderStreak = calculateBuilderStreak(transactions);
-  const motivationalMessage = getDashboardMessage(origin, totalSavings);
+  const periodSummary = useMemo(() => getCurrentPeriodSummary(transactions), [transactions]);
+  const builderStreak = useMemo(() => calculateBuilderStreak(transactions), [transactions]);
+  const motivationalMessage = getDashboardMessage(origin, balances.saved);
 
   const monthlyBreakdown = useMemo(() => {
     const dates = getRangeDates('monthly');
@@ -85,15 +88,10 @@ export default function HomeScreen() {
   }, [transactions]);
 
   const totalSpending = monthlyBreakdown.reduce((sum, item) => sum + item.amount, 0);
-
-  const previousSnapshot = monthlySnapshots[monthlySnapshots.length - 1];
-  const previousBalance = previousSnapshot ? previousSnapshot.income - previousSnapshot.expenses : null;
-  const trendPercent =
-    previousBalance !== null && Math.abs(previousBalance) > 0
-      ? ((periodSummary.net - previousBalance) / Math.abs(previousBalance)) * 100
-      : null;
-
   const recentTransactions = transactions.slice(0, 3);
+  const monthName = new Date().toLocaleString('default', { month: 'long' });
+
+  const mask = (value: number) => (isBalanceHidden ? HIDDEN_AMOUNT : formatETB(value));
 
   const onNotificationPress = () => {
     router.push('/notifications');
@@ -113,67 +111,91 @@ export default function HomeScreen() {
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
             <Text style={styles.balanceLabel}>Total Balance</Text>
-            <Pressable onPress={toggleBalanceVisibility} hitSlop={8}>
+            <Pressable
+              onPress={toggleBalanceVisibility}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={isBalanceHidden ? 'Show balances' : 'Hide balances'}
+            >
               <Ionicons name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'} size={20} color="#FFFFFF" />
             </Pressable>
           </View>
-          <Text style={styles.balanceValue}>
-            {homeCurrency} {isBalanceHidden ? '••••••' : balances.total.toFixed(2)}
+          <Text style={styles.balanceValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+            {mask(balances.total)}
           </Text>
-          {trendPercent !== null && (
-            <View style={styles.trendRow}>
-              <Ionicons
-                name={trendPercent >= 0 ? 'trending-up' : 'trending-down'}
-                size={14}
-                color={trendPercent >= 0 ? colors.oliveLight : colors.redLight}
-              />
-              <Text style={[styles.trendText, trendPercent < 0 && styles.trendTextNegative]}>
-                {trendPercent >= 0 ? '+' : ''}
-                {trendPercent.toFixed(0)}% from last month
-              </Text>
-            </View>
-          )}
         </View>
 
-        <View style={styles.summaryRow}>
+        <View style={styles.row}>
+          <View style={styles.balanceTile}>
+            <Text style={styles.tileLabel}>Available</Text>
+            <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+              {mask(balances.available)}
+            </Text>
+          </View>
+          <View style={styles.balanceTile}>
+            <Text style={styles.tileLabel}>Saved</Text>
+            <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+              {mask(balances.saved)}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.periodTitle}>This Month · {monthName}</Text>
+        <View style={styles.row}>
           <View style={styles.summaryCard}>
             <View style={[styles.summaryIconCircle, { backgroundColor: colors.oliveLight }]}>
               <Ionicons name="trending-up" size={16} color={colors.statusIncome} />
             </View>
-            <Text style={styles.summaryLabel}>Income</Text>
-            <Text style={[styles.summaryValue, { color: colors.statusIncome }]}>
-              {periodSummary.income.toFixed(0)}
+            <Text style={styles.tileLabel}>Income</Text>
+            <Text
+              style={[styles.summaryValue, { color: colors.statusIncome }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {formatNumber(periodSummary.income)}
             </Text>
           </View>
           <View style={styles.summaryCard}>
             <View style={[styles.summaryIconCircle, { backgroundColor: colors.redLight }]}>
               <Ionicons name="trending-down" size={16} color={colors.statusExpense} />
             </View>
-            <Text style={styles.summaryLabel}>Expenses</Text>
-            <Text style={[styles.summaryValue, { color: colors.statusExpense }]}>
-              {periodSummary.expenses.toFixed(0)}
+            <Text style={styles.tileLabel}>Expenses</Text>
+            <Text
+              style={[styles.summaryValue, { color: colors.statusExpense }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {formatNumber(periodSummary.expenses)}
             </Text>
           </View>
-          <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconCircle, { backgroundColor: colors.oliveLight }]}>
-              <Ionicons name="wallet" size={16} color={colors.olive} />
-            </View>
-            <Text style={styles.summaryLabel}>Saved</Text>
-            <Text style={[styles.summaryValue, { color: colors.olive }]}>{balances.saved.toFixed(0)}</Text>
-          </View>
+        </View>
+
+        {/* Net is this month's income minus expenses - a flow, not a balance, so it is never labelled "Available". */}
+        <View style={styles.netCard}>
+          <Text style={styles.tileLabel}>Net (Income − Expenses)</Text>
+          <Text
+            style={[styles.netValue, { color: periodSummary.net < 0 ? colors.statusExpense : colors.statusIncome }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
+            {periodSummary.net > 0 ? '+' : ''}
+            {formatNumber(periodSummary.net)}
+          </Text>
         </View>
 
         <Pressable style={styles.streakCard}>
           <View style={styles.streakLeft}>
             <Text style={styles.streakEmoji}>🔥</Text>
-            <View>
+            <View style={styles.flexShrink}>
               <Text style={styles.streakText}>{builderStreak} day streak</Text>
               <Text style={styles.streakSupport}>
-                {builderStreak > 0 ? "You're doing great!" : 'Log something today to start your streak.'}
+                {builderStreak > 0 ? "You're doing great!" : 'Record something today to start your streak.'}
               </Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.orange} />
         </Pressable>
 
         <View style={styles.card}>
@@ -204,39 +226,59 @@ export default function HomeScreen() {
           {recentTransactions.length === 0 ? (
             <Text style={styles.emptyState}>No transactions yet — add your first one.</Text>
           ) : (
-            recentTransactions.map((transaction) => (
-              <View key={transaction.id} style={styles.transactionRow}>
-                <View style={styles.transactionLeft}>
-                  <View
-                    style={[
-                      styles.transactionIcon,
-                      { backgroundColor: transaction.type === 'expense' ? colors.redLight : colors.oliveLight },
-                    ]}
-                  >
-                    <Ionicons
-                      name={transaction.type === 'expense' ? 'cart' : transaction.type === 'income' ? 'briefcase' : 'wallet'}
-                      size={16}
-                      color={transaction.type === 'expense' ? colors.statusExpense : colors.statusIncome}
-                    />
+            recentTransactions.map((transaction) => {
+              const isExpense = transaction.type === 'expense';
+              const isTransfer = transaction.type === 'transfer';
+              const tint = isExpense ? colors.statusExpense : isTransfer ? colors.blue : colors.statusIncome;
+              const sign = isExpense ? '-' : isTransfer ? '' : '+';
+
+              return (
+                // Left side takes the remaining width and truncates; the amount shrinks to fit rather than
+                // overflowing, so ETB 1,000,000.00, long merchants and large font sizes all stay inside the card.
+                <View key={transaction.id} style={styles.transactionRow}>
+                  <View style={styles.transactionLeft}>
+                    <View
+                      style={[
+                        styles.transactionIcon,
+                        { backgroundColor: isExpense ? colors.redLight : isTransfer ? '#E3EAFB' : colors.oliveLight },
+                      ]}
+                    >
+                      <Ionicons
+                        name={isExpense ? 'cart' : isTransfer ? 'swap-horizontal' : 'briefcase'}
+                        size={16}
+                        color={tint}
+                      />
+                    </View>
+                    <View style={styles.transactionText}>
+                      <Text style={styles.transactionCategory} numberOfLines={1}>
+                        {transactionTitle(transaction, goals)}
+                      </Text>
+                      <Text style={styles.transactionMeta} numberOfLines={1}>
+                        {isTransfer ? '' : `${transaction.source} · `}
+                        {formatDateKey(transaction.date)}
+                      </Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={styles.transactionCategory}>{transaction.category}</Text>
-                    <Text style={styles.transactionMeta}>
-                      {transaction.source} · {new Date(transaction.date).toLocaleDateString()}
+                  <View style={styles.transactionAmountWrap}>
+                    <Text
+                      style={[styles.transactionAmount, { color: isTransfer ? colors.navy : tint }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                      maxFontSizeMultiplier={MONEY_MAX_FONT_SCALE}
+                    >
+                      {sign}
+                      {formatETB(transaction.amountETB)}
                     </Text>
+                    {transaction.currency !== 'ETB' && (
+                      <Text style={styles.transactionOriginal} numberOfLines={1} maxFontSizeMultiplier={MONEY_MAX_FONT_SCALE}>
+                        (originally {formatNumber(transaction.amount)} {transaction.currency})
+                      </Text>
+                    )}
                   </View>
                 </View>
-                <Text
-                  style={[
-                    styles.transactionAmount,
-                    { color: transaction.type === 'expense' ? colors.statusExpense : colors.statusIncome },
-                  ]}
-                >
-                  {transaction.type === 'expense' ? '-' : '+'}
-                  {transaction.amount.toFixed(2)} {transaction.currency}
-                </Text>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -284,22 +326,34 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     marginTop: 4,
   },
-  trendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 8,
-  },
-  trendText: {
-    ...typography.helper,
-    color: colors.oliveLight,
-  },
-  trendTextNegative: {
-    color: colors.redLight,
-  },
-  summaryRow: {
+  row: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  balanceTile: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    padding: spacing.lg,
+    gap: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  tileLabel: {
+    ...typography.helper,
+    color: colors.textSecondary,
+  },
+  tileValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.navy,
+  },
+  periodTitle: {
+    ...typography.sectionTitle,
+    color: colors.navy,
+    marginBottom: -spacing.sm,
   },
   summaryCard: {
     flex: 1,
@@ -320,12 +374,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  summaryLabel: {
-    ...typography.helper,
-    color: colors.textSecondary,
-  },
   summaryValue: {
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: '800',
+    alignSelf: 'stretch',
+  },
+  netCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    padding: spacing.lg,
+    gap: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  netValue: {
+    fontSize: 22,
     fontWeight: '800',
   },
   streakCard: {
@@ -340,6 +405,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    flexShrink: 1,
+  },
+  flexShrink: {
+    flexShrink: 1,
   },
   streakEmoji: {
     fontSize: 26,
@@ -382,11 +451,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.background,
   },
   transactionLeft: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -398,6 +470,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  transactionText: {
+    flex: 1,
+    minWidth: 0,
+  },
   transactionCategory: {
     fontSize: 15,
     fontWeight: '600',
@@ -408,8 +484,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  transactionAmountWrap: {
+    maxWidth: '48%',
+    flexShrink: 0,
+    alignItems: 'flex-end',
+  },
   transactionAmount: {
     fontWeight: '700',
+  },
+  transactionOriginal: {
+    ...typography.helper,
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   emptyState: {
     ...typography.helper,

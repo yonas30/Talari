@@ -8,6 +8,20 @@
 import { ExchangeRate, Transaction, TransactionInput } from '../types';
 import { getBalances, LedgerError, LedgerErrorCode } from '../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress } from '../utils/currency';
+import { toLocalDateKey } from '../utils/dates';
+import {
+  TREND_TITLES,
+  clampCustomRange,
+  getCategoryBreakdown,
+  getFilteredTransactionsByRange,
+  getPeriodTotals,
+  getRangeDates,
+  getSourceBreakdown,
+  getTrendGranularity,
+  getTrendSeries,
+  shiftMonth,
+  shiftWeek,
+} from '../utils/reports';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 
 const RATES: ExchangeRate[] = [
@@ -225,6 +239,8 @@ console.log('\nExtra cases (approved scope: edit / delete / back-dated / rates /
   check('streak survives a day with nothing logged yet (yesterday active)', calculateBuilderStreak(noToday, at1am) === 2);
   check('streak breaks after a gap', calculateBuilderStreak(ledgerOf(income(1, 'available', '2026-01-05')), at1am) === 0);
   const transferRows = ledgerOf(income(100, 'available', '2026-01-01'), transfer(10, 'available', 'saved', '2026-01-09'), transfer(10, 'available', 'goal', '2026-01-10'));
+  const withAuto = [...ledgerOf(income(100, 'available', '2026-01-01')), { ...ledgerOf(income(5, 'available', '2026-01-10'))[0], isAutomatic: true }];
+  check('automatically generated (recurring) rows do not count toward the streak', calculateBuilderStreak(withAuto, at1am) === 0, `got ${calculateBuilderStreak(withAuto, at1am)}`);
   check('transfers and goal contributions count toward the streak', calculateBuilderStreak(transferRows, at1am) === 2);
 }
 
@@ -263,6 +279,78 @@ console.log('\nStep 3: editing across all three transaction types');
   check('goal -> a different goal id is not "same account"', (() => { planAdd(funded, { ...transfer(100, 'goal', 'goal'), toGoalId: 'other' }, RATES, { ...GOALS, other: 'Car' }); return true; })());
   check('transfer with a goal endpoint but no goal id is rejected', rejectedWith('MISSING_GOAL', () => planAdd(base, { ...transfer(10, 'available', 'goal'), toGoalId: null }, RATES, GOALS)));
   check('foreign-currency transfer converts to ETB (10 USD = 550)', planAdd(base, { ...transfer(10, 'available', 'saved'), currency: 'USD' }, RATES, GOALS).amountETB === 550);
+}
+
+console.log('\nStep 5: Insights periods, navigation, custom range, trend');
+{
+  // Fixture across several months. Transfers and a USD expense are included on purpose.
+  const L = ledgerOf(
+    income(100000, 'available', '2025-12-31'),
+    income(5000, 'available', '2026-01-01'),
+    expense(300, 'available', '2026-01-05'),
+    expense(200, 'available', '2026-01-31'),
+    transfer(1000, 'available', 'saved', '2026-01-31'),
+    income(7000, 'saved', '2026-02-01'),
+    { type: 'expense', amount: 10, currency: 'USD', category: 'Food', account: 'available', date: '2026-02-10' },
+    expense(400, 'available', '2026-02-28'),
+    income(2000, 'available', '2026-03-15'),
+    expense(50, 'available', '2026-03-15'),
+  );
+
+  // --- month navigation (the old setMonth() overflow bug) ---
+  const from31st = new Date(2026, 9, 31); // 31 Oct
+  const months = [0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13].map((offset) => shiftMonth(from31st, offset));
+  const expectedMonths = ['2026-10', '2026-09', '2026-08', '2026-07', '2026-06', '2026-05', '2026-04', '2026-03', '2026-02', '2026-01', '2025-12', '2025-11', '2025-10', '2025-09'];
+  check('month navigation from the 31st steps through every month exactly once', months.map((m) => toLocalDateKey(m).slice(0, 7)).join() === expectedMonths.join(), months.map((m) => toLocalDateKey(m).slice(0, 7)).join());
+  check('shiftMonth always returns day 1', months.every((m) => m.getDate() === 1));
+  check('shiftWeek moves exactly 7 days', toLocalDateKey(shiftWeek(new Date(2026, 0, 14), -1)) === '2026-01-07' && toLocalDateKey(shiftWeek(new Date(2026, 0, 14), 2)) === '2026-01-28');
+
+  // --- ranges ---
+  check('monthly range Feb 2026 = 02-01..02-28', JSON.stringify(getRangeDates('monthly', new Date(2026, 1, 10))) === JSON.stringify({ start: '2026-02-01', end: '2026-02-28' }));
+  check('monthly range Feb 2028 (leap) ends 02-29', getRangeDates('monthly', new Date(2028, 1, 3)).end === '2028-02-29');
+  check('weekly range is Monday..Sunday (Sun 2026-01-11 belongs to 01-05..01-11)', JSON.stringify(getRangeDates('weekly', new Date(2026, 0, 11))) === JSON.stringify({ start: '2026-01-05', end: '2026-01-11' }));
+
+  // --- period filtering and totals ---
+  const jan = getFilteredTransactionsByRange(L, '2026-01-01', '2026-01-31');
+  const feb = getFilteredTransactionsByRange(L, '2026-02-01', '2026-02-28');
+  const janT = getPeriodTotals(jan);
+  const febT = getPeriodTotals(feb);
+  check('Jan: income 5,000 / expenses 500 / net 4,500 (transfer ignored, both boundary days included)', janT.income === 5000 && janT.expenses === 500 && janT.net === 4500, JSON.stringify(janT));
+  check('Feb: income 7,000 / expenses 950 (10 USD @55 + 400) / net 6,050', febT.income === 7000 && febT.expenses === 950 && febT.net === 6050, JSON.stringify(febT));
+  check('changing month changes every metric (Jan != Feb)', janT.income !== febT.income && janT.expenses !== febT.expenses && janT.net !== febT.net);
+  check('custom range is inclusive of start AND end day', getFilteredTransactionsByRange(L, '2026-01-31', '2026-02-01').length === 3);
+  check('custom range excludes the day before and after', getFilteredTransactionsByRange(L, '2026-01-06', '2026-01-30').length === 0);
+  check('custom one-day range works', getFilteredTransactionsByRange(L, '2026-03-15', '2026-03-15').length === 2);
+  check('custom range spanning months sums across them', (() => { const t = getPeriodTotals(getFilteredTransactionsByRange(L, '2026-01-15', '2026-03-01')); return t.income === 7000 && t.expenses === 1150; })());
+  check('empty period gives zeros, not NaN', (() => { const t = getPeriodTotals(getFilteredTransactionsByRange(L, '2030-01-01', '2030-01-31')); return t.income === 0 && t.expenses === 0 && t.net === 0; })());
+
+  // --- breakdowns reconcile with the headline numbers ---
+  const febCats = getCategoryBreakdown(feb);
+  check('category breakdown sums to period expenses (ETB)', Math.round(febCats.reduce((s, c) => s + c.amount, 0) * 100) === Math.round(febT.expenses * 100));
+  check('source breakdown sums to period income', Math.round(getSourceBreakdown(feb).reduce((s, c) => s + c.amount, 0) * 100) === Math.round(febT.income * 100));
+
+  // --- custom range clamping ---
+  check('moving start past end pulls end up to start', JSON.stringify(clampCustomRange('start', '2026-03-10', '2026-03-01')) === JSON.stringify({ start: '2026-03-10', end: '2026-03-10' }));
+  check('moving end before start pulls start back to end', JSON.stringify(clampCustomRange('end', '2026-03-10', '2026-03-01')) === JSON.stringify({ start: '2026-03-01', end: '2026-03-01' }));
+  check('a valid range is left alone', JSON.stringify(clampCustomRange('end', '2026-03-01', '2026-03-10')) === JSON.stringify({ start: '2026-03-01', end: '2026-03-10' }));
+
+  // --- trend: titles + bucketing, and always reconciles with totals ---
+  check('trend titles match the selected period', TREND_TITLES.weekly === 'Weekly Trend' && TREND_TITLES.monthly === 'Monthly Trend' && TREND_TITLES.custom === 'Custom Period');
+  const janTrend = getTrendSeries(jan, '2026-01-01', '2026-01-31');
+  check('monthly view uses daily points (31 for January)', janTrend.length === 31 && getTrendGranularity('2026-01-01', '2026-01-31') === 'day');
+  check('daily points carry the right day (01-05 expense 300, 01-31 expense 200)', janTrend.find((p) => p.label === '01-05')?.expense === 300 && janTrend.find((p) => p.label === '01-31')?.expense === 200);
+  const sumTrend = (points: { income: number; expense: number }[]) => ({ i: Math.round(points.reduce((s, p) => s + p.income, 0) * 100), e: Math.round(points.reduce((s, p) => s + p.expense, 0) * 100) });
+  check('daily trend totals equal period totals', sumTrend(janTrend).i === janT.income * 100 && sumTrend(janTrend).e === janT.expenses * 100);
+  const wide = getFilteredTransactionsByRange(L, '2025-12-01', '2026-03-31');
+  const wideTrend = getTrendSeries(wide, '2025-12-01', '2026-03-31');
+  const wideT = getPeriodTotals(wide);
+  check('a ~4-month custom range is bucketed weekly (not 120 daily points)', getTrendGranularity('2025-12-01', '2026-03-31') === 'week' && wideTrend.length > 15 && wideTrend.length < 25, `${wideTrend.length} points`);
+  check('weekly-bucketed trend still reconciles with totals', sumTrend(wideTrend).i === wideT.income * 100 && sumTrend(wideTrend).e === wideT.expenses * 100);
+  const yearTrend = getTrendSeries(L, '2025-01-01', '2026-12-31');
+  check('a 2-year custom range is bucketed monthly (24 points)', getTrendGranularity('2025-01-01', '2026-12-31') === 'month' && yearTrend.length === 24, `${yearTrend.length}`);
+  check('monthly-bucketed trend reconciles with totals', sumTrend(yearTrend).i === getPeriodTotals(L).income * 100 && sumTrend(yearTrend).e === getPeriodTotals(L).expenses * 100);
+  check('one-day custom range gives exactly one point', getTrendSeries(getFilteredTransactionsByRange(L, '2026-03-15', '2026-03-15'), '2026-03-15', '2026-03-15').length === 1);
+  check('trend ignores transfers', getTrendSeries(jan, '2026-01-31', '2026-01-31')[0].income === 0 && getTrendSeries(jan, '2026-01-31', '2026-01-31')[0].expense === 200);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

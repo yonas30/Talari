@@ -5,13 +5,11 @@ import { useRouter } from 'expo-router';
 import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
+import { formatDateKey, formatETB, formatNumber, transactionTitle } from '../utils/format';
 
 export default function TransactionsScreen() {
   const router = useRouter();
   const { transactions, goals, isReady } = useFinanceStore();
-
-  const endpointLabel = (endpoint: string | null, goalId: string | null) =>
-    endpoint === 'goal' ? (goals.find((goal) => goal.id === goalId)?.name ?? 'Deleted goal') : endpoint === 'saved' ? 'Saved' : 'Available';
 
   useEffect(() => {
     if (!isReady) {
@@ -35,10 +33,7 @@ export default function TransactionsScreen() {
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => {
               const isForeign = item.currency !== 'ETB';
-              const title =
-                item.type === 'transfer'
-                  ? `${endpointLabel(item.fromAccount, item.fromGoalId)} → ${endpointLabel(item.toAccount, item.toGoalId)}`
-                  : item.category;
+              const title = transactionTitle(item, goals);
 
               return (
                 <Pressable
@@ -48,13 +43,15 @@ export default function TransactionsScreen() {
                   <View style={styles.itemContent}>
                     <Text style={styles.category}>{title}</Text>
                     <Text style={styles.meta}>
-                      {new Date(`${item.date}T00:00:00`).toLocaleDateString()}
+                      {formatDateKey(item.date)}
                       {item.account ? ` · ${item.type === 'income' ? 'into' : 'from'} ${item.account === 'saved' ? 'Saved' : 'Available'}` : ''}
                     </Text>
                   </View>
                   <View style={styles.amountWrap}>
-                    <Text style={styles.amount}>ETB {item.amountETB.toFixed(2)}</Text>
-                    {isForeign && <Text style={styles.converted}>(originally {item.amount.toFixed(2)} {item.currency})</Text>}
+                    <Text style={styles.amount} maxFontSizeMultiplier={1.3} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                      {formatETB(item.amountETB)}
+                    </Text>
+                    {isForeign && <Text style={styles.converted} maxFontSizeMultiplier={1.3} numberOfLines={1}>(originally {formatNumber(item.amount)} {item.currency})</Text>}
                     <Text style={[styles.type, { color: item.type === 'income' ? colors.statusIncome : item.type === 'transfer' ? colors.olive : colors.statusExpense }]}>
                       {item.type}
                     </Text>

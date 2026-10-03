@@ -9,75 +9,86 @@ import HorizontalBarChart from '../components/HorizontalBarChart';
 import TrendLineChart from '../components/TrendLineChart';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
-import { RangePreset, endOfWeek, getBiggestSpendingCategory, getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates, getSourceBreakdown, getTrendSeries, startOfWeek, toISODate } from '../utils/reports';
+import { addDays, toLocalDateKey } from '../utils/dates';
+import { formatETB, formatNumber } from '../utils/format';
+import {
+  RangePreset,
+  TREND_TITLES,
+  clampCustomRange,
+  endOfWeek,
+  getBiggestSpendingCategory,
+  getCategoryBreakdown,
+  getFilteredTransactionsByRange,
+  getPeriodTotals,
+  getRangeDates,
+  getSourceBreakdown,
+  getTrendSeries,
+  shiftMonth,
+  shiftWeek,
+  startOfWeek,
+} from '../utils/reports';
 
-const TREND_TITLES: Record<RangePreset, string> = {
-  weekly: 'Weekly Trend',
-  monthly: 'Monthly Trend',
-  custom: 'Custom Trend',
-};
+interface PeriodNavProps {
+  label: string;
+  canGoForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
+}
+
+// Shared ← label → control for the weekly and monthly views. Going forward past the current period
+// is disabled (nothing can have happened yet), and shown as such.
+function PeriodNav({ label, canGoForward, onBack, onForward }: PeriodNavProps) {
+  return (
+    <View style={styles.monthNav}>
+      <Pressable onPress={onBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Previous period">
+        <Ionicons name="chevron-back" size={22} color={colors.navy} />
+      </Pressable>
+      <Text style={styles.monthLabel}>{label}</Text>
+      <Pressable
+        onPress={onForward}
+        disabled={!canGoForward}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Next period"
+        accessibilityState={{ disabled: !canGoForward }}
+      >
+        <Ionicons name="chevron-forward" size={22} color={canGoForward ? colors.navy : '#C9CDD6'} />
+      </Pressable>
+    </View>
+  );
+}
 
 export default function ReportsScreen() {
-  const { transactions, homeCurrency } = useFinanceStore();
+  const transactions = useFinanceStore((state) => state.transactions);
   const [range, setRange] = useState<RangePreset>('monthly');
   const [monthOffset, setMonthOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
-  const [customStart, setCustomStart] = useState(toISODate(new Date(Date.now() - 29 * 86400000)));
-  const [customEnd, setCustomEnd] = useState(toISODate(new Date()));
+  // Custom period defaults to the last 30 days; both ends are user-editable.
+  const [customStart, setCustomStart] = useState(() => toLocalDateKey(addDays(new Date(), -29)));
+  const [customEnd, setCustomEnd] = useState(() => toLocalDateKey(new Date()));
 
-  const referenceDate = useMemo(() => {
-    const date = new Date();
-    if (range === 'monthly') {
-      date.setMonth(date.getMonth() + monthOffset);
-    } else if (range === 'weekly') {
-      date.setDate(date.getDate() + weekOffset * 7);
-    }
-    return date;
-  }, [range, monthOffset, weekOffset]);
+  const referenceDate = useMemo(
+    () => (range === 'weekly' ? shiftWeek(new Date(), weekOffset) : shiftMonth(new Date(), monthOffset)),
+    [range, monthOffset, weekOffset],
+  );
 
-  const dates = useMemo(() => {
-    if (range === 'custom') {
-      return { start: customStart, end: customEnd };
-    }
-    return getRangeDates(range, referenceDate);
-  }, [range, referenceDate, customStart, customEnd]);
+  const dates = useMemo(
+    () => (range === 'custom' ? { start: customStart, end: customEnd } : getRangeDates(range, referenceDate)),
+    [range, referenceDate, customStart, customEnd],
+  );
 
+  // Everything below is computed from this one filtered list, so a change of period updates every
+  // metric and chart together.
   const filtered = useMemo(
     () => getFilteredTransactionsByRange(transactions, dates.start, dates.end),
     [transactions, dates],
   );
 
-  const periodIncome = useMemo(
-    () =>
-      filtered
-        .filter((transaction) => transaction.type === 'income')
-        .reduce((sum, transaction) => sum + transaction.amountETB, 0),
-    [filtered],
-  );
-  const periodExpenses = useMemo(
-    () =>
-      filtered
-        .filter((transaction) => transaction.type === 'expense')
-        .reduce((sum, transaction) => sum + transaction.amountETB, 0),
-    [filtered],
-  );
-
-  const categoryBreakdown = useMemo(
-    () => getCategoryBreakdown(filtered),
-    [filtered],
-  );
-  const sourceBreakdown = useMemo(
-    () => getSourceBreakdown(filtered),
-    [filtered],
-  );
-  const trend = useMemo(
-    () => getTrendSeries(filtered, dates.start, dates.end),
-    [filtered, dates],
-  );
-  const biggestCategory = useMemo(
-    () => getBiggestSpendingCategory(filtered),
-    [filtered],
-  );
+  const totals = useMemo(() => getPeriodTotals(filtered), [filtered]);
+  const categoryBreakdown = useMemo(() => getCategoryBreakdown(filtered), [filtered]);
+  const sourceBreakdown = useMemo(() => getSourceBreakdown(filtered), [filtered]);
+  const trend = useMemo(() => getTrendSeries(filtered, dates.start, dates.end), [filtered, dates]);
+  const biggestCategory = useMemo(() => getBiggestSpendingCategory(filtered), [filtered]);
 
   const totalSpending = categoryBreakdown.reduce((sum, item) => sum + item.amount, 0);
 
@@ -86,6 +97,18 @@ export default function ReportsScreen() {
     const end = endOfWeek(referenceDate);
     return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }, [referenceDate]);
+
+  const onCustomChange = (changed: 'start' | 'end', value: string) => {
+    const next = clampCustomRange(
+      changed,
+      changed === 'start' ? value : customStart,
+      changed === 'end' ? value : customEnd,
+    );
+    setCustomStart(next.start);
+    setCustomEnd(next.end);
+  };
+
+  const netColor = totals.net < 0 ? colors.statusExpense : colors.statusIncome;
 
   return (
     <View style={styles.screen}>
@@ -104,43 +127,37 @@ export default function ReportsScreen() {
         </View>
 
         {range === 'monthly' && (
-          <View style={styles.monthNav}>
-            <Pressable onPress={() => setMonthOffset((prev) => prev - 1)}>
-              <Ionicons name="chevron-back" size={20} color={colors.navy} />
-            </Pressable>
-            <Text style={styles.monthLabel}>
-              {referenceDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-            </Text>
-            <Pressable onPress={() => setMonthOffset((prev) => Math.min(prev + 1, 0))}>
-              <Ionicons name="chevron-forward" size={20} color={colors.navy} />
-            </Pressable>
-          </View>
+          <PeriodNav
+            label={referenceDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+            canGoForward={monthOffset < 0}
+            onBack={() => setMonthOffset((prev) => prev - 1)}
+            onForward={() => setMonthOffset((prev) => Math.min(prev + 1, 0))}
+          />
         )}
 
         {range === 'weekly' && (
-          <View style={styles.monthNav}>
-            <Pressable onPress={() => setWeekOffset((prev) => prev - 1)}>
-              <Ionicons name="chevron-back" size={20} color={colors.navy} />
-            </Pressable>
-            <Text style={styles.monthLabel}>{weekLabel}</Text>
-            <Pressable onPress={() => setWeekOffset((prev) => Math.min(prev + 1, 0))}>
-              <Ionicons name="chevron-forward" size={20} color={colors.navy} />
-            </Pressable>
-          </View>
+          <PeriodNav
+            label={weekLabel}
+            canGoForward={weekOffset < 0}
+            onBack={() => setWeekOffset((prev) => prev - 1)}
+            onForward={() => setWeekOffset((prev) => Math.min(prev + 1, 0))}
+          />
         )}
 
         {range === 'custom' && (
           <View style={styles.customRow}>
             <View style={styles.customField}>
               <Text style={styles.label}>Start date</Text>
-              <DateField label="Start date" value={customStart} onChange={setCustomStart} />
+              <DateField label="Start date" value={customStart} onChange={(value) => onCustomChange('start', value)} />
             </View>
             <View style={styles.customField}>
               <Text style={styles.label}>End date</Text>
-              <DateField label="End date" value={customEnd} onChange={setCustomEnd} />
+              <DateField label="End date" value={customEnd} onChange={(value) => onCustomChange('end', value)} />
             </View>
           </View>
         )}
+
+        <Text style={styles.currencyNote}>All amounts in ETB · transfers are not counted as income or spending</Text>
 
         <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, { backgroundColor: colors.oliveLight }]}>
@@ -148,17 +165,45 @@ export default function ReportsScreen() {
               <Text style={styles.summaryLabel}>Income</Text>
               <Ionicons name="trending-up" size={14} color={colors.statusIncome} />
             </View>
-            <Text style={[styles.summaryValue, { color: colors.statusIncome }]}>
-              {homeCurrency} {periodIncome.toFixed(0)}
+            <Text
+              style={[styles.summaryValue, { color: colors.statusIncome }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+              maxFontSizeMultiplier={1.3}
+            >
+              {formatNumber(totals.income)}
             </Text>
           </View>
           <View style={[styles.summaryCard, { backgroundColor: colors.redLight }]}>
             <View style={styles.summaryHeaderRow}>
               <Text style={styles.summaryLabel}>Expenses</Text>
-              <Ionicons name="trending-up" size={14} color={colors.statusExpense} />
+              <Ionicons name="trending-down" size={14} color={colors.statusExpense} />
             </View>
-            <Text style={[styles.summaryValue, { color: colors.statusExpense }]}>
-              {homeCurrency} {periodExpenses.toFixed(0)}
+            <Text
+              style={[styles.summaryValue, { color: colors.statusExpense }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+              maxFontSizeMultiplier={1.3}
+            >
+              {formatNumber(totals.expenses)}
+            </Text>
+          </View>
+          <View style={[styles.summaryCard, { backgroundColor: colors.surface }]}>
+            <View style={styles.summaryHeaderRow}>
+              <Text style={styles.summaryLabel}>Net</Text>
+              <Ionicons name="swap-vertical" size={14} color={netColor} />
+            </View>
+            <Text
+              style={[styles.summaryValue, { color: netColor }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+              maxFontSizeMultiplier={1.3}
+            >
+              {totals.net > 0 ? '+' : ''}
+              {formatNumber(totals.net)}
             </Text>
           </View>
         </View>
@@ -166,12 +211,12 @@ export default function ReportsScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Spending by category</Text>
           {categoryBreakdown.length === 0 ? (
-            <Text style={styles.emptyState}>No expense data for this range.</Text>
+            <Text style={styles.emptyState}>No expense data for this period.</Text>
           ) : (
             <DonutChart
               data={categoryBreakdown}
-              centerLabel={`${homeCurrency} total`}
-              centerValue={totalSpending.toFixed(0)}
+              centerLabel="ETB total"
+              centerValue={formatNumber(totalSpending, 0)}
             />
           )}
         </View>
@@ -179,7 +224,7 @@ export default function ReportsScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Income by source</Text>
           {sourceBreakdown.length === 0 ? (
-            <Text style={styles.emptyState}>No income sources for this range.</Text>
+            <Text style={styles.emptyState}>No income sources for this period.</Text>
           ) : (
             <HorizontalBarChart data={sourceBreakdown} />
           )}
@@ -187,8 +232,8 @@ export default function ReportsScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>{TREND_TITLES[range]}</Text>
-          {trend.length === 0 ? (
-            <Text style={styles.emptyState}>No activity for this range.</Text>
+          {filtered.every((item) => item.type === 'transfer') ? (
+            <Text style={styles.emptyState}>No activity for this period.</Text>
           ) : (
             <TrendLineChart data={trend} />
           )}
@@ -198,7 +243,7 @@ export default function ReportsScreen() {
           <Text style={styles.sectionTitle}>Biggest spending category</Text>
           {biggestCategory ? (
             <Text style={styles.highlightText}>
-              {biggestCategory.label}: {homeCurrency} {biggestCategory.amount.toFixed(2)}
+              {biggestCategory.label}: {formatETB(biggestCategory.amount)}
             </Text>
           ) : (
             <Text style={styles.emptyState}>No spending categories yet.</Text>
@@ -267,6 +312,11 @@ const styles = StyleSheet.create({
     ...typography.helper,
     color: colors.textSecondary,
     fontWeight: '700',
+  },
+  currencyNote: {
+    ...typography.helper,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   summaryRow: {
     flexDirection: 'row',

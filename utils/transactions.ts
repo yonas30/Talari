@@ -38,6 +38,7 @@ export function buildTransaction(
     date: input.date,
     timestamp: existing?.timestamp ?? now,
     note: input.note?.trim() ? input.note.trim() : null,
+    isAutomatic: existing?.isAutomatic ?? input.isAutomatic ?? false,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

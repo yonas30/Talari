@@ -1,5 +1,5 @@
 import { Transaction } from '../types';
-import { toLocalDateKey } from './dates';
+import { parseDateKey, toLocalDateKey } from './dates';
 
 export type RangePreset = 'weekly' | 'monthly' | 'custom';
 
@@ -69,18 +69,14 @@ export function getRangeDates(range: RangePreset, referenceDate = new Date()) {
   };
 }
 
+// Inclusive on both ends. Day keys are 'YYYY-MM-DD', so plain string comparison is exact and
+// timezone-free.
 export function getFilteredTransactionsByRange(
   transactions: Transaction[],
   startDate: string,
   endDate: string,
 ): Transaction[] {
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T23:59:59`);
-
-  return transactions.filter((transaction) => {
-    const date = new Date(`${transaction.date}T00:00:00`);
-    return date >= start && date <= end;
-  });
+  return transactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate);
 }
 
 export function getCategoryBreakdown(transactions: Transaction[]): BarDatum[] {
@@ -129,31 +125,120 @@ export function getSourceBreakdown(transactions: Transaction[]): BarDatum[] {
     .sort((a, b) => b.amount - a.amount);
 }
 
+export const TREND_TITLES: Record<RangePreset, string> = {
+  weekly: 'Weekly Trend',
+  monthly: 'Monthly Trend',
+  custom: 'Custom Period',
+};
+
+// First day of the month `offset` months from `reference`. Built from day 1 on purpose: doing
+// date.setMonth(m + offset) from the 31st overflows (31 Oct - 1 month = 1 Oct, not September),
+// which made month navigation skip or repeat months.
+export function shiftMonth(reference: Date, offset: number): Date {
+  return new Date(reference.getFullYear(), reference.getMonth() + offset, 1);
+}
+
+export function shiftWeek(reference: Date, offset: number): Date {
+  const next = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
+  next.setDate(next.getDate() + offset * 7);
+  return next;
+}
+
+// Keeps a custom range valid as the user edits one end: start can never pass end or vice versa.
+export function clampCustomRange(
+  changed: 'start' | 'end',
+  start: string,
+  end: string,
+): { start: string; end: string } {
+  if (start <= end) {
+    return { start, end };
+  }
+  return changed === 'start' ? { start, end: start } : { start: end, end };
+}
+
+export interface PeriodTotals {
+  income: number;
+  expenses: number;
+  net: number;
+}
+
+// Income / Expenses / Net for a set of transactions, ETB only (V2 Part D). Transfers are neither.
+export function getPeriodTotals(transactions: Transaction[]): PeriodTotals {
+  let incomeCents = 0;
+  let expenseCents = 0;
+  for (const transaction of transactions) {
+    if (transaction.type === 'income') {
+      incomeCents += Math.round(transaction.amountETB * 100);
+    } else if (transaction.type === 'expense') {
+      expenseCents += Math.round(transaction.amountETB * 100);
+    }
+  }
+  return { income: incomeCents / 100, expenses: expenseCents / 100, net: (incomeCents - expenseCents) / 100 };
+}
+
+type TrendGranularity = 'day' | 'week' | 'month';
+
+// Long ranges are bucketed so the line stays readable (a year of daily points is unreadable noise).
+export function getTrendGranularity(startDate: string, endDate: string): TrendGranularity {
+  const days = Math.round((parseDateKey(endDate).getTime() - parseDateKey(startDate).getTime()) / 86400000) + 1;
+  if (days <= 45) return 'day';
+  if (days <= 240) return 'week';
+  return 'month';
+}
+
+function bucketStart(date: Date, granularity: TrendGranularity): Date {
+  if (granularity === 'week') return startOfWeek(date);
+  if (granularity === 'month') return new Date(date.getFullYear(), date.getMonth(), 1);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function nextBucket(date: Date, granularity: TrendGranularity): Date {
+  const next = new Date(date);
+  if (granularity === 'month') {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  }
+  next.setDate(next.getDate() + (granularity === 'week' ? 7 : 1));
+  return next;
+}
+
 export function getTrendSeries(transactions: Transaction[], startDate: string, endDate: string): TrendPoint[] {
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
-  const allDays: TrendPoint[] = [];
+  const granularity = getTrendGranularity(startDate, endDate);
+  const end = parseDateKey(endDate);
+  const points = new Map<string, { label: string; income: number; expense: number }>();
 
-  for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+  for (
+    let cursor = bucketStart(parseDateKey(startDate), granularity);
+    cursor <= end;
+    cursor = nextBucket(cursor, granularity)
+  ) {
     const key = toISODate(cursor);
-    const dayTransactions = transactions.filter((transaction) => transaction.date === key);
-
-    const income = dayTransactions
-      .filter((transaction) => transaction.type === 'income')
-      .reduce((sum, transaction) => sum + transaction.amountETB, 0);
-
-    const expense = dayTransactions
-      .filter((transaction) => transaction.type === 'expense')
-      .reduce((sum, transaction) => sum + transaction.amountETB, 0);
-
-    allDays.push({
-      label: key.slice(5),
-      income,
-      expense,
+    points.set(key, {
+      label: granularity === 'month' ? key.slice(0, 7) : key.slice(5),
+      income: 0,
+      expense: 0,
     });
   }
 
-  return allDays;
+  for (const transaction of transactions) {
+    if (transaction.type === 'transfer' || transaction.date < startDate || transaction.date > endDate) {
+      continue;
+    }
+    const point = points.get(toISODate(bucketStart(parseDateKey(transaction.date), granularity)));
+    if (!point) {
+      continue;
+    }
+    if (transaction.type === 'income') {
+      point.income += transaction.amountETB;
+    } else {
+      point.expense += transaction.amountETB;
+    }
+  }
+
+  return Array.from(points.values()).map((point) => ({
+    label: point.label,
+    income: Math.round(point.income * 100) / 100,
+    expense: Math.round(point.expense * 100) / 100,
+  }));
 }
 
 export function getBiggestSpendingCategory(transactions: Transaction[]) {
