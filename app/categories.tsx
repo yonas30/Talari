@@ -6,7 +6,7 @@ import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
-import { TransactionType } from '../types';
+import { CategoryType } from '../types';
 
 // Icon suggestion logic based on category name
 function suggestIcon(categoryName: string): string {
@@ -45,7 +45,7 @@ export default function CategoriesScreen() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [type, setType] = useState<TransactionType>('expense');
+  const [type, setType] = useState<CategoryType>('expense');
   const [icon, setIcon] = useState('✨');
 
   const resetForm = () => {

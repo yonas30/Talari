@@ -17,15 +17,22 @@ export const currencies = sqliteTable('currencies', {
 
 export const transactions = sqliteTable('transactions', {
   id: text('id').primaryKey(),
-  type: text('type', { enum: ['income', 'expense', 'savings'] }).notNull(),
+  type: text('type', { enum: ['income', 'expense', 'transfer'] }).notNull(),
+  // amount/currency are display-only; amountETB is the only value ever summed (V2 Part D).
   amount: real('amount').notNull(),
   currency: text('currency').notNull(),
-  category: text('category').notNull(),
+  amountETB: real('amount_etb').notNull(),
+  exchangeRate: real('exchange_rate').notNull(),
+  category: text('category').notNull().default(''),
   source: text('source').notNull().default(''),
+  account: text('account', { enum: ['available', 'saved'] }),
+  fromAccount: text('from_account', { enum: ['available', 'saved', 'goal'] }),
+  fromGoalId: text('from_goal_id'),
+  toAccount: text('to_account', { enum: ['available', 'saved', 'goal'] }),
+  toGoalId: text('to_goal_id'),
   date: text('date').notNull(),
   timestamp: text('timestamp').notNull(),
   note: text('note'),
-  goalId: text('goal_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -34,7 +41,6 @@ export const goals = sqliteTable('goals', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   targetAmount: real('target_amount').notNull(),
-  currency: text('currency').notNull(),
   deadline: text('deadline'),
   status: text('status', { enum: ['active', 'completed', 'abandoned'] }).notNull().default('active'),
   createdAt: text('created_at').notNull(),
@@ -60,7 +66,8 @@ export const exchangeRates = sqliteTable('exchange_rates', {
 
 export const recurringTransactions = sqliteTable('recurring_transactions', {
   id: text('id').primaryKey(),
-  type: text('type', { enum: ['income', 'expense', 'savings'] }).notNull(),
+  type: text('type', { enum: ['income', 'expense'] }).notNull(),
+  account: text('account', { enum: ['available', 'saved'] }).notNull().default('available'),
   amount: real('amount').notNull(),
   currency: text('currency').notNull(),
   category: text('category').notNull(),

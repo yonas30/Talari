@@ -9,7 +9,6 @@ import HorizontalBarChart from '../components/HorizontalBarChart';
 import TrendLineChart from '../components/TrendLineChart';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
-import { convertCurrency } from '../utils/currency';
 import { RangePreset, endOfWeek, getBiggestSpendingCategory, getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates, getSourceBreakdown, getTrendSeries, startOfWeek, toISODate } from '../utils/reports';
 
 const TREND_TITLES: Record<RangePreset, string> = {
@@ -19,7 +18,7 @@ const TREND_TITLES: Record<RangePreset, string> = {
 };
 
 export default function ReportsScreen() {
-  const { transactions, exchangeRates, homeCurrency } = useFinanceStore();
+  const { transactions, homeCurrency } = useFinanceStore();
   const [range, setRange] = useState<RangePreset>('monthly');
   const [monthOffset, setMonthOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -52,32 +51,32 @@ export default function ReportsScreen() {
     () =>
       filtered
         .filter((transaction) => transaction.type === 'income')
-        .reduce((sum, transaction) => sum + convertCurrency(transaction.amount, transaction.currency, homeCurrency, exchangeRates), 0),
-    [filtered, homeCurrency, exchangeRates],
+        .reduce((sum, transaction) => sum + transaction.amountETB, 0),
+    [filtered],
   );
   const periodExpenses = useMemo(
     () =>
       filtered
         .filter((transaction) => transaction.type === 'expense')
-        .reduce((sum, transaction) => sum + convertCurrency(transaction.amount, transaction.currency, homeCurrency, exchangeRates), 0),
-    [filtered, homeCurrency, exchangeRates],
+        .reduce((sum, transaction) => sum + transaction.amountETB, 0),
+    [filtered],
   );
 
   const categoryBreakdown = useMemo(
-    () => getCategoryBreakdown(filtered, homeCurrency, exchangeRates),
-    [filtered, homeCurrency, exchangeRates],
+    () => getCategoryBreakdown(filtered),
+    [filtered],
   );
   const sourceBreakdown = useMemo(
-    () => getSourceBreakdown(filtered, homeCurrency, exchangeRates),
-    [filtered, homeCurrency, exchangeRates],
+    () => getSourceBreakdown(filtered),
+    [filtered],
   );
   const trend = useMemo(
-    () => getTrendSeries(filtered, homeCurrency, exchangeRates, dates.start, dates.end),
-    [filtered, homeCurrency, exchangeRates, dates],
+    () => getTrendSeries(filtered, dates.start, dates.end),
+    [filtered, dates],
   );
   const biggestCategory = useMemo(
-    () => getBiggestSpendingCategory(filtered, homeCurrency, exchangeRates),
-    [filtered, homeCurrency, exchangeRates],
+    () => getBiggestSpendingCategory(filtered),
+    [filtered],
   );
 
   const totalSpending = categoryBreakdown.reduce((sum, item) => sum + item.amount, 0);

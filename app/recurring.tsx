@@ -9,7 +9,8 @@ import DateField from '../components/DateField';
 import { defaultCategories } from '../constants/categories';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
-import { CurrencyCode, RecurringFrequency, TransactionType } from '../types';
+import { CurrencyCode, RecurringFrequency, RecurringType } from '../types';
+import { todayKey } from '../utils/dates';
 
 function getFrequencyLabel(freq: RecurringFrequency): string {
   return freq === 'daily' ? 'Every day' : freq === 'weekly' ? 'Every week' : 'Every month';
@@ -46,13 +47,13 @@ export default function RecurringScreen() {
   const { recurringTransactions, categories, addRecurringTransaction, toggleRecurringTransaction, deleteRecurringTransaction } =
     useFinanceStore();
 
-  const [type, setType] = useState<TransactionType>('expense');
+  const [type, setType] = useState<RecurringType>('expense');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>('ETB');
   const [category, setCategory] = useState('');
   const [source, setSource] = useState('');
   const [frequency, setFrequency] = useState<RecurringFrequency>('monthly');
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(todayKey());
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
 
@@ -63,7 +64,7 @@ export default function RecurringScreen() {
     setCategory('');
     setSource('');
     setFrequency('monthly');
-    setStartDate(new Date().toISOString().slice(0, 10));
+    setStartDate(todayKey());
     setIsFormOpen(false);
   };
 
@@ -84,8 +85,10 @@ export default function RecurringScreen() {
       return;
     }
 
+    // Recurring entries post to Available; choosing Saved per rule arrives with the Step 3 form work.
     await addRecurringTransaction({
       type,
+      account: 'available',
       amount: numericAmount,
       currency,
       category,
@@ -175,10 +178,10 @@ export default function RecurringScreen() {
             </View>
 
             <View style={styles.segmented}>
-              {(['income', 'expense', 'savings'] as const).map((option) => (
+              {(['income', 'expense'] as const).map((option) => (
                 <AppButton
                   key={option}
-                  title={option === 'savings' ? 'saving' : option}
+                  title={option}
                   selected={type === option}
                   onPress={() => {
                     setType(option);

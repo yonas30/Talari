@@ -8,6 +8,7 @@ import DonutChart from '../components/DonutChart';
 import { APP_USER_NAME, colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { useUiStore } from '../store/ui';
+import { getBalances } from '../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress, getCurrentPeriodSummary } from '../utils/currency';
 import { getDashboardMessage } from '../utils/motivation';
 import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../utils/reports';
@@ -37,16 +38,16 @@ export default function HomeScreen() {
     () =>
       budgets
         .map((budget) => {
-          const { spentAmount, isOverBudget } = getBudgetProgress(budget, transactions, exchangeRates);
-          if (!isOverBudget) {
+          const { spentAmount, limitETB, isOverBudget } = getBudgetProgress(budget, transactions, exchangeRates);
+          if (!isOverBudget || limitETB === null) {
             return null;
           }
 
-          const exceeded = spentAmount - budget.monthlyLimit;
+          const exceeded = spentAmount - limitETB;
           return {
             category: budget.category,
             amount: exceeded,
-            currency: budget.currency,
+            currency: 'ETB',
           };
         })
         .filter((item): item is { category: string; amount: number; currency: string } => item !== null),
@@ -69,10 +70,10 @@ export default function HomeScreen() {
     upsertNotifications(nextNotifications);
   }, [budgetAlerts, upsertNotifications]);
 
-  const periodSummary = getCurrentPeriodSummary(transactions, homeCurrency, exchangeRates);
-  const totalSavings = transactions
-    .filter((transaction) => transaction.type === 'savings')
-    .reduce((sum, item) => sum + item.amount, 0);
+  const periodSummary = getCurrentPeriodSummary(transactions);
+  // Ledger-derived (V2 Part C). Home's full Total/Available/Saved layout is Step 4.
+  const balances = useMemo(() => getBalances(transactions), [transactions]);
+  const totalSavings = balances.saved;
 
   const builderStreak = calculateBuilderStreak(transactions);
   const motivationalMessage = getDashboardMessage(origin, totalSavings);
@@ -80,8 +81,8 @@ export default function HomeScreen() {
   const monthlyBreakdown = useMemo(() => {
     const dates = getRangeDates('monthly');
     const filtered = getFilteredTransactionsByRange(transactions, dates.start, dates.end);
-    return getCategoryBreakdown(filtered, homeCurrency, exchangeRates);
-  }, [transactions, homeCurrency, exchangeRates]);
+    return getCategoryBreakdown(filtered);
+  }, [transactions]);
 
   const totalSpending = monthlyBreakdown.reduce((sum, item) => sum + item.amount, 0);
 
@@ -117,7 +118,7 @@ export default function HomeScreen() {
             </Pressable>
           </View>
           <Text style={styles.balanceValue}>
-            {homeCurrency} {isBalanceHidden ? '••••••' : Math.max(periodSummary.net, 0).toFixed(2)}
+            {homeCurrency} {isBalanceHidden ? '••••••' : balances.total.toFixed(2)}
           </Text>
           {trendPercent !== null && (
             <View style={styles.trendRow}>
@@ -158,7 +159,7 @@ export default function HomeScreen() {
               <Ionicons name="wallet" size={16} color={colors.olive} />
             </View>
             <Text style={styles.summaryLabel}>Saved</Text>
-            <Text style={[styles.summaryValue, { color: colors.olive }]}>{periodSummary.savings.toFixed(0)}</Text>
+            <Text style={[styles.summaryValue, { color: colors.olive }]}>{balances.saved.toFixed(0)}</Text>
           </View>
         </View>
 

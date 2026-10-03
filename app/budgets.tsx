@@ -71,7 +71,7 @@ export default function BudgetsScreen() {
           </View>
         ) : (
           budgets.map((budget) => {
-            const { spentAmount, percent, isOverBudget } = getBudgetProgress(budget, transactions, exchangeRates);
+            const { spentAmount, limitETB, percent, isOverBudget } = getBudgetProgress(budget, transactions, exchangeRates);
             const categoryMeta = categoryLookup[budget.category] ?? { icon: '💰', color: colors.orange };
             const fillWidth = Math.min(percent, 100);
             return (
@@ -83,7 +83,9 @@ export default function BudgetsScreen() {
                   <View style={styles.budgetTitleGroup}>
                     <Text style={styles.sectionTitle}>{budget.category}</Text>
                     <Text style={[styles.goalText, isOverBudget && styles.overBudgetText]}>
-                      {budget.currency} {spentAmount.toFixed(2)} / {budget.currency} {budget.monthlyLimit.toFixed(2)}
+                      {limitETB === null
+                        ? `ETB ${spentAmount.toFixed(2)} spent — set a ${budget.currency} exchange rate to track this limit`
+                        : `ETB ${spentAmount.toFixed(2)} / ETB ${limitETB.toFixed(2)}`}
                     </Text>
                   </View>
                   <Text style={[styles.percentBadge, isOverBudget && styles.overBudgetBadge]}>{Math.round(percent)}%</Text>

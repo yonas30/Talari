@@ -6,18 +6,21 @@ import AppButton from '../components/AppButton';
 import DateField from '../components/DateField';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
+import { alertLedgerError } from '../utils/alerts';
 import { getGoalProgress, getProjectedCompletionDate } from '../utils/currency';
-import { CurrencyCode } from '../types';
+import { toLocalDateKey } from '../utils/dates';
+import { Account } from '../types';
 
 export default function GoalsScreen() {
-  const { goals, transactions, exchangeRates, addGoal, updateGoal, deleteGoal, contributeToGoal } = useFinanceStore();
+  const { goals, transactions, addGoal, updateGoal, deleteGoal, contributeToGoal } = useFinanceStore();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [tab, setTab] = useState<'active' | 'completed'>('active');
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
-  const [currency, setCurrency] = useState<CurrencyCode>('ETB');
+  // Where a contribution is paid from. The fuller Available/Saved/Goal flow is Step 7.
+  const [contributeFrom, setContributeFrom] = useState<Account>('available');
   const [deadline, setDeadline] = useState<string | null>(null);
   const [contributionAmount, setContributionAmount] = useState<Record<string, string>>({});
   const [menuGoalId, setMenuGoalId] = useState<string | null>(null);
@@ -28,7 +31,6 @@ export default function GoalsScreen() {
   const resetGoalForm = () => {
     setName('');
     setTargetAmount('');
-    setCurrency('ETB');
     setDeadline(null);
   };
 
@@ -42,7 +44,6 @@ export default function GoalsScreen() {
     setEditingGoalId(goal.id);
     setName(goal.name);
     setTargetAmount(String(goal.targetAmount));
-    setCurrency(goal.currency);
     setDeadline(goal.deadline);
     setIsCreateOpen(false);
   };
@@ -60,7 +61,7 @@ export default function GoalsScreen() {
       return;
     }
 
-    await addGoal({ name: name.trim(), targetAmount: numericTarget, currency, deadline });
+    await addGoal({ name: name.trim(), targetAmount: numericTarget, deadline });
     closeGoalModal();
   };
 
@@ -75,19 +76,23 @@ export default function GoalsScreen() {
       return;
     }
 
-    await updateGoal(editingGoalId, { name: name.trim(), targetAmount: numericTarget, currency, deadline });
+    await updateGoal(editingGoalId, { name: name.trim(), targetAmount: numericTarget, deadline });
     closeGoalModal();
   };
 
-  const onContribute = async (goalId: string, goalCurrency: CurrencyCode) => {
+  const onContribute = async (goalId: string) => {
     const amount = Number(contributionAmount[goalId]);
     if (!Number.isFinite(amount) || amount <= 0) {
       Alert.alert('Enter a valid contribution amount.');
       return;
     }
 
-    await contributeToGoal(goalId, amount, goalCurrency);
-    setContributionAmount((prev) => ({ ...prev, [goalId]: '' }));
+    try {
+      await contributeToGoal(goalId, amount, contributeFrom);
+      setContributionAmount((prev) => ({ ...prev, [goalId]: '' }));
+    } catch (error) {
+      alertLedgerError(error);
+    }
   };
 
   return (
@@ -124,8 +129,8 @@ export default function GoalsScreen() {
               </View>
             ) : (
               activeGoals.map((goal) => {
-                const { savedAmount, percent } = getGoalProgress(goal, transactions, exchangeRates);
-                const projectedDate = getProjectedCompletionDate(goal, transactions, exchangeRates);
+                const { savedAmount, percent } = getGoalProgress(goal, transactions);
+                const projectedDate = getProjectedCompletionDate(goal, transactions);
                 const safePercent = Math.min(Math.max(percent, 0), 100);
                 return (
                   <View key={goal.id} style={styles.card}>
@@ -145,25 +150,35 @@ export default function GoalsScreen() {
                     </View>
 
                     <Text style={styles.goalText}>
-                      {goal.currency} {savedAmount.toFixed(2)} saved · Target: {goal.currency} {goal.targetAmount.toFixed(2)}
+                      ETB {savedAmount.toFixed(2)} saved · Target: ETB {goal.targetAmount.toFixed(2)}
                     </Text>
                     {goal.deadline && <Text style={styles.metaText}>Deadline: {goal.deadline}</Text>}
                     {projectedDate && (
-                      <Text style={styles.metaText}>Projected completion: {projectedDate.toISOString().slice(0, 10)}</Text>
+                      <Text style={styles.metaText}>Projected completion: {toLocalDateKey(projectedDate)}</Text>
                     )}
 
                     <TextInput
                       style={styles.input}
                       value={contributionAmount[goal.id] ?? ''}
                       onChangeText={(value) => setContributionAmount((prev) => ({ ...prev, [goal.id]: value }))}
-                      placeholder={`Add to ${goal.name} (${goal.currency})`}
+                      placeholder={`Add to ${goal.name} (ETB)`}
                       keyboardType="decimal-pad"
                     />
+                    <View style={styles.segmented}>
+                      {(['available', 'saved'] as const).map((option) => (
+                        <AppButton
+                          key={option}
+                          title={`From ${option}`}
+                          selected={contributeFrom === option}
+                          onPress={() => setContributeFrom(option)}
+                        />
+                      ))}
+                    </View>
                     <AppButton
                       title="Contribute"
                       variant="primary"
                       style={styles.mutedAction}
-                      onPress={() => void onContribute(goal.id, goal.currency)}
+                      onPress={() => void onContribute(goal.id)}
                     />
                   </View>
                 );
@@ -181,7 +196,7 @@ export default function GoalsScreen() {
             <View style={styles.completedSection}>
               <Text style={styles.completedHeading}>Completed goals</Text>
               {completedGoals.map((goal) => {
-              const { savedAmount } = getGoalProgress(goal, transactions, exchangeRates);
+              const { savedAmount } = getGoalProgress(goal, transactions);
               return (
                 <View key={goal.id} style={styles.completedRow}>
                   <View style={styles.goalIconCircle}>
@@ -193,7 +208,7 @@ export default function GoalsScreen() {
                   </View>
                   <View style={styles.completedActions}>
                     <Text style={styles.completedAmount}>
-                      {goal.currency} {savedAmount.toFixed(2)}
+                      ETB {savedAmount.toFixed(2)}
                     </Text>
                       <Text style={styles.metaText}>{goal.updatedAt.slice(0, 10)}</Text>
                   </View>
@@ -221,14 +236,9 @@ export default function GoalsScreen() {
               style={styles.input}
               value={targetAmount}
               onChangeText={setTargetAmount}
-              placeholder="Target amount"
+              placeholder="Target amount (ETB)"
               keyboardType="decimal-pad"
             />
-            <View style={styles.segmented}>
-              {(['ETB', 'USD', 'EUR', 'GBP'] as const).map((option) => (
-                <AppButton key={option} title={option} selected={currency === option} onPress={() => setCurrency(option)} />
-              ))}
-            </View>
             <DateField label="Deadline" value={deadline} onChange={setDeadline} />
             <AppButton
               title={editingGoalId ? 'Save changes' : 'Create goal'}
@@ -258,7 +268,9 @@ export default function GoalsScreen() {
               onPress={() => {
                 const id = menuGoalId;
                 setMenuGoalId(null);
-                if (id) void deleteGoal(id);
+                if (id) {
+                  deleteGoal(id).catch(alertLedgerError);
+                }
               }}
             >
               <Ionicons name="trash-outline" size={20} color={colors.red} />

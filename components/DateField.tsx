@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import AppButton from './AppButton';
 import { colors, radius, spacing } from '../constants/theme';
+import { parseDateKey, toLocalDateKey } from '../utils/dates';
 
 interface DateField {
   label: string;
@@ -15,14 +16,15 @@ interface DateField {
 export default function DateField({ label, value, onChange }: DateField) {
   const [showPicker, setShowPicker] = useState(false);
 
-  const dateValue = value ? new Date(`${value}T00:00:00`) : new Date();
+  const dateValue = value ? parseDateKey(value) : new Date();
 
   const onPickerChange = (event: { type: string }, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
       setShowPicker(false);
     }
     if (event.type === 'set' && selectedDate) {
-      onChange(selectedDate.toISOString().slice(0, 10));
+      // Local day, not UTC: toISOString() shifted picked dates back a day in UTC+3.
+      onChange(toLocalDateKey(selectedDate));
     }
   };
 

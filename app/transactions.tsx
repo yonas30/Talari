@@ -5,11 +5,13 @@ import { useRouter } from 'expo-router';
 import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
-import { convertCurrency } from '../utils/currency';
 
 export default function TransactionsScreen() {
   const router = useRouter();
-  const { transactions, exchangeRates, homeCurrency, isReady } = useFinanceStore();
+  const { transactions, goals, isReady } = useFinanceStore();
+
+  const endpointLabel = (endpoint: string | null, goalId: string | null) =>
+    endpoint === 'goal' ? (goals.find((goal) => goal.id === goalId)?.name ?? 'Deleted goal') : endpoint === 'saved' ? 'Saved' : 'Available';
 
   useEffect(() => {
     if (!isReady) {
@@ -32,7 +34,11 @@ export default function TransactionsScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => {
-              const converted = convertCurrency(item.amount, item.currency, homeCurrency, exchangeRates);
+              const isForeign = item.currency !== 'ETB';
+              const title =
+                item.type === 'transfer'
+                  ? `${endpointLabel(item.fromAccount, item.fromGoalId)} → ${endpointLabel(item.toAccount, item.toGoalId)}`
+                  : item.category;
 
               return (
                 <Pressable
@@ -40,13 +46,13 @@ export default function TransactionsScreen() {
                   onPress={() => router.push(`/edit-transaction/${item.id}`)}
                 >
                   <View style={styles.itemContent}>
-                    <Text style={styles.category}>{item.category}</Text>
+                    <Text style={styles.category}>{title}</Text>
                     <Text style={styles.meta}>{new Date(item.date).toLocaleDateString()}</Text>
                   </View>
                   <View style={styles.amountWrap}>
-                    <Text style={styles.amount}>{item.amount.toFixed(2)} {item.currency}</Text>
-                    <Text style={styles.converted}>{homeCurrency} {converted.toFixed(2)}</Text>
-                    <Text style={[styles.type, { color: item.type === 'income' ? colors.statusIncome : item.type === 'savings' ? colors.olive : colors.statusExpense }]}>
+                    <Text style={styles.amount}>ETB {item.amountETB.toFixed(2)}</Text>
+                    {isForeign && <Text style={styles.converted}>(originally {item.amount.toFixed(2)} {item.currency})</Text>}
+                    <Text style={[styles.type, { color: item.type === 'income' ? colors.statusIncome : item.type === 'transfer' ? colors.olive : colors.statusExpense }]}>
                       {item.type}
                     </Text>
                   </View>

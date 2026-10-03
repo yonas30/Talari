@@ -1,4 +1,11 @@
-export type TransactionType = 'income' | 'expense' | 'savings';
+// Ledger entry kinds. Transfer is its own type (never an expense category) - see V2_SPEC Part B.
+export type TransactionType = 'income' | 'expense' | 'transfer';
+// Categories only classify income/expense; 'savings' is kept for existing category rows.
+export type CategoryType = 'income' | 'expense' | 'savings';
+// Where income lands / expenses are paid from. Goals can never be an expense source.
+export type Account = 'available' | 'saved';
+// A transfer endpoint additionally allows a specific goal (see fromGoalId / toGoalId).
+export type TransferEndpoint = Account | 'goal';
 // A user-managed list of ISO-ish currency codes (see Settings → Currencies), not a fixed union.
 export type CurrencyCode = string;
 
@@ -11,23 +18,33 @@ export interface Currency {
 export interface Category {
   id: string;
   name: string;
-  type: TransactionType;
+  type: CategoryType;
   icon: string;
   color: string;
   isDefault: boolean;
 }
 
+// Every row is an immutable ledger entry. Balances are derived from these rows (utils/balances.ts),
+// never stored. `amount`/`currency` are display-only; only `amountETB` ever enters a sum.
 export interface Transaction {
   id: string;
   type: TransactionType;
   amount: number;
   currency: CurrencyCode;
+  amountETB: number;
+  exchangeRate: number;
   category: string;
   source: string;
+  // Income destination / expense pay-from. Null for transfers.
+  account: Account | null;
+  // Transfer endpoints. Null for income/expense.
+  fromAccount: TransferEndpoint | null;
+  fromGoalId: string | null;
+  toAccount: TransferEndpoint | null;
+  toGoalId: string | null;
   date: string;
   timestamp: string;
   note: string | null;
-  goalId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -36,11 +53,17 @@ export interface TransactionInput {
   type: TransactionType;
   amount: number;
   currency: CurrencyCode;
-  category: string;
-  source: string;
+  // Per-transaction override of the stored rate (X -> ETB). Never written back to the rate table.
+  rateOverride?: number | null;
+  category?: string;
+  source?: string;
+  account?: Account | null;
+  fromAccount?: TransferEndpoint | null;
+  fromGoalId?: string | null;
+  toAccount?: TransferEndpoint | null;
+  toGoalId?: string | null;
   date: string;
   note?: string | null;
-  goalId?: string | null;
 }
 
 export interface ExchangeRate {
@@ -56,8 +79,8 @@ export type GoalStatus = 'active' | 'completed' | 'abandoned';
 export interface Goal {
   id: string;
   name: string;
+  // Always ETB (V2 Part D).
   targetAmount: number;
-  currency: CurrencyCode;
   deadline: string | null;
   status: GoalStatus;
   createdAt: string;
@@ -67,7 +90,6 @@ export interface Goal {
 export interface GoalInput {
   name: string;
   targetAmount: number;
-  currency: CurrencyCode;
   deadline?: string | null;
 }
 
@@ -87,10 +109,12 @@ export interface BudgetInput {
 }
 
 export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
+export type RecurringType = 'income' | 'expense';
 
 export interface RecurringTransaction {
   id: string;
-  type: TransactionType;
+  type: RecurringType;
+  account: Account;
   amount: number;
   currency: CurrencyCode;
   category: string;
@@ -105,7 +129,8 @@ export interface RecurringTransaction {
 }
 
 export interface RecurringTransactionInput {
-  type: TransactionType;
+  type: RecurringType;
+  account: Account;
   amount: number;
   currency: CurrencyCode;
   category: string;
@@ -113,6 +138,14 @@ export interface RecurringTransactionInput {
   note?: string | null;
   frequency: RecurringFrequency;
   startDate: string;
+}
+
+// An occurrence the recurring generator could not post (e.g. it would overdraw Available).
+export interface RecurringFailure {
+  ruleId: string;
+  category: string;
+  date: string;
+  reason: string;
 }
 
 export type MilestoneType = 'goal_completed' | 'streak' | 'income_growth' | 'manual';
@@ -140,6 +173,7 @@ export interface UserOriginInput {
   whyBuilding: string;
 }
 
+// All snapshot amounts are ETB. `savings` is the month's net change in Saved + Goals.
 export interface MonthlySnapshot {
   id: string;
   month: string;
@@ -178,7 +212,7 @@ export interface FinanceStoreState {
   updateGoal: (id: string, input: GoalInput) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
   setGoalStatus: (id: string, status: GoalStatus) => Promise<void>;
-  contributeToGoal: (goalId: string, amount: number, currency: CurrencyCode) => Promise<Transaction>;
+  contributeToGoal: (goalId: string, amount: number, from: Account) => Promise<Transaction>;
   upsertBudget: (input: BudgetInput) => Promise<Budget>;
   deleteBudget: (id: string) => Promise<void>;
   addRecurringTransaction: (input: RecurringTransactionInput) => Promise<RecurringTransaction>;
@@ -187,5 +221,3 @@ export interface FinanceStoreState {
   saveOrigin: (input: UserOriginInput) => Promise<UserOrigin>;
   addMilestone: (input: Omit<Milestone, 'id' | 'createdAt'>) => Promise<Milestone>;
 }
-
-

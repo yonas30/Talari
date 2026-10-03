@@ -1,5 +1,5 @@
-import { CurrencyCode, ExchangeRate, Transaction } from '../types';
-import { convertCurrency } from './currency';
+import { Transaction } from '../types';
+import { toLocalDateKey } from './dates';
 
 export type RangePreset = 'weekly' | 'monthly' | 'custom';
 
@@ -15,8 +15,9 @@ export interface TrendPoint {
   expense: number;
 }
 
+// Local calendar day, not UTC (see utils/dates.ts).
 export function toISODate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return toLocalDateKey(date);
 }
 
 export function startOfWeek(date: Date): Date {
@@ -82,11 +83,7 @@ export function getFilteredTransactionsByRange(
   });
 }
 
-export function getCategoryBreakdown(
-  transactions: Transaction[],
-  homeCurrency: CurrencyCode,
-  rates: ExchangeRate[],
-): BarDatum[] {
+export function getCategoryBreakdown(transactions: Transaction[]): BarDatum[] {
   const totals = new Map<string, number>();
 
   for (const transaction of transactions) {
@@ -94,7 +91,7 @@ export function getCategoryBreakdown(
       continue;
     }
 
-    const amount = convertCurrency(transaction.amount, transaction.currency, homeCurrency, rates);
+    const amount = transaction.amountETB;
     totals.set(transaction.category, (totals.get(transaction.category) ?? 0) + amount);
   }
 
@@ -109,11 +106,7 @@ export function getCategoryBreakdown(
     .sort((a, b) => b.amount - a.amount);
 }
 
-export function getSourceBreakdown(
-  transactions: Transaction[],
-  homeCurrency: CurrencyCode,
-  rates: ExchangeRate[],
-): BarDatum[] {
+export function getSourceBreakdown(transactions: Transaction[]): BarDatum[] {
   const totals = new Map<string, number>();
 
   for (const transaction of transactions) {
@@ -121,7 +114,7 @@ export function getSourceBreakdown(
       continue;
     }
 
-    const amount = convertCurrency(transaction.amount, transaction.currency, homeCurrency, rates);
+    const amount = transaction.amountETB;
     totals.set(transaction.source || 'Unspecified', (totals.get(transaction.source || 'Unspecified') ?? 0) + amount);
   }
 
@@ -136,13 +129,7 @@ export function getSourceBreakdown(
     .sort((a, b) => b.amount - a.amount);
 }
 
-export function getTrendSeries(
-  transactions: Transaction[],
-  homeCurrency: CurrencyCode,
-  rates: ExchangeRate[],
-  startDate: string,
-  endDate: string,
-): TrendPoint[] {
+export function getTrendSeries(transactions: Transaction[], startDate: string, endDate: string): TrendPoint[] {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
   const allDays: TrendPoint[] = [];
@@ -153,11 +140,11 @@ export function getTrendSeries(
 
     const income = dayTransactions
       .filter((transaction) => transaction.type === 'income')
-      .reduce((sum, transaction) => sum + convertCurrency(transaction.amount, transaction.currency, homeCurrency, rates), 0);
+      .reduce((sum, transaction) => sum + transaction.amountETB, 0);
 
     const expense = dayTransactions
       .filter((transaction) => transaction.type === 'expense')
-      .reduce((sum, transaction) => sum + convertCurrency(transaction.amount, transaction.currency, homeCurrency, rates), 0);
+      .reduce((sum, transaction) => sum + transaction.amountETB, 0);
 
     allDays.push({
       label: key.slice(5),
@@ -169,12 +156,8 @@ export function getTrendSeries(
   return allDays;
 }
 
-export function getBiggestSpendingCategory(
-  transactions: Transaction[],
-  homeCurrency: CurrencyCode,
-  rates: ExchangeRate[],
-) {
-  const categories = getCategoryBreakdown(transactions, homeCurrency, rates);
+export function getBiggestSpendingCategory(transactions: Transaction[]) {
+  const categories = getCategoryBreakdown(transactions);
   if (categories.length === 0) {
     return null;
   }

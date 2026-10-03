@@ -10,7 +10,12 @@ import DateField from '../../components/DateField';
 import { defaultCategories } from '../../constants/categories';
 import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
-import { CurrencyCode, TransactionType } from '../../types';
+import { CurrencyCode } from '../../types';
+import { alertLedgerError } from '../../utils/alerts';
+import { todayKey } from '../../utils/dates';
+
+// Editing a Transfer (From/To) arrives with the Step 3 form work; for now a transfer can be deleted.
+type EntryType = 'income' | 'expense';
 
 interface CategoryPickerProps {
   value: string;
@@ -63,17 +68,17 @@ export default function EditTransactionScreen() {
 
   const original = transactions.find((item) => item.id === id);
 
-  const [type, setType] = useState<TransactionType>(original?.type ?? 'expense');
+  const [type, setType] = useState<EntryType>(original?.type === 'income' ? 'income' : 'expense');
   const [amount, setAmount] = useState(String(original?.amount ?? '0'));
   const [currency, setCurrency] = useState<CurrencyCode>(original?.currency ?? 'ETB');
   const [category, setCategory] = useState(original?.category ?? '');
   const [source, setSource] = useState(original?.source ?? '');
   const [note, setNote] = useState(original?.note ?? '');
-  const [date, setDate] = useState(original?.date ?? new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(original?.date ?? todayKey());
 
   const categoryOptions = useMemo(() => {
     const items = categories.length > 0 ? categories : defaultCategories;
-    return items.filter((item) => item.type === type || item.type === 'savings');
+    return items.filter((item) => item.type === type);
   }, [categories, type]);
 
   if (!original) {
@@ -84,6 +89,8 @@ export default function EditTransactionScreen() {
     );
   }
 
+  const isTransfer = original.type === 'transfer';
+
   const onSave = async () => {
     const numericAmount = Number(amount);
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
@@ -91,16 +98,21 @@ export default function EditTransactionScreen() {
       return;
     }
 
-    await updateTransaction(original.id, {
-      type,
-      amount: numericAmount,
-      currency,
-      category: category || original.category,
-      source: source.trim() || 'Manual entry',
-      date,
-      note: note.trim() || null,
-      goalId: original.goalId,
-    });
+    try {
+      await updateTransaction(original.id, {
+        type,
+        amount: numericAmount,
+        currency,
+        category: category || original.category,
+        source: source.trim() || 'Manual entry',
+        account: original.account ?? 'available',
+        date,
+        note: note.trim() || null,
+      });
+    } catch (error) {
+      alertLedgerError(error);
+      return;
+    }
 
     router.back();
   };
@@ -112,7 +124,12 @@ export default function EditTransactionScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await deleteTransaction(original.id);
+          try {
+            await deleteTransaction(original.id);
+          } catch (error) {
+            alertLedgerError(error);
+            return;
+          }
           router.back();
         },
       },
@@ -126,14 +143,14 @@ export default function EditTransactionScreen() {
         <View style={styles.card}>
           <Text style={styles.label}>Transaction type</Text>
           <View style={styles.typeSegmented}>
-            {(['income', 'expense', 'savings'] as const).map((option) => (
+            {(['income', 'expense'] as const).map((option) => (
               <Pressable
                 key={option}
                 style={[styles.typeSegment, type === option && styles.typeSegmentSelected]}
                 onPress={() => setType(option)}
               >
                 <Text style={[styles.typeSegmentText, type === option && styles.typeSegmentTextSelected]}>
-                  {option === 'savings' ? 'Saving' : option[0].toUpperCase() + option.slice(1)}
+                  {option[0].toUpperCase() + option.slice(1)}
                 </Text>
               </Pressable>
             ))}
@@ -163,7 +180,11 @@ export default function EditTransactionScreen() {
         </View>
 
         <View style={styles.actions}>
-          <AppButton title="Save changes" variant="primary" style={styles.mutedAction} onPress={() => void onSave()} />
+          {isTransfer ? (
+            <Text style={styles.label}>Transfers can't be edited yet — delete it and add a new one.</Text>
+          ) : (
+            <AppButton title="Save changes" variant="primary" style={styles.mutedAction} onPress={() => void onSave()} />
+          )}
           <AppButton title="Delete transaction" variant="danger" style={styles.mutedAction} onPress={onDelete} />
         </View>
       </ScrollView>

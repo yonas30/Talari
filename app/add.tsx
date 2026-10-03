@@ -10,38 +10,43 @@ import DateField from '../components/DateField';
 import { defaultCategories } from '../constants/categories';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
-import { CurrencyCode, TransactionType } from '../types';
+import { CurrencyCode } from '../types';
+import { alertLedgerError } from '../utils/alerts';
+import { todayKey } from '../utils/dates';
 
-const TYPE_LABELS: Record<TransactionType, string> = {
+// Step 2 keeps this form to Income/Expense (paid from / into Available). The Saved choice and the
+// Transfer type with From/To arrive with the Step 3 transaction-form work.
+type EntryType = 'income' | 'expense';
+
+const TYPE_LABELS: Record<EntryType, string> = {
   expense: 'Expense',
   income: 'Income',
-  savings: 'Saving',
 };
 
 export default function AddTransactionScreen() {
   const router = useRouter();
   const addTransaction = useFinanceStore((state) => state.addTransaction);
-  const upsertExchangeRate = useFinanceStore((state) => state.upsertExchangeRate);
   const exchangeRates = useFinanceStore((state) => state.exchangeRates);
   const categories = useFinanceStore((state) => state.categories);
   const homeCurrency = useFinanceStore((state) => state.homeCurrency);
 
-  const [type, setType] = useState<TransactionType>('expense');
+  const [type, setType] = useState<EntryType>('expense');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState(defaultCategories[0]?.id ?? 'food');
   const [currency, setCurrency] = useState<CurrencyCode>(homeCurrency);
   const [source, setSource] = useState('');
   const [note, setNote] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayKey());
   const [showRateSection, setShowRateSection] = useState(false);
-  const [rateSaved, setRateSaved] = useState(false);
 
   const currentRate = exchangeRates.find((rate) => rate.fromCurrency === currency && rate.toCurrency === homeCurrency)?.rate;
-  const [rateInput, setRateInput] = useState(String(currentRate ?? ''));
+  // Empty = use the stored default. A value here is a ONE-OFF override for this transaction only;
+  // the stored rate is changed solely on the Exchange Rates settings page (V2 Part D).
+  const [rateInput, setRateInput] = useState('');
 
   const categoryOptions = useMemo(() => {
     const items = categories.length > 0 ? categories : defaultCategories;
-    return items.filter((item) => item.type === type || item.type === 'savings');
+    return items.filter((item) => item.type === type);
   }, [categories, type]);
 
   const onSubmit = async () => {
@@ -50,34 +55,31 @@ export default function AddTransactionScreen() {
       return;
     }
 
-    await addTransaction({
-      type,
-      amount: numericAmount,
-      currency,
-      category: categoryOptions.find((item) => item.id === category)?.name ?? category,
-      source: source.trim() || 'Manual entry',
-      date,
-      note: note.trim() || null,
-    });
+    const override = rateInput.trim() === '' ? null : Number(rateInput);
+
+    try {
+      await addTransaction({
+        type,
+        amount: numericAmount,
+        currency,
+        rateOverride: currency === homeCurrency ? null : override,
+        category: categoryOptions.find((item) => item.id === category)?.name ?? category,
+        source: source.trim() || 'Manual entry',
+        account: 'available',
+        date,
+        note: note.trim() || null,
+      });
+    } catch (error) {
+      // Blocked entries (negative balance, no exchange rate, ...) leave the form untouched.
+      alertLedgerError(error);
+      return;
+    }
 
     setAmount('');
     setSource('');
     setNote('');
+    setRateInput('');
     router.push('/transactions');
-  };
-
-  const onSaveRate = async () => {
-    if (currency === homeCurrency) {
-      return;
-    }
-    const rate = Number(rateInput);
-    if (Number.isFinite(rate) && rate > 0) {
-      await upsertExchangeRate(currency, homeCurrency, rate);
-      setRateSaved(true);
-      return;
-    }
-
-    setRateSaved(false);
   };
 
   return (
@@ -85,7 +87,7 @@ export default function AddTransactionScreen() {
       <Text style={styles.title}>Add Transaction</Text>
 
       <View style={styles.typeSegmented}>
-        {(['expense', 'income', 'savings'] as const).map((option) => (
+        {(['expense', 'income'] as const).map((option) => (
           <Pressable
             key={option}
             style={[styles.typeSegment, type === option && styles.typeSegmentSelected]}
@@ -145,15 +147,15 @@ export default function AddTransactionScreen() {
           {showRateSection && (
             <View style={styles.rateSection}>
               <Text style={styles.helperText}>
-                1 {currency} = ? {homeCurrency}
+                1 {currency} = ? {homeCurrency} — leave empty to use the saved rate{currentRate ? ` (${currentRate})` : ''}. A rate entered here applies to this transaction only.
               </Text>
-              <TextInput style={styles.input} value={rateInput} onChangeText={setRateInput} keyboardType="decimal-pad" />
-              <AppButton
-                title={rateSaved ? 'Rate saved' : 'Save rate'}
-                disabled={rateSaved}
-                onPress={() => void onSaveRate()}
+              <TextInput
+                style={styles.input}
+                value={rateInput}
+                onChangeText={setRateInput}
+                placeholder={currentRate ? String(currentRate) : 'No saved rate - enter one'}
+                keyboardType="decimal-pad"
               />
-              {rateSaved && <Text style={styles.successText}>Exchange rate updated for this transaction.</Text>}
             </View>
           )}
         </View>

@@ -35,10 +35,22 @@ import {
   upsertOrigin,
   setGoalStatus,
 } from '../db/database';
-import { Category, CurrencyCode, ExchangeRate, FinanceStoreState, Transaction, TransactionInput } from '../types';
+import { Account, Category, CurrencyCode, FinanceStoreState, Goal, Transaction, TransactionInput } from '../types';
+import { getBalances, LedgerError } from '../utils/balances';
 import { getCurrentPeriodSummary, getGoalProgress } from '../utils/currency';
+import { todayKey } from '../utils/dates';
+import { planAdd, planDelete, planEdit } from '../utils/transactions';
+import { useUiStore } from './ui';
 
-export const useFinanceStore = create<FinanceStoreState>((set) => ({
+function goalNameMap(goals: Goal[]): Record<string, string> {
+  return Object.fromEntries(goals.map((goal) => [goal.id, goal.name]));
+}
+
+function byNewestFirst(a: Transaction, b: Transaction): number {
+  return a.date === b.date ? b.timestamp.localeCompare(a.timestamp) : b.date.localeCompare(a.date);
+}
+
+export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
   transactions: [],
   categories: [],
   exchangeRates: [],
@@ -53,7 +65,19 @@ export const useFinanceStore = create<FinanceStoreState>((set) => ({
   isReady: false,
   loadData: async () => {
     await initializeDatabase();
-    await generateDueRecurringTransactions();
+    const { failures } = await generateDueRecurringTransactions();
+    if (failures.length > 0) {
+      useUiStore.getState().upsertNotifications(
+        failures.map((failure) => ({
+          id: `recurring-skipped-${failure.ruleId}-${failure.date}`,
+          title: 'Recurring transaction skipped',
+          description: `${failure.category} on ${failure.date} was not recorded. ${failure.reason}`,
+          isRead: false,
+          type: 'system' as const,
+        })),
+      );
+    }
+
     const [categories, transactions, exchangeRates, goals, budgets, recurringTransactions] = await Promise.all([
       getCategories(),
       getTransactions(),
@@ -66,7 +90,7 @@ export const useFinanceStore = create<FinanceStoreState>((set) => ({
     const previousMonthDate = new Date();
     previousMonthDate.setDate(1);
     previousMonthDate.setMonth(previousMonthDate.getMonth() - 1);
-    const previousMonthSummary = getCurrentPeriodSummary(transactions, 'ETB', exchangeRates, previousMonthDate);
+    const previousMonthSummary = getCurrentPeriodSummary(transactions, previousMonthDate);
     const monthKey = `${previousMonthDate.getFullYear()}-${String(previousMonthDate.getMonth() + 1).padStart(2, '0')}`;
     await addMonthlySnapshotIfMissing(
       monthKey,
@@ -98,23 +122,33 @@ export const useFinanceStore = create<FinanceStoreState>((set) => ({
       isReady: true,
     });
   },
+  // Every write path validates the WHOLE resulting ledger first (date-ordered running balances), so
+  // a create, edit, delete or back-dated entry that would push Available/Saved/a goal below zero is
+  // rejected with a LedgerError and nothing is written.
   addTransaction: async (input: TransactionInput) => {
-    const transaction = await insertTransaction(input);
+    const { exchangeRates, goals, transactions } = get();
+    const transaction = planAdd(transactions, input, exchangeRates, goalNameMap(goals));
+
+    await insertTransaction(transaction);
     set((state) => ({
-      transactions: [transaction, ...state.transactions],
+      transactions: [transaction, ...state.transactions].sort(byNewestFirst),
     }));
     return transaction;
   },
   updateTransaction: async (id: string, input: TransactionInput) => {
-    const transaction = await updateTransaction(id, input);
+    const { exchangeRates, goals, transactions } = get();
+    const transaction = planEdit(transactions, id, input, exchangeRates, goalNameMap(goals));
+
+    await updateTransaction(transaction);
     set((state) => ({
-      transactions: state.transactions
-        .map((item) => (item.id === id ? transaction : item))
-        .sort((a, b) => (a.date === b.date ? b.timestamp.localeCompare(a.timestamp) : b.date.localeCompare(a.date))),
+      transactions: state.transactions.map((item) => (item.id === id ? transaction : item)).sort(byNewestFirst),
     }));
     return transaction;
   },
   deleteTransaction: async (id: string) => {
+    const { goals, transactions } = get();
+    planDelete(transactions, id, goalNameMap(goals));
+
     await deleteTransaction(id);
     set((state) => ({
       transactions: state.transactions.filter((item) => item.id !== id),
@@ -174,12 +208,22 @@ export const useFinanceStore = create<FinanceStoreState>((set) => ({
     set((state) => ({
       goals: state.goals.map((goal) =>
         goal.id === id
-          ? { ...goal, name: input.name, targetAmount: input.targetAmount, currency: input.currency, deadline: input.deadline ?? null }
+          ? { ...goal, name: input.name, targetAmount: input.targetAmount, deadline: input.deadline ?? null }
           : goal,
       ),
     }));
   },
   deleteGoal: async (id: string) => {
+    // Deleting a goal that still holds money would make that money vanish from Total Balance.
+    // Goal money must be moved out by a transfer first (same philosophy as Goal -> Expense).
+    const held = getBalances(get().transactions).goals[id] ?? 0;
+    if (held > 0) {
+      throw new LedgerError(
+        'GOAL_HAS_FUNDS',
+        `This goal still holds ETB ${held.toFixed(2)}. Transfer it to Available or Saved before deleting the goal.`,
+      );
+    }
+
     await deleteGoal(id);
     set((state) => ({
       goals: state.goals.filter((goal) => goal.id !== id),
@@ -191,33 +235,31 @@ export const useFinanceStore = create<FinanceStoreState>((set) => ({
       goals: state.goals.map((goal) => (goal.id === id ? { ...goal, status } : goal)),
     }));
   },
-  contributeToGoal: async (goalId: string, amount: number, currency: CurrencyCode) => {
-    const goal = useFinanceStore.getState().goals.find((item) => item.id === goalId);
-    const transaction = await insertTransaction({
-      type: 'savings',
+  // A goal contribution is a Transfer (Available|Saved -> Goal), never income. Amount is ETB.
+  contributeToGoal: async (goalId: string, amount: number, from: Account) => {
+    const goal = get().goals.find((item) => item.id === goalId);
+    const transaction = await get().addTransaction({
+      type: 'transfer',
       amount,
-      currency,
-      category: goal?.name ?? 'Goal contribution',
-      source: 'Goal contribution',
-      date: new Date().toISOString().slice(0, 10),
-      goalId,
+      currency: 'ETB',
+      fromAccount: from,
+      toAccount: 'goal',
+      toGoalId: goalId,
+      date: todayKey(),
     });
-    set((state) => ({
-      transactions: [transaction, ...state.transactions],
-    }));
 
     // Auto-record a milestone the first time a goal's target is reached.
     if (goal) {
-      const state = useFinanceStore.getState();
-      const { percent } = getGoalProgress(goal, state.transactions, state.exchangeRates);
+      const state = get();
+      const { percent } = getGoalProgress(goal, state.transactions);
       const alreadyRecorded = state.milestones.some(
         (item) => item.type === 'goal_completed' && item.title === goal.name,
       );
       if (percent >= 100 && !alreadyRecorded) {
         const milestone = await addMilestone({
           title: goal.name,
-          description: `Reached your ${goal.name} goal of ${goal.currency} ${goal.targetAmount.toFixed(2)}.`,
-          date: new Date().toISOString().slice(0, 10),
+          description: `Reached your ${goal.name} goal of ETB ${goal.targetAmount.toFixed(2)}.`,
+          date: todayKey(),
           type: 'goal_completed',
         });
         set((prev) => ({ milestones: [milestone, ...prev.milestones] }));
