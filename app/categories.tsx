@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
@@ -40,6 +41,7 @@ function suggestIcon(categoryName: string): string {
 }
 
 export default function CategoriesScreen() {
+  const insets = useSafeAreaInsets();
   const { categories, addCategory, updateCategory, deleteCategory } = useFinanceStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -159,7 +161,10 @@ export default function CategoriesScreen() {
 
       <Modal visible={isModalOpen} transparent animationType="slide" onRequestClose={closeModal}>
         <Pressable style={styles.modalBackdrop} onPress={closeModal}>
-          <Pressable style={styles.modalSheet} onPress={(event) => event.stopPropagation()}>
+          <Pressable
+            style={[styles.modalSheet, { paddingBottom: spacing.xl + insets.bottom }]}
+            onPress={(event) => event.stopPropagation()}
+          >
             <Text style={styles.sectionTitle}>{editingId ? 'Edit category' : 'New category'}</Text>
             <TextInput
               style={styles.input}

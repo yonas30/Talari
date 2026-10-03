@@ -1,19 +1,21 @@
 import { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import AppButton from '../components/AppButton';
-import DateField from '../components/DateField';
-import { colors, radius, spacing, typography } from '../constants/theme';
-import { useFinanceStore } from '../store/finance';
-import { alertLedgerError } from '../utils/alerts';
-import { getGoalProgress, getProjectedCompletionDate } from '../utils/currency';
-import { toLocalDateKey } from '../utils/dates';
-import { Account } from '../types';
+import AppButton from '../../components/AppButton';
+import DateField from '../../components/DateField';
+import { colors, radius, spacing, typography } from '../../constants/theme';
+import { useFinanceStore } from '../../store/finance';
+import { alertLedgerError } from '../../utils/alerts';
+import { getGoalProgress, getProjectedCompletionDate } from '../../utils/currency';
+import { toLocalDateKey } from '../../utils/dates';
+import { Account } from '../../types';
 
 export default function GoalsScreen() {
   const { goals, transactions, addGoal, updateGoal, deleteGoal, contributeToGoal } = useFinanceStore();
 
+  const insets = useSafeAreaInsets();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [tab, setTab] = useState<'active' | 'completed'>('active');
@@ -97,7 +99,7 @@ export default function GoalsScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.title}>Savings Goals</Text>
         <Pressable style={styles.addButton} onPress={openCreateGoal}>
           <Ionicons name="add" size={22} color="#FFFFFF" />
@@ -229,7 +231,10 @@ export default function GoalsScreen() {
         onRequestClose={closeGoalModal}
       >
         <Pressable style={styles.modalBackdrop} onPress={closeGoalModal}>
-          <Pressable style={styles.modalSheet} onPress={(event) => event.stopPropagation()}>
+          <Pressable
+            style={[styles.modalSheet, { paddingBottom: spacing.xl + insets.bottom }]}
+            onPress={(event) => event.stopPropagation()}
+          >
             <Text style={styles.sectionTitle}>{editingGoalId ? 'Edit goal' : 'Create a new goal'}</Text>
             <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Goal name" />
             <TextInput
@@ -251,7 +256,7 @@ export default function GoalsScreen() {
 
       <Modal visible={menuGoalId !== null} transparent animationType="fade" onRequestClose={() => setMenuGoalId(null)}>
         <Pressable style={styles.menuBackdrop} onPress={() => setMenuGoalId(null)}>
-          <View style={styles.menuSheet}>
+          <View style={[styles.menuSheet, { paddingBottom: spacing.xl + insets.bottom }]}>
             <Pressable
               style={styles.menuOption}
               onPress={() => {
@@ -293,7 +298,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
-    paddingTop: 56,
     paddingBottom: spacing.md,
   },
   title: {

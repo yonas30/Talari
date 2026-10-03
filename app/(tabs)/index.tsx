@@ -3,16 +3,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import AppHeader from '../components/AppHeader';
-import DonutChart from '../components/DonutChart';
-import { APP_USER_NAME, colors, radius, spacing, typography } from '../constants/theme';
-import { useFinanceStore } from '../store/finance';
-import { useUiStore } from '../store/ui';
-import { getBalances } from '../utils/balances';
-import { calculateBuilderStreak, getBudgetProgress, getCurrentPeriodSummary } from '../utils/currency';
-import { formatDateKey, formatETB, formatNumber, HIDDEN_AMOUNT, transactionTitle } from '../utils/format';
-import { getDashboardMessage } from '../utils/motivation';
-import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../utils/reports';
+import AppHeader from '../../components/AppHeader';
+import DonutChart from '../../components/DonutChart';
+import { APP_USER_NAME, colors, radius, spacing, typography } from '../../constants/theme';
+import { useFinanceStore } from '../../store/finance';
+import { useUiStore } from '../../store/ui';
+import { getBalances } from '../../utils/balances';
+import { calculateBuilderStreak, getBudgetProgress, getCurrentPeriodSummary } from '../../utils/currency';
+import { formatDateKey, formatETB, formatNumber, HIDDEN_AMOUNT, transactionTitle } from '../../utils/format';
+import { getDashboardMessage } from '../../utils/motivation';
+import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../../utils/reports';
 
 // Money amounts in transaction cards stop scaling past this multiplier so extreme accessibility
 // font sizes can't push them out of the card; other text keeps scaling normally.
@@ -201,7 +201,7 @@ export default function HomeScreen() {
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Spending this month</Text>
-            <Pressable onPress={() => router.push('/reports')}>
+            <Pressable onPress={() => router.navigate('/reports')}>
               <Text style={styles.seeAll}>See details →</Text>
             </Pressable>
           </View>
@@ -219,7 +219,7 @@ export default function HomeScreen() {
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Recent transactions</Text>
-            <Pressable onPress={() => router.push('/transactions')}>
+            <Pressable onPress={() => router.navigate('/transactions')}>
               <Text style={styles.seeAll}>See all →</Text>
             </Pressable>
           </View>

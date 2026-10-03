@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '../constants/theme';
 
@@ -17,6 +18,7 @@ interface CategoryPickerProps {
 }
 
 export default function CategoryPicker({ value, options, onChange }: CategoryPickerProps) {
+  const insets = useSafeAreaInsets();
   const [isOpen, setIsOpen] = useState(false);
   const selected = options.find((item) => item.id === value || item.name === value);
 
@@ -31,7 +33,7 @@ export default function CategoryPicker({ value, options, onChange }: CategoryPic
 
       <Modal visible={isOpen} transparent animationType="fade" onRequestClose={() => setIsOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setIsOpen(false)}>
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { paddingBottom: spacing.md + insets.bottom }]}>
             {options.map((item) => (
               <Pressable
                 key={item.id}

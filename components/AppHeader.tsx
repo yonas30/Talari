@@ -1,4 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter, useSegments } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, typography } from '../constants/theme';
@@ -12,12 +14,34 @@ interface AppHeaderProps {
 
 export default function AppHeader({ title, notificationCount = 0, onNotificationPress }: AppHeaderProps) {
   const openDrawer = useUiStore((state) => state.openDrawer);
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const segments = useSegments();
+  // Main sections (the tabs) get the menu; every screen pushed above them gets a visible back arrow.
+  // iOS has no hardware Back, and this also gives Android a tappable option; hardware/gesture Back
+  // still works as before.
+  const isStackScreen = segments[0] !== '(tabs)';
+
+  const goBack = () => {
+    // After a cold start straight into a deep link there may be nothing to go back to.
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <Pressable onPress={openDrawer} hitSlop={12} style={styles.menuButton}>
-        <Ionicons name="menu" size={26} color={colors.navy} />
-      </Pressable>
+    <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      {isStackScreen ? (
+        <Pressable onPress={goBack} hitSlop={12} style={styles.menuButton} accessibilityRole="button" accessibilityLabel="Go back">
+          <Ionicons name="chevron-back" size={26} color={colors.navy} />
+        </Pressable>
+      ) : (
+        <Pressable onPress={openDrawer} hitSlop={12} style={styles.menuButton} accessibilityRole="button" accessibilityLabel="Open menu">
+          <Ionicons name="menu" size={26} color={colors.navy} />
+        </Pressable>
+      )}
       <Text style={styles.title}>{title}</Text>
       <View style={styles.rightArea}>
         {onNotificationPress ? (
@@ -38,7 +62,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 56,
     paddingBottom: 12,
     backgroundColor: colors.background,
     gap: 12,

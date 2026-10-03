@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
@@ -12,6 +13,7 @@ interface CurrencyPickerProps {
 }
 
 export default function CurrencyPicker({ value, onChange }: CurrencyPickerProps) {
+  const insets = useSafeAreaInsets();
   const [isOpen, setIsOpen] = useState(false);
   const currencies = useFinanceStore((state) => state.currencies);
   const options = currencies.length > 0 ? currencies.map((item) => item.code) : ['ETB', 'USD', 'EUR', 'GBP'];
@@ -25,7 +27,7 @@ export default function CurrencyPicker({ value, onChange }: CurrencyPickerProps)
 
       <Modal visible={isOpen} transparent animationType="fade" onRequestClose={() => setIsOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setIsOpen(false)}>
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { paddingBottom: spacing.md + insets.bottom }]}>
             {options.map((currency) => (
               <Pressable
                 key={currency}

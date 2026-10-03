@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
@@ -44,6 +45,7 @@ function getNextOccurrenceDate(startDate: string, frequency: RecurringFrequency)
 }
 
 export default function RecurringScreen() {
+  const insets = useSafeAreaInsets();
   const { recurringTransactions, categories, addRecurringTransaction, toggleRecurringTransaction, deleteRecurringTransaction } =
     useFinanceStore();
 
@@ -169,7 +171,10 @@ export default function RecurringScreen() {
 
       <Modal visible={isFormOpen} transparent animationType="slide" onRequestClose={() => setIsFormOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setIsFormOpen(false)}>
-          <Pressable style={styles.modalSheet} onPress={(event) => event.stopPropagation()}>
+          <Pressable
+            style={[styles.modalSheet, { paddingBottom: spacing.xl + insets.bottom }]}
+            onPress={(event) => event.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.sectionTitle}>New recurring transaction</Text>
               <Pressable onPress={() => setIsFormOpen(false)}>

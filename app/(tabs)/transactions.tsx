@@ -2,10 +2,10 @@ import { useEffect } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
-import { useFinanceStore } from '../store/finance';
-import { formatDateKey, formatETB, formatNumber, transactionTitle } from '../utils/format';
+import AppHeader from '../../components/AppHeader';
+import { colors, radius, spacing, typography } from '../../constants/theme';
+import { useFinanceStore } from '../../store/finance';
+import { formatDateKey, formatETB, formatNumber, transactionTitle } from '../../utils/format';
 
 export default function TransactionsScreen() {
   const router = useRouter();

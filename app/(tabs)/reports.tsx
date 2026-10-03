@@ -2,15 +2,15 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import AppHeader from '../components/AppHeader';
-import DateField from '../components/DateField';
-import DonutChart from '../components/DonutChart';
-import HorizontalBarChart from '../components/HorizontalBarChart';
-import TrendLineChart from '../components/TrendLineChart';
-import { colors, radius, spacing, typography } from '../constants/theme';
-import { useFinanceStore } from '../store/finance';
-import { addDays, toLocalDateKey } from '../utils/dates';
-import { formatETB, formatNumber } from '../utils/format';
+import AppHeader from '../../components/AppHeader';
+import DateField from '../../components/DateField';
+import DonutChart from '../../components/DonutChart';
+import HorizontalBarChart from '../../components/HorizontalBarChart';
+import TrendLineChart from '../../components/TrendLineChart';
+import { colors, radius, spacing, typography } from '../../constants/theme';
+import { useFinanceStore } from '../../store/finance';
+import { addDays, toLocalDateKey } from '../../utils/dates';
+import { formatETB, formatNumber } from '../../utils/format';
 import {
   RangePreset,
   TREND_TITLES,
@@ -26,7 +26,7 @@ import {
   shiftMonth,
   shiftWeek,
   startOfWeek,
-} from '../utils/reports';
+} from '../../utils/reports';
 
 interface PeriodNavProps {
   label: string;

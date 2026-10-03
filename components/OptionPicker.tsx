@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '../constants/theme';
 
@@ -20,6 +21,7 @@ interface OptionPickerProps {
 
 // Generic dropdown in the same style as CategoryPicker / CurrencyPicker.
 export default function OptionPicker({ value, options, onChange, placeholder = 'Choose' }: OptionPickerProps) {
+  const insets = useSafeAreaInsets();
   const [isOpen, setIsOpen] = useState(false);
   const selected = options.find((item) => item.value === value);
 
@@ -41,7 +43,7 @@ export default function OptionPicker({ value, options, onChange, placeholder = '
 
       <Modal visible={isOpen} transparent animationType="fade" onRequestClose={() => setIsOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setIsOpen(false)}>
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { paddingBottom: spacing.md + insets.bottom }]}>
             <ScrollView>
               {options.map((item) => (
                 <Pressable

@@ -22,6 +22,7 @@ import {
   shiftMonth,
   shiftWeek,
 } from '../utils/reports';
+import { statusBarStyleForBackground } from '../utils/statusBar';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 
 const RATES: ExchangeRate[] = [
@@ -351,6 +352,15 @@ console.log('\nStep 5: Insights periods, navigation, custom range, trend');
   check('monthly-bucketed trend reconciles with totals', sumTrend(yearTrend).i === getPeriodTotals(L).income * 100 && sumTrend(yearTrend).e === getPeriodTotals(L).expenses * 100);
   check('one-day custom range gives exactly one point', getTrendSeries(getFilteredTransactionsByRange(L, '2026-03-15', '2026-03-15'), '2026-03-15', '2026-03-15').length === 1);
   check('trend ignores transfers', getTrendSeries(jan, '2026-01-31', '2026-01-31')[0].income === 0 && getTrendSeries(jan, '2026-01-31', '2026-01-31')[0].expense === 200);
+}
+
+console.log('\nStep 6: status bar contrast');
+{
+  check('app background (#F7F7F3) gets dark icons', statusBarStyleForBackground('#F7F7F3') === 'dark');
+  check('white gets dark icons', statusBarStyleForBackground('#FFFFFF') === 'dark');
+  check('navy (#172033) gets light icons', statusBarStyleForBackground('#172033') === 'light');
+  check('black gets light icons', statusBarStyleForBackground('#000') === 'light');
+  check('orange accent (#E87532) gets dark icons', statusBarStyleForBackground('#E87532') === 'dark');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
