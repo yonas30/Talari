@@ -7,7 +7,7 @@
 
 import { ExchangeRate, Transaction, TransactionInput } from '../types';
 import { getBalances, LedgerError, LedgerErrorCode } from '../utils/balances';
-import { calculateBuilderStreak, getBudgetProgress } from '../utils/currency';
+import { calculateBuilderStreak, getBudgetProgress, getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { toLocalDateKey } from '../utils/dates';
 import {
   TREND_TITLES,
@@ -361,6 +361,46 @@ console.log('\nStep 6: status bar contrast');
   check('navy (#172033) gets light icons', statusBarStyleForBackground('#172033') === 'light');
   check('black gets light icons', statusBarStyleForBackground('#000') === 'light');
   check('orange accent (#E87532) gets dark icons', statusBarStyleForBackground('#E87532') === 'dark');
+}
+
+console.log('\nStep 7: Goals - all transfer directions, completion status');
+{
+  const goal = { id: 'laptop', name: 'Laptop', targetAmount: 10000, deadline: null, status: 'active' as const, createdAt: '', updatedAt: '' };
+  const base = ledgerOf(income(70000, 'available'), income(30000, 'saved'));
+
+  // all four directions in the Goals UI, each leaving Total untouched
+  const fromAvail = add(base, transfer(4000, 'available', 'goal'));
+  expectBalances('Available -> Goal 4,000', fromAvail, { total: 100000, available: 66000, saved: 30000, laptop: 4000 });
+  const fromSaved = add(fromAvail, transfer(3000, 'saved', 'goal'));
+  expectBalances('Saved -> Goal 3,000 (goal now 7,000)', fromSaved, { total: 100000, available: 66000, saved: 27000, laptop: 7000 });
+  const toAvail = add(fromSaved, transfer(2000, 'goal', 'available'));
+  expectBalances('Goal -> Available 2,000', toAvail, { total: 100000, available: 68000, saved: 27000, laptop: 5000 });
+  const toSaved = add(toAvail, transfer(1000, 'goal', 'saved'));
+  expectBalances('Goal -> Saved 1,000', toSaved, { total: 100000, available: 68000, saved: 28000, laptop: 4000 });
+
+  // sheet rules enforced by the ledger
+  check('withdraw more than the goal holds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(toSaved, transfer(4001, 'goal', 'available'), RATES, GOALS)));
+  check('withdraw exactly what it holds is allowed (goal -> 0)', (() => { const l = add(toSaved, transfer(4000, 'goal', 'available')); return (getBalances(l).goals.laptop ?? 0) === 0; })());
+  check('add more than Available holds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, transfer(70001, 'available', 'goal'), RATES, GOALS)));
+  check('add more than Saved holds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, transfer(30001, 'saved', 'goal'), RATES, GOALS)));
+
+  // progress comes from the ledger only
+  check('goal progress = ledger amount (4,000 of 10,000 = 40%)', (() => { const p = getGoalProgress(goal, toSaved); return p.savedAmount === 4000 && p.percent === 40; })());
+  check('goal progress ignores money merely sitting in Saved', getGoalProgress(goal, base).savedAmount === 0);
+
+  // status transitions
+  const full = add(base, transfer(10000, 'available', 'goal'));
+  check('reaching the target completes an active goal', nextGoalStatus(goal, full) === 'completed');
+  check('exceeding the target keeps it completed (no change)', nextGoalStatus({ ...goal, status: 'completed' }, add(full, transfer(500, 'saved', 'goal'))) === null);
+  const reopened = add(full, transfer(1, 'goal', 'available'));
+  check('withdrawing below the target reopens a completed goal', nextGoalStatus({ ...goal, status: 'completed' }, reopened) === 'active');
+  check('an active goal below target is left alone', nextGoalStatus(goal, toSaved) === null);
+  check('raising the target above what is held reopens a completed goal', nextGoalStatus({ ...goal, status: 'completed', targetAmount: 20000 }, full) === 'active');
+  check('lowering the target to what is held completes the goal', nextGoalStatus({ ...goal, targetAmount: 4000 }, toSaved) === 'completed');
+  check('abandoned goals are never changed', nextGoalStatus({ ...goal, status: 'abandoned' }, full) === null);
+
+  // a completed goal still holds money that can be moved out (and only then is it "free")
+  check('a completed goal can be withdrawn to Saved', (() => { const l = add(full, transfer(10000, 'goal', 'saved')); const b = getBalances(l); return (b.goals.laptop ?? 0) === 0 && b.saved === 40000 && b.total === 100000; })());
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

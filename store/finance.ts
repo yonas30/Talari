@@ -37,7 +37,7 @@ import {
 } from '../db/database';
 import { Account, Category, CurrencyCode, FinanceStoreState, Goal, Transaction, TransactionInput } from '../types';
 import { getBalances, LedgerError } from '../utils/balances';
-import { getCurrentPeriodSummary, getGoalProgress } from '../utils/currency';
+import { getCurrentPeriodSummary, getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { todayKey } from '../utils/dates';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 import { useUiStore } from './ui';
@@ -212,6 +212,7 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
           : goal,
       ),
     }));
+    await reconcileGoal(id);
   },
   deleteGoal: async (id: string) => {
     // Deleting a goal that still holds money would make that money vanish from Total Balance.
@@ -237,7 +238,6 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
   },
   // A goal contribution is a Transfer (Available|Saved -> Goal), never income. Amount is ETB.
   contributeToGoal: async (goalId: string, amount: number, from: Account) => {
-    const goal = get().goals.find((item) => item.id === goalId);
     const transaction = await get().addTransaction({
       type: 'transfer',
       amount,
@@ -247,32 +247,21 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
       toGoalId: goalId,
       date: todayKey(),
     });
-
-    // Auto-record a milestone the first time a goal's target is reached.
-    if (goal) {
-      const state = get();
-      const { percent } = getGoalProgress(goal, state.transactions);
-      const alreadyRecorded = state.milestones.some(
-        (item) => item.type === 'goal_completed' && item.title === goal.name,
-      );
-      if (percent >= 100 && !alreadyRecorded) {
-        const milestone = await addMilestone({
-          title: goal.name,
-          description: `Reached your ${goal.name} goal of ETB ${goal.targetAmount.toFixed(2)}.`,
-          date: todayKey(),
-          type: 'goal_completed',
-        });
-        set((prev) => ({ milestones: [milestone, ...prev.milestones] }));
-
-        if (goal.status !== 'completed') {
-          await setGoalStatus(goal.id, 'completed');
-          set((prev) => ({
-            goals: prev.goals.map((item) => (item.id === goal.id ? { ...item, status: 'completed' } : item)),
-          }));
-        }
-      }
-    }
-
+    await reconcileGoal(goalId);
+    return transaction;
+  },
+  // The reverse: Goal -> Available|Saved. This is the only way goal money becomes spendable.
+  withdrawFromGoal: async (goalId: string, amount: number, to: Account) => {
+    const transaction = await get().addTransaction({
+      type: 'transfer',
+      amount,
+      currency: 'ETB',
+      fromAccount: 'goal',
+      fromGoalId: goalId,
+      toAccount: to,
+      date: todayKey(),
+    });
+    await reconcileGoal(goalId);
     return transaction;
   },
   upsertBudget: async (input) => {
@@ -322,6 +311,42 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
     return milestone;
   },
 }));
+
+// Keeps a goal's status in step with what the ledger says it holds: reaching the target completes it
+// (and records the milestone once); dropping back below the target - by withdrawing money or raising
+// the target - reopens it. Abandoned goals are left alone.
+async function reconcileGoal(goalId: string): Promise<void> {
+  const state = useFinanceStore.getState();
+  const goal = state.goals.find((item) => item.id === goalId);
+  if (!goal || goal.status === 'abandoned') {
+    return;
+  }
+
+  const { percent } = getGoalProgress(goal, state.transactions);
+  const nextStatus = nextGoalStatus(goal, state.transactions);
+
+  if (nextStatus) {
+    await setGoalStatus(goal.id, nextStatus);
+    useFinanceStore.setState((prev) => ({
+      goals: prev.goals.map((item) => (item.id === goal.id ? { ...item, status: nextStatus } : item)),
+    }));
+  }
+
+  if (percent >= 100) {
+    const alreadyRecorded = state.milestones.some(
+      (item) => item.type === 'goal_completed' && item.title === goal.name,
+    );
+    if (!alreadyRecorded) {
+      const milestone = await addMilestone({
+        title: goal.name,
+        description: `Reached your ${goal.name} goal of ETB ${goal.targetAmount.toFixed(2)}.`,
+        date: todayKey(),
+        type: 'goal_completed',
+      });
+      useFinanceStore.setState((prev) => ({ milestones: [milestone, ...prev.milestones] }));
+    }
+  }
+}
 
 export function getLatestTransactions(limit: number): Transaction[] {
   return useFinanceStore.getState().transactions.slice(0, limit);

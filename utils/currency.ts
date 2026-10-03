@@ -117,6 +117,20 @@ export function getGoalProgress(
   return { savedAmount, percent };
 }
 
+// What a goal's status should become given what the ledger says it holds: reaching the target
+// completes it; falling back below the target (a withdrawal, or a raised target) reopens it. Returns
+// null when nothing changes. Abandoned goals are never touched.
+export function nextGoalStatus(goal: Goal, transactions: Transaction[]): 'completed' | 'active' | null {
+  if (goal.status === 'abandoned') {
+    return null;
+  }
+  const { percent } = getGoalProgress(goal, transactions);
+  if (percent >= 100) {
+    return goal.status === 'completed' ? null : 'completed';
+  }
+  return goal.status === 'completed' ? 'active' : null;
+}
+
 // Projects a completion date from the average monthly pace of money moved into the goal so far.
 export function getProjectedCompletionDate(
   goal: Goal,

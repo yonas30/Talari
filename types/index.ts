@@ -216,6 +216,7 @@ export interface FinanceStoreState {
   deleteGoal: (id: string) => Promise<void>;
   setGoalStatus: (id: string, status: GoalStatus) => Promise<void>;
   contributeToGoal: (goalId: string, amount: number, from: Account) => Promise<Transaction>;
+  withdrawFromGoal: (goalId: string, amount: number, to: Account) => Promise<Transaction>;
   upsertBudget: (input: BudgetInput) => Promise<Budget>;
   deleteBudget: (id: string) => Promise<void>;
   addRecurringTransaction: (input: RecurringTransactionInput) => Promise<RecurringTransaction>;

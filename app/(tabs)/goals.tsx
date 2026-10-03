@@ -1,34 +1,100 @@
-import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ReactNode, useMemo, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import AppButton from '../../components/AppButton';
 import DateField from '../../components/DateField';
 import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
+import { Account, Goal } from '../../types';
 import { alertLedgerError } from '../../utils/alerts';
-import { getGoalProgress, getProjectedCompletionDate } from '../../utils/currency';
+import { getBalances } from '../../utils/balances';
+import { getProjectedCompletionDate } from '../../utils/currency';
+import { formatDateKey, formatETB } from '../../utils/format';
 import { toLocalDateKey } from '../../utils/dates';
-import { Account } from '../../types';
+
+type MoveMode = 'add' | 'withdraw';
+
+interface MoveState {
+  goalId: string;
+  mode: MoveMode;
+}
+
+// Bottom sheet that rises above the keyboard (a plain Modal is not resized by the soft keyboard, which
+// would hide the confirm button while typing an amount).
+function SheetModal({
+  visible,
+  onClose,
+  bottomInset,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  bottomInset: number;
+  children: ReactNode;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        <Pressable style={styles.modalBackdrop} onPress={onClose}>
+          <Pressable
+            style={[styles.modalSheet, { paddingBottom: spacing.xl + bottomInset }]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            {children}
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const ACCOUNT_LABELS: Record<Account, string> = {
+  available: 'Available',
+  saved: 'Saved',
+};
 
 export default function GoalsScreen() {
-  const { goals, transactions, addGoal, updateGoal, deleteGoal, contributeToGoal } = useFinanceStore();
-
+  const { goals, transactions, addGoal, updateGoal, deleteGoal, contributeToGoal, withdrawFromGoal } =
+    useFinanceStore();
   const insets = useSafeAreaInsets();
+
+  const [tab, setTab] = useState<'active' | 'completed'>('active');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
-  const [tab, setTab] = useState<'active' | 'completed'>('active');
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
-  // Where a contribution is paid from. The fuller Available/Saved/Goal flow is Step 7.
-  const [contributeFrom, setContributeFrom] = useState<Account>('available');
   const [deadline, setDeadline] = useState<string | null>(null);
-  const [contributionAmount, setContributionAmount] = useState<Record<string, string>>({});
   const [menuGoalId, setMenuGoalId] = useState<string | null>(null);
+
+  // "Move money" sheet: add = Available|Saved -> Goal, withdraw = Goal -> Available|Saved.
+  const [move, setMove] = useState<MoveState | null>(null);
+  const [moveAmount, setMoveAmount] = useState('');
+  const [moveAccount, setMoveAccount] = useState<Account>('available');
+  const [isMoving, setIsMoving] = useState(false);
+
+  // Every figure on this screen comes from the ledger (V2 Part C); a goal holds only what was
+  // transferred into it, minus what was transferred out.
+  const balances = useMemo(() => getBalances(transactions), [transactions]);
+  const heldBy = (goal: Goal) => Math.max(balances.goals[goal.id] ?? 0, 0);
 
   const activeGoals = useMemo(() => goals.filter((goal) => goal.status !== 'completed'), [goals]);
   const completedGoals = useMemo(() => goals.filter((goal) => goal.status === 'completed'), [goals]);
+  const totalInGoals = Object.values(balances.goals).reduce((sum, value) => sum + value, 0);
+
+  const moveGoal = move ? goals.find((goal) => goal.id === move.goalId) : undefined;
+  const moveGoalHeld = moveGoal ? heldBy(moveGoal) : 0;
+  const numericMoveAmount = Number(moveAmount);
+  const hasValidMoveAmount = Number.isFinite(numericMoveAmount) && numericMoveAmount > 0;
+  // Live hint only; the ledger is what actually blocks an overdraw.
+  const moveShortfall = (() => {
+    if (!move || !moveGoal || !hasValidMoveAmount) {
+      return null;
+    }
+    const source = move.mode === 'add' ? balances[moveAccount] : moveGoalHeld;
+    const sourceName = move.mode === 'add' ? ACCOUNT_LABELS[moveAccount] : `the ${moveGoal.name} goal`;
+    return numericMoveAmount > source ? `${sourceName} only has ${formatETB(source)}.` : null;
+  })();
 
   const resetGoalForm = () => {
     setName('');
@@ -42,7 +108,7 @@ export default function GoalsScreen() {
     setIsCreateOpen(true);
   };
 
-  const openEditGoal = (goal: (typeof goals)[number]) => {
+  const openEditGoal = (goal: Goal) => {
     setEditingGoalId(goal.id);
     setName(goal.name);
     setTargetAmount(String(goal.targetAmount));
@@ -56,52 +122,108 @@ export default function GoalsScreen() {
     resetGoalForm();
   };
 
-  const onCreateGoal = async () => {
+  const onSaveGoal = async () => {
     const numericTarget = Number(targetAmount);
     if (!name.trim() || !Number.isFinite(numericTarget) || numericTarget <= 0) {
       Alert.alert('Enter a goal name and a valid target amount.');
       return;
     }
 
-    await addGoal({ name: name.trim(), targetAmount: numericTarget, deadline });
+    if (editingGoalId) {
+      await updateGoal(editingGoalId, { name: name.trim(), targetAmount: numericTarget, deadline });
+    } else {
+      await addGoal({ name: name.trim(), targetAmount: numericTarget, deadline });
+    }
     closeGoalModal();
   };
 
-  const onUpdateGoal = async () => {
-    if (!editingGoalId) {
-      return;
-    }
-
-    const numericTarget = Number(targetAmount);
-    if (!name.trim() || !Number.isFinite(numericTarget) || numericTarget <= 0) {
-      Alert.alert('Enter a goal name and a valid target amount.');
-      return;
-    }
-
-    await updateGoal(editingGoalId, { name: name.trim(), targetAmount: numericTarget, deadline });
-    closeGoalModal();
+  const openMove = (goal: Goal, mode: MoveMode) => {
+    setMove({ goalId: goal.id, mode });
+    setMoveAmount('');
+    setMoveAccount('available');
   };
 
-  const onContribute = async (goalId: string) => {
-    const amount = Number(contributionAmount[goalId]);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      Alert.alert('Enter a valid contribution amount.');
+  const closeMove = () => {
+    setMove(null);
+    setMoveAmount('');
+  };
+
+  const onConfirmMove = async () => {
+    if (!move || !moveGoal) {
+      return;
+    }
+    if (!hasValidMoveAmount) {
+      Alert.alert('Enter an amount greater than zero.');
       return;
     }
 
+    setIsMoving(true);
     try {
-      await contributeToGoal(goalId, amount, contributeFrom);
-      setContributionAmount((prev) => ({ ...prev, [goalId]: '' }));
+      if (move.mode === 'add') {
+        await contributeToGoal(moveGoal.id, numericMoveAmount, moveAccount);
+      } else {
+        await withdrawFromGoal(moveGoal.id, numericMoveAmount, moveAccount);
+      }
+      closeMove();
     } catch (error) {
+      // Blocked by the ledger (not enough money in the source): keep the sheet open to adjust.
       alertLedgerError(error);
+    } finally {
+      setIsMoving(false);
     }
+  };
+
+  const onDeleteGoal = (goal: Goal) => {
+    Alert.alert('Delete goal', `Delete "${goal.name}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          // Blocked while the goal still holds money - it must be moved out first.
+          deleteGoal(goal.id).catch(alertLedgerError);
+        },
+      },
+    ]);
+  };
+
+  const menuGoal = menuGoalId ? goals.find((goal) => goal.id === menuGoalId) : undefined;
+
+  const renderActions = (goal: Goal, showAdd: boolean) => {
+    const held = heldBy(goal);
+    return (
+      <View style={styles.actionRow}>
+        {showAdd && (
+          <Pressable
+            style={({ pressed }) => [styles.addAction, pressed && styles.pressed]}
+            onPress={() => openMove(goal, 'add')}
+            accessibilityRole="button"
+            accessibilityLabel={`Add money to ${goal.name}`}
+          >
+            <Ionicons name="add-circle-outline" size={16} color={colors.orange} />
+            <Text style={styles.addActionText}>Add money</Text>
+          </Pressable>
+        )}
+        {held > 0 && (
+          <Pressable
+            style={({ pressed }) => [styles.withdrawAction, pressed && styles.pressed]}
+            onPress={() => openMove(goal, 'withdraw')}
+            accessibilityRole="button"
+            accessibilityLabel={`Withdraw money from ${goal.name}`}
+          >
+            <Ionicons name="arrow-down-circle-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.withdrawActionText}>Withdraw</Text>
+          </Pressable>
+        )}
+      </View>
+    );
   };
 
   return (
     <View style={styles.screen}>
       <View style={[styles.headerRow, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.title}>Savings Goals</Text>
-        <Pressable style={styles.addButton} onPress={openCreateGoal}>
+        <Pressable style={styles.addButton} onPress={openCreateGoal} accessibilityRole="button" accessibilityLabel="Create a goal">
           <Ionicons name="add" size={22} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -118,76 +240,61 @@ export default function GoalsScreen() {
           </Pressable>
         </View>
 
-        {tab === 'active' && (
-          <>
-            <View style={styles.motivationCard}>
-              <Ionicons name="rocket" size={18} color={colors.olive} />
-              <Text style={styles.motivationText}>Big goals turn small steps into big results.</Text>
-            </View>
-
-            {activeGoals.length === 0 ? (
-              <View style={styles.card}>
-                <Text style={styles.emptyState}>No active goals yet — tap + to create your first savings goal.</Text>
-              </View>
-            ) : (
-              activeGoals.map((goal) => {
-                const { savedAmount, percent } = getGoalProgress(goal, transactions);
-                const projectedDate = getProjectedCompletionDate(goal, transactions);
-                const safePercent = Math.min(Math.max(percent, 0), 100);
-                return (
-                  <View key={goal.id} style={styles.card}>
-                    <View style={styles.goalHeaderRow}>
-                      <View style={styles.goalIconCircle}>
-                        <Ionicons name="flag" size={18} color={colors.orange} />
-                      </View>
-                      <Text style={styles.goalName}>{goal.name}</Text>
-                      <Text style={[styles.percentBadge, safePercent >= 100 && styles.completedPercent]}>{safePercent.toFixed(0)}%</Text>
-                      <Pressable style={styles.dotsButton} onPress={() => setMenuGoalId(goal.id)} hitSlop={8}>
-                        <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                      </Pressable>
-                    </View>
-
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${safePercent}%` }]} />
-                    </View>
-
-                    <Text style={styles.goalText}>
-                      ETB {savedAmount.toFixed(2)} saved · Target: ETB {goal.targetAmount.toFixed(2)}
-                    </Text>
-                    {goal.deadline && <Text style={styles.metaText}>Deadline: {goal.deadline}</Text>}
-                    {projectedDate && (
-                      <Text style={styles.metaText}>Projected completion: {toLocalDateKey(projectedDate)}</Text>
-                    )}
-
-                    <TextInput
-                      style={styles.input}
-                      value={contributionAmount[goal.id] ?? ''}
-                      onChangeText={(value) => setContributionAmount((prev) => ({ ...prev, [goal.id]: value }))}
-                      placeholder={`Add to ${goal.name} (ETB)`}
-                      keyboardType="decimal-pad"
-                    />
-                    <View style={styles.segmented}>
-                      {(['available', 'saved'] as const).map((option) => (
-                        <AppButton
-                          key={option}
-                          title={`From ${option}`}
-                          selected={contributeFrom === option}
-                          onPress={() => setContributeFrom(option)}
-                        />
-                      ))}
-                    </View>
-                    <AppButton
-                      title="Contribute"
-                      variant="primary"
-                      style={styles.mutedAction}
-                      onPress={() => void onContribute(goal.id)}
-                    />
-                  </View>
-                );
-              })
-            )}
-          </>
+        {goals.length > 0 && (
+          <Text style={styles.metaText}>
+            {formatETB(totalInGoals)} is set aside in goals. It is still part of your Total Balance — withdraw it to
+            Available or Saved to spend it.
+          </Text>
         )}
+
+        {tab === 'active' &&
+          (activeGoals.length === 0 ? (
+            <View style={styles.card}>
+              <Text style={styles.emptyState}>No active goals yet — tap + to create your first savings goal.</Text>
+            </View>
+          ) : (
+            activeGoals.map((goal) => {
+              const held = heldBy(goal);
+              const percent = goal.targetAmount > 0 ? Math.min((held / goal.targetAmount) * 100, 100) : 0;
+              const projectedDate = getProjectedCompletionDate(goal, transactions);
+              return (
+                <View key={goal.id} style={styles.card}>
+                  <View style={styles.goalHeaderRow}>
+                    <View style={styles.goalIconCircle}>
+                      <Ionicons name="flag" size={18} color={colors.orange} />
+                    </View>
+                    <Text style={styles.goalName} numberOfLines={1}>
+                      {goal.name}
+                    </Text>
+                    <Text style={styles.percentBadge}>{percent.toFixed(0)}%</Text>
+                    <Pressable
+                      style={styles.dotsButton}
+                      onPress={() => setMenuGoalId(goal.id)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${goal.name} options`}
+                    >
+                      <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${percent}%` }]} />
+                  </View>
+
+                  <Text style={styles.goalText}>
+                    {formatETB(held)} of {formatETB(goal.targetAmount)}
+                  </Text>
+                  {goal.deadline && <Text style={styles.metaText}>Deadline: {formatDateKey(goal.deadline)}</Text>}
+                  {projectedDate && (
+                    <Text style={styles.metaText}>Projected completion: {formatDateKey(toLocalDateKey(projectedDate))}</Text>
+                  )}
+
+                  {renderActions(goal, true)}
+                </View>
+              );
+            })
+          ))}
 
         {tab === 'completed' &&
           (completedGoals.length === 0 ? (
@@ -195,72 +302,134 @@ export default function GoalsScreen() {
               <Text style={styles.emptyState}>No completed goals yet.</Text>
             </View>
           ) : (
-            <View style={styles.completedSection}>
-              <Text style={styles.completedHeading}>Completed goals</Text>
-              {completedGoals.map((goal) => {
-              const { savedAmount } = getGoalProgress(goal, transactions);
-              return (
-                <View key={goal.id} style={styles.completedRow}>
-                  <View style={styles.goalIconCircle}>
+            completedGoals.map((goal) => (
+              <View key={goal.id} style={styles.card}>
+                <View style={styles.goalHeaderRow}>
+                  <View style={[styles.goalIconCircle, styles.doneIconCircle]}>
                     <Ionicons name="checkmark-circle" size={18} color={colors.olive} />
                   </View>
                   <View style={styles.completedInfo}>
-                    <Text style={styles.goalName}>{goal.name}</Text>
-                    <Text style={styles.metaText}>Completed</Text>
-                  </View>
-                  <View style={styles.completedActions}>
-                    <Text style={styles.completedAmount}>
-                      ETB {savedAmount.toFixed(2)}
+                    <Text style={styles.goalName} numberOfLines={1}>
+                      {goal.name}
                     </Text>
-                      <Text style={styles.metaText}>{goal.updatedAt.slice(0, 10)}</Text>
+                    <Text style={styles.metaText}>Completed · {formatDateKey(goal.updatedAt.slice(0, 10))}</Text>
                   </View>
-                  <Pressable style={styles.dotsButton} onPress={() => setMenuGoalId(goal.id)} hitSlop={8}>
+                  <Pressable
+                    style={styles.dotsButton}
+                    onPress={() => setMenuGoalId(goal.id)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${goal.name} options`}
+                  >
                     <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
                   </Pressable>
                 </View>
-              );
-              })}
-            </View>
+                <Text style={styles.goalText}>
+                  {formatETB(heldBy(goal))} of {formatETB(goal.targetAmount)}
+                </Text>
+                {/* A finished goal still holds its money until it is moved out. */}
+                {renderActions(goal, false)}
+              </View>
+            ))
           ))}
       </ScrollView>
 
-      <Modal
-        visible={isCreateOpen || editingGoalId !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={closeGoalModal}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={closeGoalModal}>
-          <Pressable
-            style={[styles.modalSheet, { paddingBottom: spacing.xl + insets.bottom }]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <Text style={styles.sectionTitle}>{editingGoalId ? 'Edit goal' : 'Create a new goal'}</Text>
-            <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Goal name" />
-            <TextInput
-              style={styles.input}
-              value={targetAmount}
-              onChangeText={setTargetAmount}
-              placeholder="Target amount (ETB)"
-              keyboardType="decimal-pad"
-            />
-            <DateField label="Deadline" value={deadline} onChange={setDeadline} />
-            <AppButton
-              title={editingGoalId ? 'Save changes' : 'Create goal'}
-              variant="primary"
-              onPress={() => void (editingGoalId ? onUpdateGoal() : onCreateGoal())}
-            />
-          </Pressable>
+      {/* Create / edit goal */}
+      <SheetModal visible={isCreateOpen || editingGoalId !== null} onClose={closeGoalModal} bottomInset={insets.bottom}>
+        <Text style={styles.sectionTitle}>{editingGoalId ? 'Edit goal' : 'Create a new goal'}</Text>
+        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Goal name" />
+        <TextInput
+          style={styles.input}
+          value={targetAmount}
+          onChangeText={setTargetAmount}
+          placeholder="Target amount (ETB)"
+          keyboardType="decimal-pad"
+        />
+        <DateField label="Deadline" value={deadline} onChange={setDeadline} />
+        <Pressable style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]} onPress={() => void onSaveGoal()}>
+          <Text style={styles.confirmButtonText}>{editingGoalId ? 'Save changes' : 'Create goal'}</Text>
         </Pressable>
-      </Modal>
+      </SheetModal>
 
-      <Modal visible={menuGoalId !== null} transparent animationType="fade" onRequestClose={() => setMenuGoalId(null)}>
+      {/* Move money: Available|Saved -> Goal, or Goal -> Available|Saved */}
+      <SheetModal visible={move !== null} onClose={closeMove} bottomInset={insets.bottom}>
+        {move && moveGoal && (
+          <>
+            <Text style={styles.sectionTitle} numberOfLines={1}>
+              {move.mode === 'add' ? `Add money to ${moveGoal.name}` : `Withdraw from ${moveGoal.name}`}
+            </Text>
+            <Text style={styles.metaText}>
+              Holds {formatETB(moveGoalHeld)} of {formatETB(moveGoal.targetAmount)}. This moves money you already
+              have; your Total Balance does not change.
+            </Text>
+
+            <TextInput
+              style={styles.amountInput}
+              value={moveAmount}
+              onChangeText={setMoveAmount}
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+              autoFocus
+            />
+            <View style={styles.quickRow}>
+              {move.mode === 'add' && moveGoal.targetAmount - moveGoalHeld > 0 && (
+                <Pressable
+                  style={styles.quickChip}
+                  onPress={() => setMoveAmount(String(Math.round((moveGoal.targetAmount - moveGoalHeld) * 100) / 100))}
+                >
+                  <Text style={styles.quickChipText}>Remaining {formatETB(moveGoal.targetAmount - moveGoalHeld)}</Text>
+                </Pressable>
+              )}
+              {move.mode === 'withdraw' && moveGoalHeld > 0 && (
+                <Pressable style={styles.quickChip} onPress={() => setMoveAmount(String(moveGoalHeld))}>
+                  <Text style={styles.quickChipText}>All {formatETB(moveGoalHeld)}</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <Text style={styles.fieldLabel}>{move.mode === 'add' ? 'From' : 'To'}</Text>
+            {(['available', 'saved'] as const).map((account) => {
+              const selected = moveAccount === account;
+              return (
+                <Pressable
+                  key={account}
+                  style={[styles.accountRow, selected && styles.accountRowSelected]}
+                  onPress={() => setMoveAccount(account)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                >
+                  <Ionicons
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={20}
+                    color={selected ? colors.orange : colors.textSecondary}
+                  />
+                  <Text style={styles.accountName}>{ACCOUNT_LABELS[account]}</Text>
+                  <Text style={styles.accountBalance}>{formatETB(balances[account])}</Text>
+                </Pressable>
+              );
+            })}
+
+            {moveShortfall && <Text style={styles.warningText}>{moveShortfall}</Text>}
+
+            <Pressable
+              style={({ pressed }) => [styles.confirmButton, (pressed || isMoving) && styles.pressed]}
+              onPress={() => void onConfirmMove()}
+              disabled={isMoving}
+            >
+              <Text style={styles.confirmButtonText}>{move.mode === 'add' ? 'Add money' : 'Withdraw'}</Text>
+            </Pressable>
+          </>
+        )}
+      </SheetModal>
+
+      {/* Three-dot menu */}
+      <Modal visible={menuGoal !== undefined} transparent animationType="fade" onRequestClose={() => setMenuGoalId(null)}>
         <Pressable style={styles.menuBackdrop} onPress={() => setMenuGoalId(null)}>
           <View style={[styles.menuSheet, { paddingBottom: spacing.xl + insets.bottom }]}>
             <Pressable
               style={styles.menuOption}
               onPress={() => {
-                const goal = goals.find((item) => item.id === menuGoalId);
+                const goal = menuGoal;
                 setMenuGoalId(null);
                 if (goal) openEditGoal(goal);
               }}
@@ -271,11 +440,9 @@ export default function GoalsScreen() {
             <Pressable
               style={styles.menuOption}
               onPress={() => {
-                const id = menuGoalId;
+                const goal = menuGoal;
                 setMenuGoalId(null);
-                if (id) {
-                  deleteGoal(id).catch(alertLedgerError);
-                }
+                if (goal) onDeleteGoal(goal);
               }}
             >
               <Ionicons name="trash-outline" size={20} color={colors.red} />
@@ -289,6 +456,9 @@ export default function GoalsScreen() {
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,
@@ -328,54 +498,18 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: radius.button - 2,
   },
   tabSelected: {
     backgroundColor: colors.navy,
   },
   tabText: {
-    fontWeight: '600',
     color: colors.navy,
+    fontWeight: '600',
   },
   tabTextSelected: {
     color: '#FFFFFF',
-  },
-  motivationCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.oliveLight,
-    borderRadius: radius.card,
-    padding: spacing.md,
-  },
-  summaryCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: colors.navy,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-  },
-  summaryLabel: {
-    ...typography.helper,
-    color: '#C6CCD8',
-  },
-  summaryValue: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
-    marginTop: spacing.xs,
-  },
-  summaryDivider: {
-    width: 1,
-    height: 34,
-    backgroundColor: '#526078',
-  },
-  motivationText: {
-    ...typography.helper,
-    color: colors.navy,
-    flex: 1,
   },
   card: {
     backgroundColor: colors.surface,
@@ -391,18 +525,25 @@ const styles = StyleSheet.create({
     ...typography.sectionTitle,
     color: colors.navy,
   },
+  emptyState: {
+    ...typography.helper,
+    color: colors.textSecondary,
+  },
   goalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
   goalIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: colors.orangeLight,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  doneIconCircle: {
+    backgroundColor: colors.oliveLight,
   },
   goalName: {
     flex: 1,
@@ -410,34 +551,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.navy,
   },
+  completedInfo: {
+    flex: 1,
+  },
   percentBadge: {
+    ...typography.helper,
     fontWeight: '800',
-    color: colors.statusIncome,
-  },
-  completedPercent: {
-    color: colors.olive,
-  },
-  segmented: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  input: {
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 15,
     color: colors.navy,
   },
-  goalText: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    fontWeight: '600',
+  dotsButton: {
+    padding: 2,
   },
   progressTrack: {
-    height: 10,
+    height: 8,
     borderRadius: radius.pill,
     backgroundColor: colors.background,
     overflow: 'hidden',
@@ -447,91 +573,165 @@ const styles = StyleSheet.create({
     backgroundColor: colors.statusIncome,
     borderRadius: radius.pill,
   },
+  goalText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.navy,
+  },
   metaText: {
     ...typography.helper,
     color: colors.textSecondary,
   },
+  // Quiet secondary actions - a soft tint and an outline, not a filled CTA.
   actionRow: {
     flexDirection: 'row',
     gap: spacing.sm,
     marginTop: 4,
   },
-  emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
-  },
-  completedRow: {
+  addAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.md,
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: colors.orangeLight,
   },
-  completedSection: {
-    gap: spacing.md,
-  },
-  completedHeading: {
-    ...typography.sectionTitle,
-    color: colors.navy,
-  },
-  completedInfo: {
-    flex: 1,
-  },
-  completedActions: {
-    alignItems: 'flex-end',
-    gap: spacing.sm,
-  },
-  actionRowCompact: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  completedAmount: {
+  addActionText: {
+    fontSize: 13,
     fontWeight: '700',
     color: colors.navy,
   },
-  dotsButton: {
-    padding: spacing.xs,
+  withdrawAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: '#DDE0E8',
   },
-  mutedAction: {
-    opacity: 0.65,
+  withdrawActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  input: {
+    backgroundColor: colors.background,
+    borderRadius: radius.button,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 15,
+    color: colors.navy,
+  },
+  amountInput: {
+    backgroundColor: colors.background,
+    borderRadius: radius.button,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 26,
+    fontWeight: '800',
+    color: colors.navy,
+  },
+  quickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  quickChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: colors.background,
+  },
+  quickChipText: {
+    ...typography.helper,
+    fontWeight: '700',
+    color: colors.navy,
+  },
+  fieldLabel: {
+    ...typography.helper,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.button,
+    borderWidth: 1,
+    borderColor: '#E8EAF0',
+  },
+  accountRowSelected: {
+    borderColor: colors.orange,
+    backgroundColor: colors.orangeLight,
+  },
+  accountName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.navy,
+  },
+  accountBalance: {
+    ...typography.helper,
+    color: colors.textSecondary,
+  },
+  warningText: {
+    ...typography.helper,
+    color: colors.red,
+  },
+  confirmButton: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.navy,
+    borderRadius: radius.button,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(23, 32, 51, 0.4)',
   },
   modalSheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
     padding: spacing.xl,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   menuBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(23, 32, 51, 0.35)',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(23, 32, 51, 0.4)',
   },
   menuSheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
   },
   menuOption: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    paddingVertical: spacing.lg,
   },
   menuOptionText: {
+    ...typography.body,
+    fontWeight: '600',
     color: colors.navy,
-    fontSize: 16,
-    fontWeight: '700',
   },
   deleteText: {
     color: colors.red,
