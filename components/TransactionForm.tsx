@@ -1,5 +1,5 @@
 import { ReactNode, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppButton from './AppButton';
@@ -177,138 +177,146 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.typeSegmented}>
-        {(['expense', 'income', 'transfer'] as const).map((option) => (
-          <Pressable
-            key={option}
-            style={[styles.typeSegment, type === option && styles.typeSegmentSelected]}
-            onPress={() => setType(option)}
-          >
-            <Text style={[styles.typeSegmentText, type === option && styles.typeSegmentTextSelected]}>
-              {TYPE_LABELS[option]}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.label}>Amount</Text>
-        <View style={styles.amountRow}>
-          <TextInput
-            style={styles.amountInput}
-            value={amount}
-            onChangeText={setAmount}
-            placeholder="0"
-            keyboardType="decimal-pad"
-          />
-          <CurrencyPicker value={currency} onChange={setCurrency} />
-        </View>
-      </View>
-
-      {type === 'transfer' ? (
-        <View style={styles.card}>
-          <Text style={styles.label}>From</Text>
-          <OptionPicker value={from} options={endpointOptions} onChange={setFrom} />
-          <View style={styles.arrowRow}>
-            <Ionicons name="arrow-down" size={18} color={colors.textSecondary} />
-          </View>
-          <Text style={styles.label}>To</Text>
-          <OptionPicker value={to} options={endpointOptions} onChange={setTo} />
-          <Text style={styles.helperText}>
-            A transfer moves money you already have. Total Balance does not change.
-          </Text>
-        </View>
-      ) : (
-        <>
-          <View style={styles.card}>
-            <Text style={styles.label}>{type === 'income' ? 'Into' : 'Pay from'}</Text>
-            {/* Goal is deliberately not offered here: a goal can never pay for an expense (V2 Part B.6). */}
-            <View style={styles.segmented}>
-              {(['available', 'saved'] as const).map((option) => (
-                <AppButton
-                  key={option}
-                  title={ACCOUNT_LABELS[option]}
-                  selected={account === option}
-                  onPress={() => setAccount(option)}
-                  style={styles.segmentButton}
-                />
-              ))}
-            </View>
-            <Text style={styles.helperText}>
-              {ACCOUNT_LABELS[account]} balance: {formatETB(balances[account])}
-            </Text>
-            {type === 'expense' && (
-              <Text style={styles.helperText}>To spend goal money, transfer it out of the goal first.</Text>
-            )}
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.label}>Category</Text>
-            <CategoryPicker
-              value={selectedCategory?.id ?? category}
-              options={categoryOptions}
-              onChange={setCategory}
-            />
-          </View>
-        </>
-      )}
-
-      <View style={styles.card}>
-        <Text style={styles.label}>Date</Text>
-        <DateField label="Date" value={date} onChange={setDate} />
-      </View>
-
-      {type !== 'transfer' && (
-        <View style={styles.card}>
-          <Text style={styles.label}>{type === 'income' ? 'Source' : 'Where / Merchant'}</Text>
-          <TextInput
-            style={styles.input}
-            value={source}
-            onChangeText={setSource}
-            placeholder={type === 'income' ? 'e.g. Employer' : 'e.g. Burger Station'}
-          />
-        </View>
-      )}
-
-      <View style={styles.card}>
-        <Text style={styles.label}>Note (optional)</Text>
-        <TextInput style={styles.input} value={note} onChangeText={setNote} placeholder="Add a note..." />
-      </View>
-
-      {currency !== 'ETB' && (
-        <View style={styles.card}>
-          <Pressable style={styles.collapsibleHeader} onPress={() => setShowRateSection((prev) => !prev)}>
-            <Text style={styles.label}>Exchange rate</Text>
-            <Ionicons name={showRateSection ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
-          </Pressable>
-          {showRateSection && (
-            <View style={styles.rateSection}>
-              <Text style={styles.helperText}>
-                1 {currency} = ? ETB — leave empty to use {defaultRate ? `the rate ${defaultRate}` : 'the saved rate'}. A rate entered
-                here applies to this transaction only.
+    // Same technique as the Goals sheets: the soft keyboard does not resize the window (the app draws
+    // edge-to-edge), so shrink the form by the keyboard's height; the ScrollView then keeps the focused
+    // field visible instead of the keyboard covering it.
+    <KeyboardAvoidingView style={styles.flex} behavior="padding">
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <View style={styles.typeSegmented}>
+          {(['expense', 'income', 'transfer'] as const).map((option) => (
+            <Pressable
+              key={option}
+              style={[styles.typeSegment, type === option && styles.typeSegmentSelected]}
+              onPress={() => setType(option)}
+            >
+              <Text style={[styles.typeSegmentText, type === option && styles.typeSegmentTextSelected]}>
+                {TYPE_LABELS[option]}
               </Text>
-              <TextInput
-                style={styles.input}
-                value={rateInput}
-                onChangeText={setRateInput}
-                placeholder={defaultRate ? String(defaultRate) : 'No saved rate - enter one'}
-                keyboardType="decimal-pad"
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Amount</Text>
+          <View style={styles.amountRow}>
+            <TextInput
+              style={styles.amountInput}
+              value={amount}
+              onChangeText={setAmount}
+              placeholder="0"
+              keyboardType="decimal-pad"
+            />
+            <CurrencyPicker value={currency} onChange={setCurrency} />
+          </View>
+        </View>
+
+        {type === 'transfer' ? (
+          <View style={styles.card}>
+            <Text style={styles.label}>From</Text>
+            <OptionPicker value={from} options={endpointOptions} onChange={setFrom} />
+            <View style={styles.arrowRow}>
+              <Ionicons name="arrow-down" size={18} color={colors.textSecondary} />
+            </View>
+            <Text style={styles.label}>To</Text>
+            <OptionPicker value={to} options={endpointOptions} onChange={setTo} />
+            <Text style={styles.helperText}>
+              A transfer moves money you already have. Total Balance does not change.
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.label}>{type === 'income' ? 'Into' : 'Pay from'}</Text>
+              {/* Goal is deliberately not offered here: a goal can never pay for an expense (V2 Part B.6). */}
+              <View style={styles.segmented}>
+                {(['available', 'saved'] as const).map((option) => (
+                  <AppButton
+                    key={option}
+                    title={ACCOUNT_LABELS[option]}
+                    selected={account === option}
+                    onPress={() => setAccount(option)}
+                    style={styles.segmentButton}
+                  />
+                ))}
+              </View>
+              <Text style={styles.helperText}>
+                {ACCOUNT_LABELS[account]} balance: {formatETB(balances[account])}
+              </Text>
+              {type === 'expense' && (
+                <Text style={styles.helperText}>To spend goal money, transfer it out of the goal first.</Text>
+              )}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.label}>Category</Text>
+              <CategoryPicker
+                value={selectedCategory?.id ?? category}
+                options={categoryOptions}
+                onChange={setCategory}
               />
             </View>
-          )}
-        </View>
-      )}
+          </>
+        )}
 
-      <View style={styles.submitButton}>
-        <AppButton title={submitLabel} variant="primary" disabled={isSaving} onPress={() => void submit()} />
-      </View>
-      {footer}
-    </ScrollView>
+        <View style={styles.card}>
+          <Text style={styles.label}>Date</Text>
+          <DateField label="Date" value={date} onChange={setDate} />
+        </View>
+
+        {type !== 'transfer' && (
+          <View style={styles.card}>
+            <Text style={styles.label}>{type === 'income' ? 'Source' : 'Where / Merchant'}</Text>
+            <TextInput
+              style={styles.input}
+              value={source}
+              onChangeText={setSource}
+              placeholder={type === 'income' ? 'e.g. Employer' : 'e.g. Burger Station'}
+            />
+          </View>
+        )}
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Note (optional)</Text>
+          <TextInput style={styles.input} value={note} onChangeText={setNote} placeholder="Add a note..." />
+        </View>
+
+        {currency !== 'ETB' && (
+          <View style={styles.card}>
+            <Pressable style={styles.collapsibleHeader} onPress={() => setShowRateSection((prev) => !prev)}>
+              <Text style={styles.label}>Exchange rate</Text>
+              <Ionicons name={showRateSection ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
+            </Pressable>
+            {showRateSection && (
+              <View style={styles.rateSection}>
+                <Text style={styles.helperText}>
+                  1 {currency} = ? ETB — leave empty to use {defaultRate ? `the rate ${defaultRate}` : 'the saved rate'}. A rate entered
+                  here applies to this transaction only.
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={rateInput}
+                  onChangeText={setRateInput}
+                  placeholder={defaultRate ? String(defaultRate) : 'No saved rate - enter one'}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        <View style={styles.submitButton}>
+          <AppButton title={submitLabel} variant="primary" disabled={isSaving} onPress={() => void submit()} />
+        </View>
+        {footer}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   container: {
     flexGrow: 1,
     padding: spacing.xl,
