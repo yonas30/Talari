@@ -47,7 +47,10 @@ export default function TransactionsScreen() {
                 >
                   <View style={styles.itemContent}>
                     <Text style={styles.category}>{title}</Text>
-                    <Text style={styles.meta}>{new Date(item.date).toLocaleDateString()}</Text>
+                    <Text style={styles.meta}>
+                      {new Date(`${item.date}T00:00:00`).toLocaleDateString()}
+                      {item.account ? ` · ${item.type === 'income' ? 'into' : 'from'} ${item.account === 'saved' ? 'Saved' : 'Available'}` : ''}
+                    </Text>
                   </View>
                   <View style={styles.amountWrap}>
                     <Text style={styles.amount}>ETB {item.amountETB.toFixed(2)}</Text>

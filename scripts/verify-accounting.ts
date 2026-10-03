@@ -126,7 +126,7 @@ console.log('Test 10 - Goal cannot pay an expense');
   const goalExpense = { ...expense(5000, 'available'), account: 'goal' } as unknown as TransactionInput;
   check('expense with Goal as pay-from is rejected (GOAL_EXPENSE)', rejectedWith('GOAL_EXPENSE', () => planAdd(base, goalExpense, RATES, GOALS)));
   check('Laptop goal untouched', getBalances(base).goals.laptop === 10000);
-  console.log('  note  "UI must not offer Goal as an expense source": the Account type is "available" | "saved" (compile-time) and the ledger guard above is the runtime backstop. The form itself is rebuilt in Step 3.');
+  console.log('  note  "UI must not offer Goal as an expense source": the Account type is "available" | "saved" (compile-time) and the ledger guard above is the runtime backstop. The Step 3 form only offers Available / Saved for expenses (components/TransactionForm.tsx); Goal appears only as a Transfer endpoint.');
 }
 
 console.log('Test 11 - Edit transaction (ledger model)');
@@ -226,6 +226,43 @@ console.log('\nExtra cases (approved scope: edit / delete / back-dated / rates /
   check('streak breaks after a gap', calculateBuilderStreak(ledgerOf(income(1, 'available', '2026-01-05')), at1am) === 0);
   const transferRows = ledgerOf(income(100, 'available', '2026-01-01'), transfer(10, 'available', 'saved', '2026-01-09'), transfer(10, 'available', 'goal', '2026-01-10'));
   check('transfers and goal contributions count toward the streak', calculateBuilderStreak(transferRows, at1am) === 2);
+}
+
+console.log('\nStep 3: editing across all three transaction types');
+{
+  const base = ledgerOf(income(70000, 'available'), income(30000, 'saved'));
+  const exp = add(base, expense(5000, 'available'));
+  const expRow = exp[exp.length - 1];
+
+  // expense -> transfer (Saved -> Laptop goal): row is converted in place, no leftover expense effect
+  const asTransfer = planEdit(exp, expRow.id, transfer(5000, 'saved', 'goal'), RATES, GOALS);
+  const l1 = exp.map((row) => (row.id === expRow.id ? asTransfer : row));
+  expectBalances('expense -> Saved->Goal transfer: 100,000 / 70,000 / 25,000 / Laptop 5,000', l1, { total: 100000, available: 70000, saved: 25000, laptop: 5000 });
+  check('converted row has no category/account/source left over', asTransfer.category === '' && asTransfer.account === null && asTransfer.source === '' && asTransfer.fromGoalId === null && asTransfer.toGoalId === 'laptop');
+  check('id/createdAt/timestamp survive a type change', asTransfer.id === expRow.id && asTransfer.createdAt === expRow.createdAt && asTransfer.timestamp === expRow.timestamp);
+
+  // transfer -> income (Saved)
+  const asIncome = planEdit(l1, asTransfer.id, income(5000, 'saved', '2026-01-02'), RATES, GOALS);
+  const l2 = l1.map((row) => (row.id === asTransfer.id ? asIncome : row));
+  expectBalances('transfer -> Income to Saved: 105,000 / 70,000 / 35,000 / Laptop 0', l2, { total: 105000, available: 70000, saved: 35000 });
+  check('income row has account, no transfer endpoints', asIncome.account === 'saved' && asIncome.fromAccount === null && asIncome.toAccount === null && asIncome.toGoalId === null);
+
+  // move a transfer's endpoints (Available->Saved becomes Saved->Available)
+  const t = add(base, transfer(1000, 'available', 'saved'));
+  const tRow = t[t.length - 1];
+  const flipped = planEdit(t, tRow.id, transfer(1000, 'saved', 'available'), RATES, GOALS);
+  expectBalances('flipping a transfer: 100,000 / 71,000 / 29,000', t.map((row) => (row.id === tRow.id ? flipped : row)), { total: 100000, available: 71000, saved: 29000 });
+
+  // goal withdrawals
+  const funded = add(base, transfer(10000, 'available', 'goal'));
+  const withdrawn = add(funded, transfer(4000, 'goal', 'saved'));
+  expectBalances('Goal -> Saved: 100,000 / 60,000 / 34,000 / Laptop 6,000', withdrawn, { total: 100000, available: 60000, saved: 34000, laptop: 6000 });
+  const fundingRow = funded[funded.length - 1];
+  check('delete the goal-funding transfer after withdrawing is blocked', rejectedWith('NEGATIVE_BALANCE', () => planDelete(withdrawn, fundingRow.id, GOALS)));
+  check('shrinking the goal-funding transfer below what was withdrawn is blocked', rejectedWith('NEGATIVE_BALANCE', () => planEdit(withdrawn, fundingRow.id, transfer(3000, 'available', 'goal'), RATES, GOALS)));
+  check('goal -> a different goal id is not "same account"', (() => { planAdd(funded, { ...transfer(100, 'goal', 'goal'), toGoalId: 'other' }, RATES, { ...GOALS, other: 'Car' }); return true; })());
+  check('transfer with a goal endpoint but no goal id is rejected', rejectedWith('MISSING_GOAL', () => planAdd(base, { ...transfer(10, 'available', 'goal'), toGoalId: null }, RATES, GOALS)));
+  check('foreign-currency transfer converts to ETB (10 USD = 550)', planAdd(base, { ...transfer(10, 'available', 'saved'), currency: 'USD' }, RATES, GOALS).amountETB === 550);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
