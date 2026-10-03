@@ -10,6 +10,7 @@ import { useFinanceStore } from '../../store/finance';
 import { Account, Goal } from '../../types';
 import { alertLedgerError } from '../../utils/alerts';
 import { getBalances } from '../../utils/balances';
+import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 import { getProjectedCompletionDate } from '../../utils/currency';
 import { formatDateKey, formatETB } from '../../utils/format';
 import { toLocalDateKey } from '../../utils/dates';
@@ -173,7 +174,7 @@ export default function GoalsScreen() {
             accessibilityLabel={`Add money to ${goal.name}`}
           >
             <Ionicons name="add-circle-outline" size={16} color={colors.orange} />
-            <Text style={styles.addActionText}>Add money</Text>
+            <Text style={styles.addActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Add money</Text>
           </Pressable>
         )}
         {held > 0 && (
@@ -184,7 +185,7 @@ export default function GoalsScreen() {
             accessibilityLabel={`Withdraw money from ${goal.name}`}
           >
             <Ionicons name="arrow-down-circle-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.withdrawActionText}>Withdraw</Text>
+            <Text style={styles.withdrawActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Withdraw</Text>
           </Pressable>
         )}
       </View>
@@ -376,7 +377,7 @@ export default function GoalsScreen() {
                     color={selected ? colors.orange : colors.textSecondary}
                   />
                   <Text style={styles.accountName}>{ACCOUNT_LABELS[account]}</Text>
-                  <Text style={styles.accountBalance}>{formatETB(balances[account])}</Text>
+                  <Text style={styles.accountBalance} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE} numberOfLines={1}>{formatETB(balances[account])}</Text>
                 </Pressable>
               );
             })}
@@ -436,10 +437,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.md,
   },
   title: {
+    flex: 1,
+    minWidth: 0,
     ...typography.pageTitle,
     fontSize: 24,
     color: colors.navy,
@@ -552,8 +556,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   // Quiet secondary actions - a soft tint and an outline, not a filled CTA.
+  // Wraps onto a second line instead of pushing the second pill out of the card at large font sizes.
   actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: 4,
   },
@@ -648,6 +654,7 @@ const styles = StyleSheet.create({
     color: colors.navy,
   },
   accountBalance: {
+    flexShrink: 0,
     ...typography.helper,
     color: colors.textSecondary,
   },

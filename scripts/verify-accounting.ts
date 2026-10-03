@@ -24,6 +24,7 @@ import {
   shiftMonth,
   shiftWeek,
 } from '../utils/reports';
+import { CONTROL_LABEL_MAX_SCALE, getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LABEL_MAX_SCALE } from '../utils/layout';
 import { statusBarStyleForBackground } from '../utils/statusBar';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 
@@ -452,6 +453,34 @@ console.log('\nStep 8: recurring schedule, recurring edits, category icons');
   check('Education is not mistaken for "cat"', emoji('Education') === '📚');
   check('"Card fees" is not mistaken for a car', emoji('Card fees') !== '🚕');
   check('unknown or empty names get the neutral sparkle', emoji('Zzzz') === '✨' && emoji('') === '✨' && emoji('   ') === '✨');
+}
+
+console.log('\nLayout: tab bar clearance at any system font size');
+{
+  // What the icon + label really need: the label renders at the system scale capped at TAB_LABEL_MAX_SCALE.
+  const needed = (fontScale: number) => 28 + Math.ceil(TAB_LABEL_FONT_SIZE * Math.min(fontScale, TAB_LABEL_MAX_SCALE) * 1.3);
+  const roomFor = (fontScale: number, inset: number) => {
+    const bar = getTabBarMetrics(fontScale, inset);
+    return bar.height - bar.paddingTop - bar.paddingBottom;
+  };
+
+  // The previous hard-coded bar: height 56 + inset, paddingTop 6, paddingBottom inset + 6 -> 44dp for icon + label.
+  const OLD_ROOM = 56 - 6 - 6;
+  const oldNeeded = (fontScale: number) => 28 + Math.ceil(TAB_LABEL_FONT_SIZE * fontScale * 1.3);
+  check('old fixed bar fitted at normal size', oldNeeded(1) <= OLD_ROOM);
+  check('old fixed bar overflowed into the nav-bar space at 1.3x', oldNeeded(1.3) > OLD_ROOM);
+  check('old fixed bar overflowed by >10dp at 2x (largest Android size)', oldNeeded(2) - OLD_ROOM > 10, `by ${oldNeeded(2) - OLD_ROOM}`);
+
+  for (const inset of [0, 24, 48]) {
+    for (const scale of [0.85, 1, 1.15, 1.3, 1.5, 2, 3]) {
+      check(`bar has room for icon + label at font scale ${scale}, nav inset ${inset}`, roomFor(scale, inset) >= needed(scale), `room ${roomFor(scale, inset)} needed ${needed(scale)}`);
+    }
+    check(`system nav inset (${inset}) always stays clear below the content`, getTabBarMetrics(2, inset).paddingBottom >= inset);
+  }
+  check('normal size: bar is within 2dp of the previous 56dp + inset (no visible regression)', Math.abs(getTabBarMetrics(1, 24).height - (56 + 24)) <= 2, `${getTabBarMetrics(1, 24).height}`);
+  check('bar stops growing past the label cap (3x == 1.3x), so it never balloons', getTabBarMetrics(3, 24).height === getTabBarMetrics(1.3, 24).height);
+  check('one shared cap for tab labels and small controls (links, pills, chart labels)', CONTROL_LABEL_MAX_SCALE === TAB_LABEL_MAX_SCALE && CONTROL_LABEL_MAX_SCALE === 1.3);
+  check('bar grows with font scale up to the cap', getTabBarMetrics(1.3, 24).height > getTabBarMetrics(1, 24).height);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

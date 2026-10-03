@@ -11,6 +11,7 @@ import { useUiStore } from '../../store/ui';
 import { getBalances } from '../../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress, getCurrentPeriodSummary } from '../../utils/currency';
 import { formatDateKey, formatETB, formatNumber, HIDDEN_AMOUNT, transactionTitle } from '../../utils/format';
+import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 import { getDashboardMessage } from '../../utils/motivation';
 import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../../utils/reports';
 
@@ -225,9 +226,9 @@ export default function HomeScreen() {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Spending this month</Text>
-            <Pressable onPress={() => router.navigate('/reports')}>
-              <Text style={styles.seeAll}>See details →</Text>
+            <Text style={[styles.sectionTitle, styles.sectionHeading]}>Spending this month</Text>
+            <Pressable style={styles.seeAllButton} onPress={() => router.navigate('/reports')}>
+              <Text style={styles.seeAll} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>See details →</Text>
             </Pressable>
           </View>
           {monthlyBreakdown.length === 0 ? (
@@ -243,9 +244,9 @@ export default function HomeScreen() {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Recent transactions</Text>
-            <Pressable onPress={() => router.navigate('/transactions')}>
-              <Text style={styles.seeAll}>See all →</Text>
+            <Text style={[styles.sectionTitle, styles.sectionHeading]}>Recent transactions</Text>
+            <Pressable style={styles.seeAllButton} onPress={() => router.navigate('/transactions')}>
+              <Text style={styles.seeAll} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>See all →</Text>
             </Pressable>
           </View>
           {recentTransactions.length === 0 ? (
@@ -483,7 +484,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
     marginBottom: spacing.md,
+  },
+  // The heading takes what the link leaves and wraps; the link keeps its size (it is capped, and never squeezed).
+  sectionHeading: {
+    flex: 1,
+    minWidth: 0,
+  },
+  seeAllButton: {
+    flexShrink: 0,
   },
   seeAll: {
     ...typography.helper,

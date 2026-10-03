@@ -100,7 +100,7 @@ export default function ExchangeRatesScreen() {
             <Text style={styles.sectionTitle}>Your currencies</Text>
             {currencies.map((currency) => (
               <View key={currency.code} style={styles.currencyRow}>
-                <View>
+                <View style={styles.currencyInfo}>
                   <Text style={styles.currencyCode}>{currency.code}</Text>
                   <Text style={styles.helper}>{currency.name}</Text>
                 </View>
@@ -187,7 +187,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     fontSize: 16,
   },
+  currencyInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
   currencyRow: {
+    gap: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',

@@ -41,8 +41,10 @@ export default function TransactionsScreen() {
                   onPress={() => router.push(`/edit-transaction/${item.id}`)}
                 >
                   <View style={styles.itemContent}>
-                    <Text style={styles.category}>{title}</Text>
-                    <Text style={styles.meta}>
+                    <Text style={styles.category} numberOfLines={2}>
+                      {title}
+                    </Text>
+                    <Text style={styles.meta} numberOfLines={2}>
                       {formatDateKey(item.date)}
                       {item.account ? ` · ${item.type === 'income' ? 'into' : 'from'} ${item.account === 'saved' ? 'Saved' : 'Available'}` : ''}
                     </Text>
@@ -99,6 +101,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: radius.card,
     padding: spacing.lg,
@@ -107,7 +110,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  // The text side takes whatever width the amount leaves and truncates, instead of pushing the amount out of
+  // the card (same approach as the Home recent-transactions and Recurring rows).
   itemContent: {
+    flex: 1,
+    minWidth: 0,
     gap: spacing.sm,
   },
   category: {
@@ -119,7 +126,10 @@ const styles = StyleSheet.create({
     ...typography.helper,
     color: colors.textSecondary,
   },
+  // Bounded width so the amount's shrink-to-fit has something to fit into at large system font sizes.
   amountWrap: {
+    maxWidth: '48%',
+    flexShrink: 0,
     alignItems: 'flex-end',
     gap: 2,
   },

@@ -1,16 +1,19 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../../constants/theme';
-
-const TAB_BAR_CONTENT_HEIGHT = 56;
+import { getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LABEL_MAX_SCALE } from '../../utils/layout';
 
 export default function TabsLayout() {
   // The app draws edge-to-edge on Android, so the bar must add the system navigation inset itself or
   // its buttons sit under the gesture area / 3-button bar.
   const insets = useSafeAreaInsets();
+  // The bar's height is a fixed number to react-navigation, so it has to be computed from the font scale or the
+  // label overflows into the navigation-bar area at large system font sizes (see utils/layout.ts).
+  const { fontScale } = useWindowDimensions();
+  const bar = getTabBarMetrics(fontScale, insets.bottom);
 
   return (
     <Tabs
@@ -49,12 +52,17 @@ export default function TabsLayout() {
         },
         tabBarActiveTintColor: colors.navy,
         tabBarInactiveTintColor: colors.textSecondary,
-        tabBarLabelStyle: { fontSize: 11 },
+        // Same cap the bar height is computed with.
+        tabBarLabel: ({ color, children }) => (
+          <Text maxFontSizeMultiplier={TAB_LABEL_MAX_SCALE} numberOfLines={1} style={{ fontSize: TAB_LABEL_FONT_SIZE, color }}>
+            {children}
+          </Text>
+        ),
         tabBarIconStyle: { marginTop: 2 },
         tabBarStyle: {
-          height: TAB_BAR_CONTENT_HEIGHT + insets.bottom,
-          paddingBottom: insets.bottom + 6,
-          paddingTop: 6,
+          height: bar.height,
+          paddingBottom: bar.paddingBottom,
+          paddingTop: bar.paddingTop,
         },
       })}
     >

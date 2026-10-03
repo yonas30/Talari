@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
+
 export interface BarDatum {
   label: string;
   amount: number;
@@ -20,7 +22,7 @@ export default function HorizontalBarChart({ data }: HorizontalBarChartProps) {
         const percent = total > 0 ? Math.round((item.amount / total) * 100) : 0;
         return (
           <View key={item.label} style={styles.row}>
-            <Text style={styles.label} numberOfLines={1}>
+            <Text style={styles.label} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
               {item.label}
             </Text>
             <View style={styles.trackWrap}>
@@ -33,7 +35,9 @@ export default function HorizontalBarChart({ data }: HorizontalBarChartProps) {
                 />
               </View>
             </View>
-            <Text style={styles.percent}>{percent}%</Text>
+            <Text style={styles.percent} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+              {percent}%
+            </Text>
           </View>
         );
       })}
@@ -50,8 +54,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  // A basis, not a fixed width: the label may shrink (it is one truncated line) so the bar and the percentage keep room.
   label: {
-    width: 90,
+    flexBasis: 90,
+    flexShrink: 1,
+    maxWidth: '40%',
     fontSize: 12,
     color: '#172033',
     fontWeight: '600',
@@ -69,8 +76,10 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 999,
   },
+  // A minimum, not a fixed width: '100%' at a large font is wider than 36.
   percent: {
-    width: 36,
+    minWidth: 36,
+    flexShrink: 0,
     fontSize: 12,
     color: '#66708B',
     textAlign: 'right',

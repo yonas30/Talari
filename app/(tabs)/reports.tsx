@@ -10,6 +10,7 @@ import TrendLineChart from '../../components/TrendLineChart';
 import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
 import { addDays, toLocalDateKey } from '../../utils/dates';
+import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 import { formatETB, formatNumber } from '../../utils/format';
 import {
   RangePreset,
@@ -43,7 +44,9 @@ function PeriodNav({ label, canGoForward, onBack, onForward }: PeriodNavProps) {
       <Pressable onPress={onBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Previous period">
         <Ionicons name="chevron-back" size={22} color={colors.navy} />
       </Pressable>
-      <Text style={styles.monthLabel}>{label}</Text>
+      <Text style={styles.monthLabel} numberOfLines={2} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+        {label}
+      </Text>
       <Pressable
         onPress={onForward}
         disabled={!canGoForward}
@@ -162,7 +165,9 @@ export default function ReportsScreen() {
         <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, { backgroundColor: colors.oliveLight }]}>
             <View style={styles.summaryHeaderRow}>
-              <Text style={styles.summaryLabel}>Income</Text>
+              <Text style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+                Income
+              </Text>
               <Ionicons name="trending-up" size={14} color={colors.statusIncome} />
             </View>
             <Text
@@ -177,7 +182,9 @@ export default function ReportsScreen() {
           </View>
           <View style={[styles.summaryCard, { backgroundColor: colors.redLight }]}>
             <View style={styles.summaryHeaderRow}>
-              <Text style={styles.summaryLabel}>Expenses</Text>
+              <Text style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+                Expenses
+              </Text>
               <Ionicons name="trending-down" size={14} color={colors.statusExpense} />
             </View>
             <Text
@@ -192,7 +199,9 @@ export default function ReportsScreen() {
           </View>
           <View style={[styles.summaryCard, { backgroundColor: colors.surface }]}>
             <View style={styles.summaryHeaderRow}>
-              <Text style={styles.summaryLabel}>Net</Text>
+              <Text style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+                Net
+              </Text>
               <Ionicons name="swap-vertical" size={14} color={netColor} />
             </View>
             <Text
@@ -295,7 +304,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.lg,
   },
+  // Shrinks and wraps so the two arrows always stay on screen (a long week range is wider than the row at large fonts).
   monthLabel: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontWeight: '700',
     color: colors.navy,
     fontSize: 15,
@@ -331,8 +343,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.xs,
   },
   summaryLabel: {
+    flexShrink: 1,
     ...typography.helper,
     color: colors.textSecondary,
   },

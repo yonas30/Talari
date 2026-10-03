@@ -1,4 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
+
+import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 import Svg, { Circle, G } from 'react-native-svg';
 
 export interface DonutSlice {
@@ -63,13 +65,23 @@ export default function DonutChart({ data, size = 160, strokeWidth = 24, centerL
           </G>
         </Svg>
         {(centerLabel || centerValue) && (
-          <View style={styles.centerOverlay} pointerEvents="none">
+          <View style={[styles.centerOverlay, { paddingHorizontal: strokeWidth + 6 }]} pointerEvents="none">
             {centerValue && (
-              <Text style={styles.centerValue} numberOfLines={1}>
+              <Text
+                style={styles.centerValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+                maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}
+              >
                 {centerValue}
               </Text>
             )}
-            {centerLabel && <Text style={styles.centerLabel}>{centerLabel}</Text>}
+            {centerLabel && (
+              <Text style={styles.centerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+                {centerLabel}
+              </Text>
+            )}
           </View>
         )}
       </View>

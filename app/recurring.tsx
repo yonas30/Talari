@@ -12,6 +12,7 @@ import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { Account, CurrencyCode, RecurringFrequency, RecurringTransaction, RecurringType } from '../types';
 import { todayKey } from '../utils/dates';
+import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 import { getNextDueDate } from '../utils/recurring';
 
 function getFrequencyLabel(freq: RecurringFrequency): string {
@@ -145,7 +146,7 @@ export default function RecurringScreen() {
     <View style={styles.screen}>
       <AppHeader title="Recurring" />
       <View style={styles.topBar}>
-        <View>
+        <View style={styles.topBarText}>
           <Text style={styles.pageTitle}>Recurring transactions</Text>
           <Text style={styles.pageSubtitle}>Automate the entries you make regularly.</Text>
         </View>
@@ -194,7 +195,7 @@ export default function RecurringScreen() {
                 accessibilityLabel={`${rule.category}, tap to edit`}
               >
                 <View style={[styles.iconBadge, { backgroundColor: `${categoryMeta.color}1A` }]}>
-                  <Text style={styles.iconText}>{categoryMeta.icon}</Text>
+                  <Text style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{categoryMeta.icon}</Text>
                 </View>
                 <View style={styles.ruleInfo}>
                   <View style={styles.ruleTopLine}>
@@ -255,7 +256,7 @@ export default function RecurringScreen() {
             onPress={(event) => event.stopPropagation()}
           >
             <View style={styles.modalHeader}>
-              <Text style={styles.sectionTitle}>{editing ? 'Edit recurring transaction' : 'New recurring transaction'}</Text>
+              <Text style={[styles.sectionTitle, styles.modalTitle]}>{editing ? 'Edit recurring transaction' : 'New recurring transaction'}</Text>
               <Pressable onPress={resetForm}>
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </Pressable>
@@ -361,8 +362,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.md,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.md,
+  },
+  // Takes the width the + button leaves and wraps. Without flex: 1 the title keeps its full natural width at large
+  // font sizes and shoves the button past the screen edge.
+  topBarText: {
+    flex: 1,
+    minWidth: 0,
   },
   pageTitle: {
     ...typography.sectionTitle,
@@ -581,5 +589,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
+  },
+  // Wraps instead of shoving the close icon out of the sheet at large font sizes.
+  modalTitle: {
+    flex: 1,
+    minWidth: 0,
   },
 });

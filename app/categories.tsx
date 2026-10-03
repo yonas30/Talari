@@ -9,6 +9,7 @@ import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { Category, CategoryType } from '../types';
 import { CATEGORY_EMOJI_CHOICES, suggestCategoryEmoji } from '../utils/categoryIcons';
+import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 
 type EditableType = 'income' | 'expense';
 
@@ -131,7 +132,7 @@ export default function CategoriesScreen() {
       <AppHeader title="Categories" />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.headerRow}>
-          <Text style={styles.sectionTitle}>Manage categories</Text>
+          <Text style={[styles.sectionTitle, styles.headerTitle]}>Manage categories</Text>
           <Pressable style={styles.addButton} onPress={openCreateModal} accessibilityRole="button" accessibilityLabel="New category">
             <Ionicons name="add" size={22} color="#FFFFFF" />
           </Pressable>
@@ -148,7 +149,7 @@ export default function CategoriesScreen() {
                 return (
                   <View key={item.id} style={[styles.categoryRow, index === grouped[section].length - 1 && styles.lastRow]}>
                     <View style={[styles.iconCircle, { backgroundColor: `${item.color}1A` }]}>
-                      <Text style={styles.iconText}>{item.icon}</Text>
+                      <Text style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{item.icon}</Text>
                     </View>
                     <View style={styles.categoryText}>
                       <Text style={styles.categoryName} numberOfLines={1}>
@@ -206,7 +207,7 @@ export default function CategoriesScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected: icon === emoji }}
               >
-                <Text style={styles.iconOptionEmoji}>{emoji}</Text>
+                <Text style={styles.iconOptionEmoji} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{emoji}</Text>
               </Pressable>
             ))}
           </View>
@@ -233,6 +234,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
+  },
+  headerTitle: {
+    flex: 1,
+    minWidth: 0,
   },
   sectionTitle: {
     ...typography.sectionTitle,

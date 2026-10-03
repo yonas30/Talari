@@ -13,6 +13,7 @@ import { useFinanceStore } from '../store/finance';
 import { Budget, CurrencyCode } from '../types';
 import { getBudgetProgress } from '../utils/currency';
 import { formatETB } from '../utils/format';
+import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 
 // Share of the limit at which a budget is flagged as "close" before it is actually exceeded.
 const NEAR_LIMIT_PERCENT = 80;
@@ -112,7 +113,7 @@ export default function BudgetsScreen() {
               >
                 <View style={styles.cardHeader}>
                   <View style={[styles.iconBadge, { backgroundColor: `${meta.color}1A` }]}>
-                    <Text style={styles.iconText}>{meta.icon}</Text>
+                    <Text style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{meta.icon}</Text>
                   </View>
                   <View style={styles.cardTitleGroup}>
                     <Text style={styles.cardTitle} numberOfLines={1}>

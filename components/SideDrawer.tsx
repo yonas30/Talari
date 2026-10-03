@@ -83,6 +83,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.background,
   },
   linkLabel: {
+    flex: 1,
     ...typography.body,
     color: colors.navy,
     fontWeight: '600',
