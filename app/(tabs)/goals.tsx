@@ -1,9 +1,10 @@
-import { ReactNode, useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import DateField from '../../components/DateField';
+import SheetModal from '../../components/SheetModal';
 import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
 import { Account, Goal } from '../../types';
@@ -18,35 +19,6 @@ type MoveMode = 'add' | 'withdraw';
 interface MoveState {
   goalId: string;
   mode: MoveMode;
-}
-
-// Bottom sheet that rises above the keyboard (a plain Modal is not resized by the soft keyboard, which
-// would hide the confirm button while typing an amount).
-function SheetModal({
-  visible,
-  onClose,
-  bottomInset,
-  children,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  bottomInset: number;
-  children: ReactNode;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        <Pressable style={styles.modalBackdrop} onPress={onClose}>
-          <Pressable
-            style={[styles.modalSheet, { paddingBottom: spacing.xl + bottomInset }]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            {children}
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
 }
 
 const ACCOUNT_LABELS: Record<Account, string> = {
@@ -335,7 +307,7 @@ export default function GoalsScreen() {
       </ScrollView>
 
       {/* Create / edit goal */}
-      <SheetModal visible={isCreateOpen || editingGoalId !== null} onClose={closeGoalModal} bottomInset={insets.bottom}>
+      <SheetModal visible={isCreateOpen || editingGoalId !== null} onClose={closeGoalModal}>
         <Text style={styles.sectionTitle}>{editingGoalId ? 'Edit goal' : 'Create a new goal'}</Text>
         <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Goal name" />
         <TextInput
@@ -352,7 +324,7 @@ export default function GoalsScreen() {
       </SheetModal>
 
       {/* Move money: Available|Saved -> Goal, or Goal -> Available|Saved */}
-      <SheetModal visible={move !== null} onClose={closeMove} bottomInset={insets.bottom}>
+      <SheetModal visible={move !== null} onClose={closeMove}>
         {move && moveGoal && (
           <>
             <Text style={styles.sectionTitle} numberOfLines={1}>
@@ -456,9 +428,6 @@ export default function GoalsScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,
@@ -697,18 +666,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 15,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
-  },
-  modalSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    padding: spacing.xl,
-    gap: spacing.md,
   },
   menuBackdrop: {
     flex: 1,

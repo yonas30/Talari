@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import AppButton from '../components/AppButton';
@@ -30,55 +30,61 @@ export default function OriginScreen() {
   return (
     <View style={styles.screen}>
       <AppHeader title="Your Origin" />
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.subtitle}>
-          This is your story, in your own words. It's never generated for you — only you write this,
-          and your dashboard will occasionally remind you of it.
-        </Text>
+      {/* The soft keyboard doesn't resize an edge-to-edge window; lift the form so inputs stay visible. */}
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
+          <Text style={styles.subtitle}>
+            This is your story, in your own words. It's never generated for you — only you write this,
+            and your dashboard will occasionally remind you of it.
+          </Text>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Where did you start financially?</Text>
-          <TextInput
-            style={styles.textArea}
-            value={startingPoint}
-            onChangeText={setStartingPoint}
-            placeholder="e.g. Living paycheck to paycheck, no savings..."
-            placeholderTextColor={colors.textSecondary}
-            multiline
-          />
-        </View>
+          <View style={styles.card}>
+            <Text style={styles.label}>Where did you start financially?</Text>
+            <TextInput
+              style={styles.textArea}
+              value={startingPoint}
+              onChangeText={setStartingPoint}
+              placeholder="e.g. Living paycheck to paycheck, no savings..."
+              placeholderTextColor={colors.textSecondary}
+              multiline
+            />
+          </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Why are you building this?</Text>
-          <TextInput
-            style={styles.textArea}
-            value={whyBuilding}
-            onChangeText={setWhyBuilding}
-            placeholder="e.g. I want my family to never worry about money again..."
-            placeholderTextColor={colors.textSecondary}
-            multiline
-          />
-        </View>
+          <View style={styles.card}>
+            <Text style={styles.label}>Why are you building this?</Text>
+            <TextInput
+              style={styles.textArea}
+              value={whyBuilding}
+              onChangeText={setWhyBuilding}
+              placeholder="e.g. I want my family to never worry about money again..."
+              placeholderTextColor={colors.textSecondary}
+              multiline
+            />
+          </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Your story</Text>
-          <TextInput
-            style={styles.textArea}
-            value={storyText}
-            onChangeText={setStoryText}
-            placeholder="Write as much or as little as you want..."
-            placeholderTextColor={colors.textSecondary}
-            multiline
-          />
-        </View>
+          <View style={styles.card}>
+            <Text style={styles.label}>Your story</Text>
+            <TextInput
+              style={styles.textArea}
+              value={storyText}
+              onChangeText={setStoryText}
+              placeholder="Write as much or as little as you want..."
+              placeholderTextColor={colors.textSecondary}
+              multiline
+            />
+          </View>
 
-        <AppButton title="Save my story" variant="primary" onPress={() => void onSave()} />
-      </ScrollView>
+          <AppButton title="Save my story" variant="primary" onPress={() => void onSave()} />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,

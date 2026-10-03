@@ -32,6 +32,7 @@ export default function HomeScreen() {
   const isBalanceHidden = useUiStore((state) => state.isBalanceHidden);
   const toggleBalanceVisibility = useUiStore((state) => state.toggleBalanceVisibility);
   const upsertNotifications = useUiStore((state) => state.upsertNotifications);
+  const removeNotificationsWhere = useUiStore((state) => state.removeNotificationsWhere);
 
   useEffect(() => {
     if (!isReady) {
@@ -60,6 +61,10 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
+    // Drop budget notifications for budgets that are back within their limit (or were deleted).
+    const activeIds = new Set(budgetAlerts.map((alert) => `budget-${alert.category}`));
+    removeNotificationsWhere((item) => item.type === 'budget' && !activeIds.has(item.id));
+
     if (budgetAlerts.length === 0) {
       return;
     }
@@ -73,7 +78,7 @@ export default function HomeScreen() {
     }));
 
     upsertNotifications(nextNotifications);
-  }, [budgetAlerts, upsertNotifications]);
+  }, [budgetAlerts, upsertNotifications, removeNotificationsWhere]);
 
   // Every figure below is derived from the ledger on each render (V2 Part C) - nothing is cached.
   const balances = useMemo(() => getBalances(transactions), [transactions]);
@@ -107,6 +112,26 @@ export default function HomeScreen() {
           <Text style={styles.greeting}>{getGreeting()}, {APP_USER_NAME} 👋</Text>
           <Text style={styles.motivation}>{motivationalMessage}</Text>
         </View>
+
+        {budgetAlerts.length > 0 && (
+          <Pressable
+            style={styles.budgetBanner}
+            onPress={() => router.push('/budgets')}
+            accessibilityRole="button"
+            accessibilityLabel="Over budget, open budgets"
+          >
+            <Ionicons name="warning" size={20} color={colors.red} />
+            <View style={styles.flexShrink}>
+              <Text style={styles.budgetBannerTitle}>
+                {budgetAlerts.length === 1 ? `${budgetAlerts[0].category} is over budget` : `${budgetAlerts.length} budgets are over their limit`}
+              </Text>
+              <Text style={styles.budgetBannerText} numberOfLines={2}>
+                {budgetAlerts.map((alert) => `${alert.category} by ${formatETB(alert.amount)}`).join(' · ')}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.red} />
+          </Pressable>
+        )}
 
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
@@ -392,6 +417,24 @@ const styles = StyleSheet.create({
   netValue: {
     fontSize: 22,
     fontWeight: '800',
+  },
+  budgetBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.redLight,
+    borderRadius: radius.card,
+    padding: spacing.lg,
+  },
+  budgetBannerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.navy,
+  },
+  budgetBannerText: {
+    ...typography.helper,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   streakCard: {
     flexDirection: 'row',

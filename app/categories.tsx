@@ -1,59 +1,43 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
+import SheetModal from '../components/SheetModal';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
-import { CategoryType } from '../types';
+import { Category, CategoryType } from '../types';
+import { CATEGORY_EMOJI_CHOICES, suggestCategoryEmoji } from '../utils/categoryIcons';
 
-// Icon suggestion logic based on category name
-function suggestIcon(categoryName: string): string {
-  const lower = categoryName.toLowerCase();
+type EditableType = 'income' | 'expense';
 
-  // Income
-  if (lower.includes('salary')) return '💼';
-  if (lower.includes('freelance') || lower.includes('project')) return '💻';
-  if (lower.includes('bonus')) return '🎁';
-  if (lower.includes('investment') || lower.includes('dividend')) return '📈';
-  if (lower.includes('refund')) return '💰';
+const SECTION_TITLES: Record<CategoryType, string> = {
+  income: 'Income',
+  expense: 'Expense',
+  savings: 'Savings (not used by transactions)',
+};
 
-  // Expenses
-  if (lower.includes('food') || lower.includes('eat') || lower.includes('restaurant')) return '🍽️';
-  if (lower.includes('rent') || lower.includes('housing') || lower.includes('mortgage')) return '🏠';
-  if (lower.includes('transport') || lower.includes('car') || lower.includes('taxi') || lower.includes('uber')) return '🚕';
-  if (lower.includes('shop') || lower.includes('clothing') || lower.includes('mall')) return '🛍️';
-  if (lower.includes('health') || lower.includes('medical') || lower.includes('doctor') || lower.includes('medicine')) return '⚕️';
-  if (lower.includes('phone') || lower.includes('internet') || lower.includes('utility')) return '📱';
-  if (lower.includes('entertainment') || lower.includes('movie') || lower.includes('game') || lower.includes('music')) return '🎬';
-  if (lower.includes('gym') || lower.includes('fitness') || lower.includes('exercise')) return '💪';
-  if (lower.includes('education') || lower.includes('course') || lower.includes('book')) return '📚';
-  if (lower.includes('travel') || lower.includes('hotel') || lower.includes('flight')) return '✈️';
-
-  // Savings
-  if (lower.includes('savings') || lower.includes('save')) return '🏦';
-  if (lower.includes('emergency') || lower.includes('fund')) return '🆘';
-  if (lower.includes('investment')) return '📈';
-
-  return '✨';
+function colorForType(type: CategoryType): string {
+  return type === 'income' ? colors.olive : type === 'savings' ? colors.blue : colors.orange;
 }
 
 export default function CategoriesScreen() {
-  const insets = useSafeAreaInsets();
-  const { categories, addCategory, updateCategory, deleteCategory } = useFinanceStore();
+  const { categories, transactions, budgets, addCategory, updateCategory, deleteCategory } = useFinanceStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [type, setType] = useState<CategoryType>('expense');
+  const [type, setType] = useState<EditableType>('expense');
   const [icon, setIcon] = useState('✨');
+  // Once the user picks an icon themselves, typing in the name no longer overrides it.
+  const [iconChosen, setIconChosen] = useState(false);
 
   const resetForm = () => {
     setName('');
     setType('expense');
     setIcon('✨');
+    setIconChosen(false);
     setEditingId(null);
   };
 
@@ -62,11 +46,13 @@ export default function CategoriesScreen() {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (category: (typeof categories)[number]) => {
+  const openEditModal = (category: Category) => {
     setEditingId(category.id);
     setName(category.name);
-    setType(category.type);
+    // V2 transactions are income or expense only; a legacy savings category must be re-typed to be usable.
+    setType(category.type === 'income' ? 'income' : 'expense');
     setIcon(category.icon);
+    setIconChosen(true);
     setIsModalOpen(true);
   };
 
@@ -77,35 +63,55 @@ export default function CategoriesScreen() {
 
   const onNameChange = (text: string) => {
     setName(text);
-    // Auto-suggest icon
-    if (text.trim()) {
-      setIcon(suggestIcon(text));
+    if (!iconChosen) {
+      setIcon(suggestCategoryEmoji(text));
     }
   };
 
-  const onCreate = async () => {
-    if (!name.trim()) {
+  const onSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
       Alert.alert('Category name is required');
       return;
     }
 
-    if (editingId) {
-      await updateCategory(editingId, {
-        name: name.trim(),
-        type,
-        icon,
-        color: type === 'income' ? colors.olive : type === 'savings' ? colors.blue : colors.orange,
-      });
-    } else {
-      await addCategory({
-        name: name.trim(),
-        type,
-        icon,
-        color: type === 'income' ? colors.olive : type === 'savings' ? colors.blue : colors.orange,
-      });
+    // Transactions and budgets refer to a category by name, so two with the same name and type would be
+    // indistinguishable.
+    const duplicate = categories.some(
+      (item) => item.id !== editingId && item.type === type && item.name.trim().toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (duplicate) {
+      Alert.alert('Already exists', `You already have a ${type} category called "${trimmed}".`);
+      return;
     }
 
+    const input = { name: trimmed, type, icon, color: colorForType(type) };
+    if (editingId) {
+      await updateCategory(editingId, input);
+    } else {
+      await addCategory(input);
+    }
     closeModal();
+  };
+
+  const usageCount = (category: Category): number => {
+    const ledger = transactions.filter((item) => item.category === category.name && item.type === category.type).length;
+    const budgeted = category.type === 'expense' ? budgets.filter((item) => item.category === category.name).length : 0;
+    return ledger + budgeted;
+  };
+
+  const onDelete = (category: Category) => {
+    const used = usageCount(category);
+    Alert.alert(
+      'Delete category',
+      used > 0
+        ? `"${category.name}" is used by ${used} transaction${used === 1 ? '' : 's'} or budget${used === 1 ? '' : 's'}. They keep the name, but it will no longer appear in the category lists.`
+        : `Delete "${category.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void deleteCategory(category.id) },
+      ],
+    );
   };
 
   const grouped = useMemo(
@@ -117,94 +123,97 @@ export default function CategoriesScreen() {
     [categories],
   );
 
+  // Legacy savings categories are only listed while some still exist, so they can be re-typed or deleted.
+  const sections: CategoryType[] = grouped.savings.length > 0 ? ['income', 'expense', 'savings'] : ['income', 'expense'];
+
   return (
     <View style={styles.screen}>
       <AppHeader title="Categories" />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.headerRow}>
           <Text style={styles.sectionTitle}>Manage categories</Text>
-          <Pressable style={styles.addButton} onPress={openCreateModal}>
+          <Pressable style={styles.addButton} onPress={openCreateModal} accessibilityRole="button" accessibilityLabel="New category">
             <Ionicons name="add" size={22} color="#FFFFFF" />
           </Pressable>
         </View>
 
-        {(['income', 'expense', 'savings'] as const).map((section) => (
+        {sections.map((section) => (
           <View key={section} style={styles.card}>
-            <Text style={styles.groupTitle}>{section[0].toUpperCase() + section.slice(1)}</Text>
+            <Text style={styles.groupTitle}>{SECTION_TITLES[section]}</Text>
             {grouped[section].length === 0 ? (
-              <Text style={styles.emptyState}>No {section} categories yet</Text>
+              <Text style={styles.emptyState}>No {section} categories yet — tap + to add one.</Text>
             ) : (
-              grouped[section].map((item) => (
-                <View key={item.id} style={styles.categoryRow}>
-                  <View style={[styles.iconCircle, { backgroundColor: `${item.color}1A` }]}>
-                    <Text style={styles.iconText}>{item.icon}</Text>
-                  </View>
-                  <Text style={styles.categoryName}>{item.name}</Text>
-                  <View style={styles.actionButtons}>
-                    <Pressable onPress={() => openEditModal(item)} hitSlop={8}>
-                      <Ionicons name="pencil" size={16} color={colors.navy} />
+              grouped[section].map((item, index) => {
+                const used = usageCount(item);
+                return (
+                  <View key={item.id} style={[styles.categoryRow, index === grouped[section].length - 1 && styles.lastRow]}>
+                    <View style={[styles.iconCircle, { backgroundColor: `${item.color}1A` }]}>
+                      <Text style={styles.iconText}>{item.icon}</Text>
+                    </View>
+                    <View style={styles.categoryText}>
+                      <Text style={styles.categoryName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      {used > 0 && <Text style={styles.usage}>{used} in use</Text>}
+                    </View>
+                    <Pressable onPress={() => openEditModal(item)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`}>
+                      <Ionicons name="pencil-outline" size={18} color={colors.navy} />
                     </Pressable>
-                    <Pressable
-                      onPress={() => void deleteCategory(item.id)}
-                      hitSlop={8}
-                      style={{ marginLeft: spacing.sm }}
-                    >
-                      <Ionicons name="trash" size={16} color={colors.red} />
+                    <Pressable onPress={() => onDelete(item)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${item.name}`}>
+                      <Ionicons name="trash-outline" size={18} color={colors.red} />
                     </Pressable>
                   </View>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         ))}
       </ScrollView>
 
-      <Modal visible={isModalOpen} transparent animationType="slide" onRequestClose={closeModal}>
-        <Pressable style={styles.modalBackdrop} onPress={closeModal}>
-          <Pressable
-            style={[styles.modalSheet, { paddingBottom: spacing.xl + insets.bottom }]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <Text style={styles.sectionTitle}>{editingId ? 'Edit category' : 'New category'}</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={onNameChange}
-              placeholder="Category name"
-              placeholderTextColor={colors.textSecondary}
-            />
+      <SheetModal visible={isModalOpen} onClose={closeModal}>
+        <Text style={styles.sectionTitle}>{editingId ? 'Edit category' : 'New category'}</Text>
+        <TextInput
+          style={styles.input}
+          value={name}
+          onChangeText={onNameChange}
+          placeholder="Category name"
+          placeholderTextColor={colors.textSecondary}
+        />
 
-            <View style={styles.segmented}>
-              {(['income', 'expense', 'savings'] as const).map((option) => (
-                <AppButton key={option} title={option} selected={type === option} onPress={() => setType(option)} />
-              ))}
-            </View>
-
-            <View style={styles.iconSection}>
-              <Text style={styles.label}>Icon</Text>
-              <View style={styles.iconGrid}>
-                {['✨', '💼', '💻', '💰', '🎁', '📈', '🍽️', '🏠', '🚕', '🛍️', '⚕️', '📱', '🎬', '💪', '📚', '✈️', '🏦', '🆘'].map(
-                  (emoji) => (
-                    <Pressable
-                      key={emoji}
-                      style={[styles.iconOption, icon === emoji && styles.iconOptionSelected]}
-                      onPress={() => setIcon(emoji)}
-                    >
-                      <Text style={styles.iconOptionEmoji}>{emoji}</Text>
-                    </Pressable>
-                  ),
-                )}
-              </View>
-            </View>
-
+        <View style={styles.segmented}>
+          {(['expense', 'income'] as const).map((option) => (
             <AppButton
-              title={editingId ? 'Save changes' : 'Create category'}
-              variant="primary"
-              onPress={() => void onCreate()}
+              key={option}
+              title={option === 'expense' ? 'Expense' : 'Income'}
+              selected={type === option}
+              onPress={() => setType(option)}
+              style={styles.segmentButton}
             />
-          </Pressable>
-        </Pressable>
-      </Modal>
+          ))}
+        </View>
+
+        <View style={styles.iconSection}>
+          <Text style={styles.label}>Icon {iconChosen ? '' : '· suggested from the name'}</Text>
+          <View style={styles.iconGrid}>
+            {CATEGORY_EMOJI_CHOICES.map((emoji) => (
+              <Pressable
+                key={emoji}
+                style={[styles.iconOption, icon === emoji && styles.iconOptionSelected]}
+                onPress={() => {
+                  setIcon(emoji);
+                  setIconChosen(true);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: icon === emoji }}
+              >
+                <Text style={styles.iconOptionEmoji}>{emoji}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <AppButton title={editingId ? 'Save changes' : 'Create category'} variant="primary" onPress={() => void onSave()} />
+      </SheetModal>
     </View>
   );
 }
@@ -241,17 +250,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.card,
     padding: spacing.lg,
-    gap: spacing.md,
+    gap: spacing.sm,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
   groupTitle: {
-    fontWeight: '700',
-    color: colors.navy,
-    fontSize: 15,
-    marginBottom: spacing.sm,
+    ...typography.helper,
+    fontWeight: '800',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: spacing.xs,
   },
   categoryRow: {
     flexDirection: 'row',
@@ -261,41 +272,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.background,
   },
+  lastRow: {
+    borderBottomWidth: 0,
+  },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconText: {
     fontSize: 18,
   },
-  categoryName: {
+  categoryText: {
     flex: 1,
+  },
+  categoryName: {
     fontWeight: '600',
     color: colors.navy,
     fontSize: 15,
   },
-  actionButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  usage: {
+    ...typography.helper,
+    color: colors.textSecondary,
   },
   emptyState: {
     ...typography.helper,
     color: colors.textSecondary,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    padding: spacing.xl,
-    gap: spacing.md,
   },
   label: {
     ...typography.helper,
@@ -305,8 +309,6 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: colors.background,
     borderRadius: radius.button,
-    borderWidth: 1,
-    borderColor: '#E2E5DE',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     fontSize: 16,
@@ -314,12 +316,13 @@ const styles = StyleSheet.create({
   },
   segmented: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  segmentButton: {
+    flex: 1,
   },
   iconSection: {
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   iconGrid: {
     flexDirection: 'row',
@@ -327,15 +330,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   iconOption: {
-    width: '25%',
+    width: '14%',
     aspectRatio: 1,
     borderRadius: radius.button,
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   iconOptionSelected: {
-    backgroundColor: colors.orange,
+    backgroundColor: colors.orangeLight,
+    borderColor: colors.orange,
   },
   iconOptionEmoji: {
     fontSize: 20,

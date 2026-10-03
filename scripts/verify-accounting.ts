@@ -8,7 +8,9 @@
 import { ExchangeRate, Transaction, TransactionInput } from '../types';
 import { getBalances, LedgerError, LedgerErrorCode } from '../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress, getGoalProgress, nextGoalStatus } from '../utils/currency';
-import { toLocalDateKey } from '../utils/dates';
+import { suggestCategoryEmoji } from '../utils/categoryIcons';
+import { parseDateKey, toLocalDateKey } from '../utils/dates';
+import { advanceDate, getNextDueDate, planRecurringEdit } from '../utils/recurring';
 import {
   TREND_TITLES,
   clampCustomRange,
@@ -401,6 +403,55 @@ console.log('\nStep 7: Goals - all transfer directions, completion status');
 
   // a completed goal still holds money that can be moved out (and only then is it "free")
   check('a completed goal can be withdrawn to Saved', (() => { const l = add(full, transfer(10000, 'goal', 'saved')); const b = getBalances(l); return (b.goals.laptop ?? 0) === 0 && b.saved === 40000 && b.total === 100000; })());
+}
+
+console.log('\nStep 8: recurring schedule, recurring edits, category icons');
+{
+  const key = (d: Date) => toLocalDateKey(d);
+  const anchor = (startKey: string) => parseDateKey(startKey).getDate();
+
+  // Replicates the generator loop in db/database.ts: every occurrence due on or before `today`.
+  const occurrences = (rule: { startDate: string; lastGeneratedDate: string | null; frequency: 'daily' | 'weekly' | 'monthly' }, today: string) => {
+    const out: string[] = [];
+    let next = getNextDueDate(rule);
+    const todayDate = parseDateKey(today);
+    while (next <= todayDate && out.length < 400) {
+      out.push(key(next));
+      next = advanceDate(next, rule.frequency, anchor(rule.startDate));
+    }
+    return out;
+  };
+
+  check('monthly from the 31st clamps to short months and returns to the 31st', occurrences({ startDate: '2026-01-31', lastGeneratedDate: null, frequency: 'monthly' }, '2026-05-31').join() === '2026-01-31,2026-02-28,2026-03-31,2026-04-30,2026-05-31', occurrences({ startDate: '2026-01-31', lastGeneratedDate: null, frequency: 'monthly' }, '2026-05-31').join());
+  check('monthly from the 31st in a leap year uses Feb 29', occurrences({ startDate: '2028-01-31', lastGeneratedDate: null, frequency: 'monthly' }, '2028-03-01').join() === '2028-01-31,2028-02-29');
+  check('monthly across a year boundary (Dec 15 -> Jan 15)', occurrences({ startDate: '2025-12-15', lastGeneratedDate: null, frequency: 'monthly' }, '2026-02-15').join() === '2025-12-15,2026-01-15,2026-02-15');
+  check('weekly steps exactly 7 days', occurrences({ startDate: '2026-01-01', lastGeneratedDate: null, frequency: 'weekly' }, '2026-01-22').join() === '2026-01-01,2026-01-08,2026-01-15,2026-01-22');
+  check('daily steps one day (across a month end)', occurrences({ startDate: '2026-01-30', lastGeneratedDate: null, frequency: 'daily' }, '2026-02-02').join() === '2026-01-30,2026-01-31,2026-02-01,2026-02-02');
+  check('a rule starting in the future has nothing due yet', occurrences({ startDate: '2026-06-01', lastGeneratedDate: null, frequency: 'monthly' }, '2026-05-01').length === 0);
+  check('resuming from lastGeneratedDate continues the cadence without repeating it', occurrences({ startDate: '2026-01-31', lastGeneratedDate: '2026-02-28', frequency: 'monthly' }, '2026-04-30').join() === '2026-03-31,2026-04-30');
+  check('getNextDueDate = start before it has fired, next period after', key(getNextDueDate({ startDate: '2026-03-10', lastGeneratedDate: null, frequency: 'monthly' })) === '2026-03-10' && key(getNextDueDate({ startDate: '2026-03-10', lastGeneratedDate: '2026-03-10', frequency: 'monthly' })) === '2026-04-10');
+
+  // editing must never back-post already-posted occurrences
+  const planned = planRecurringEdit({ startDate: '2026-01-15', lastGeneratedDate: null, frequency: 'monthly' }, { startDate: '2026-02-01', frequency: 'monthly' });
+  check('a rule that never fired takes the new start date', planned.startDate === '2026-02-01' && planned.lastGeneratedDate === null);
+  const kept = planRecurringEdit({ startDate: '2026-01-15', lastGeneratedDate: '2026-03-15', frequency: 'monthly' }, { startDate: '2026-02-01', frequency: 'monthly' });
+  check('a rule with history keeps its schedule even if a new date is submitted', kept.startDate === '2026-01-15' && kept.lastGeneratedDate === '2026-03-15');
+  const switched = planRecurringEdit({ startDate: '2026-01-15', lastGeneratedDate: '2026-03-15', frequency: 'monthly' }, { startDate: '2026-01-15', frequency: 'daily' });
+  check('changing frequency restarts at the date it was due next (no back-posting)', switched.startDate === '2026-04-15' && switched.lastGeneratedDate === null, JSON.stringify(switched));
+  check('after a frequency change, nothing before the old next-due date is generated', occurrences({ startDate: switched.startDate, lastGeneratedDate: switched.lastGeneratedDate, frequency: 'daily' }, '2026-04-17').join() === '2026-04-15,2026-04-16,2026-04-17');
+
+  // category icon suggestions
+  const emoji = suggestCategoryEmoji;
+  check('Salary -> briefcase, Food -> plate, Rent -> house', emoji('Salary') === '💼' && emoji('Food') === '🍽️' && emoji('Rent') === '🏠');
+  check('Groceries -> cart (not the generic food plate)', emoji('Groceries') === '🛒');
+  check('Coffee shop -> coffee (not shopping)', emoji('Coffee shop') === '☕');
+  check('Car insurance -> shield (not taxi)', emoji('Car insurance') === '🛡️');
+  check('Petrol -> fuel (not pet)', emoji('Petrol') === '⛽');
+  check('Pet food -> paw', emoji('Pet food') === '🐾');
+  check('Internet bill -> phone/data icon', emoji('Internet bill') === '📱');
+  check('Education is not mistaken for "cat"', emoji('Education') === '📚');
+  check('"Card fees" is not mistaken for a car', emoji('Card fees') !== '🚕');
+  check('unknown or empty names get the neutral sparkle', emoji('Zzzz') === '✨' && emoji('') === '✨' && emoji('   ') === '✨');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

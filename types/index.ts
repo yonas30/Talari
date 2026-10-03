@@ -220,6 +220,7 @@ export interface FinanceStoreState {
   upsertBudget: (input: BudgetInput) => Promise<Budget>;
   deleteBudget: (id: string) => Promise<void>;
   addRecurringTransaction: (input: RecurringTransactionInput) => Promise<RecurringTransaction>;
+  updateRecurringTransaction: (id: string, input: RecurringTransactionInput) => Promise<RecurringTransaction>;
   toggleRecurringTransaction: (id: string, isActive: boolean) => Promise<void>;
   deleteRecurringTransaction: (id: string) => Promise<void>;
   saveOrigin: (input: UserOriginInput) => Promise<UserOrigin>;

@@ -1,5 +1,7 @@
 import { Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
 
+import { colors } from '../constants/theme';
+
 type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
 interface AppButtonProps {
@@ -48,18 +50,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: '#ECEEF3',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Design system (V2 Part U): orange is the single accent for primary actions, navy marks a selected
+  // option, red only for destructive actions. No saturated blue.
   primary: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: colors.orange,
   },
   danger: {
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.red,
   },
   selected: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: colors.navy,
   },
   pressed: {
     opacity: 0.75,
@@ -68,7 +72,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   text: {
-    color: '#0f172a',
+    color: colors.navy,
     fontWeight: '700',
     fontSize: 14,
   },

@@ -6,6 +6,13 @@ import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { calculateBuilderStreak } from '../utils/currency';
+import { formatDateKey, formatNumber } from '../utils/format';
+
+// 'YYYY-MM' -> 'September 2026'
+function formatMonthKey(key: string): string {
+  const [year, month] = key.split('-').map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
 
 export default function JourneyScreen() {
   const { milestones, monthlySnapshots, transactions } = useFinanceStore();
@@ -28,7 +35,7 @@ export default function JourneyScreen() {
     <View style={styles.screen}>
       <AppHeader title="Your Journey" />
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.card}>
+        <View style={[styles.card, styles.heroCard]}>
           <View style={styles.statHeader}>
             <Ionicons name="flash" size={22} color={colors.orange} />
             <Text style={styles.statTitle}>Your Momentum</Text>
@@ -36,7 +43,7 @@ export default function JourneyScreen() {
           <Text style={styles.streakNumber}>{longestStreak}</Text>
           <Text style={styles.streakLabel}>day streak</Text>
           <Text style={styles.streakSupport}>
-            {longestStreak > 0 ? "You're tracking consistently!" : 'Log something today to start your streak.'}
+            {longestStreak > 0 ? "You're tracking consistently!" : 'Record something today to start your streak.'}
           </Text>
         </View>
 
@@ -77,24 +84,24 @@ export default function JourneyScreen() {
                       index === monthlySnapshots.length - 1 && styles.snapshotRowLast,
                     ]}
                   >
-                    <Text style={styles.snapshotMonth}>{snapshot.month}</Text>
+                    <Text style={styles.snapshotMonth}>{formatMonthKey(snapshot.month)}</Text>
                     <View style={styles.snapshotMetrics}>
                       <View style={styles.metricItem}>
                         <Text style={styles.metricLabel}>In</Text>
                         <Text style={[styles.metricValue, { color: colors.statusIncome }]}>
-                          {snapshot.currency} {snapshot.income.toFixed(0)}
+                          {snapshot.currency} {formatNumber(snapshot.income, 0)}
                         </Text>
                       </View>
                       <View style={styles.metricItem}>
                         <Text style={styles.metricLabel}>Out</Text>
                         <Text style={[styles.metricValue, { color: colors.statusExpense }]}>
-                          {snapshot.currency} {snapshot.expenses.toFixed(0)}
+                          {snapshot.currency} {formatNumber(snapshot.expenses, 0)}
                         </Text>
                       </View>
                       <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>Saved</Text>
+                        <Text style={styles.metricLabel}>Set aside</Text>
                         <Text style={[styles.metricValue, { color: colors.olive }]}>
-                          {snapshot.currency} {snapshot.savings.toFixed(0)}
+                          {snapshot.currency} {formatNumber(snapshot.savings, 0)}
                         </Text>
                       </View>
                     </View>
@@ -127,7 +134,7 @@ export default function JourneyScreen() {
                   <View style={styles.milestoneContent}>
                     <Text style={styles.milestoneTitle}>{milestone.title}</Text>
                     <Text style={styles.milestoneDescription}>{milestone.description}</Text>
-                    <Text style={styles.milestoneDate}>{milestone.date}</Text>
+                    <Text style={styles.milestoneDate}>{formatDateKey(milestone.date)}</Text>
                   </View>
                 </View>
               ))}
@@ -159,6 +166,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+  },
+  heroCard: {
+    backgroundColor: colors.orangeLight,
   },
   statHeader: {
     flexDirection: 'row',

@@ -16,6 +16,7 @@ interface UiState {
   closeDrawer: () => void;
   toggleBalanceVisibility: () => void;
   upsertNotifications: (items: AppNotification[]) => void;
+  removeNotificationsWhere: (predicate: (item: AppNotification) => boolean) => void;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
 }
@@ -35,6 +36,12 @@ export const useUiStore = create<UiState>((set) => ({
         existing.set(item.id, { ...existing.get(item.id), ...item, isRead: existing.get(item.id)?.isRead ?? item.isRead });
       }
       return { notifications: Array.from(existing.values()) };
+    }),
+  removeNotificationsWhere: (predicate) =>
+    set((state) => {
+      const kept = state.notifications.filter((item) => !predicate(item));
+      // Keep the same array when nothing was removed so subscribers don't re-render needlessly.
+      return kept.length === state.notifications.length ? state : { notifications: kept };
     }),
   markNotificationAsRead: (id) =>
     set((state) => ({

@@ -27,6 +27,7 @@ import {
   initializeDatabase,
   insertTransaction,
   toggleRecurringTransaction,
+  updateRecurringTransaction,
   updateCategory,
   updateGoal,
   updateTransaction,
@@ -162,10 +163,29 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
     return category;
   },
   updateCategory: async (id: string, input: Omit<Category, 'id' | 'isDefault'>) => {
+    const previous = get().categories.find((item) => item.id === id);
     await updateCategory(id, input);
-    set((state) => ({
-      categories: state.categories.map((item) => (item.id === id ? { ...item, ...input } : item)),
-    }));
+    set((state) => {
+      const renamed = previous && previous.name !== input.name && (previous.type === 'income' || previous.type === 'expense');
+      return {
+        categories: state.categories.map((item) => (item.id === id ? { ...item, ...input } : item)),
+        // Mirror the cascade done in SQL so open screens don't show stale names.
+        transactions: renamed
+          ? state.transactions.map((item) =>
+              item.category === previous.name && item.type === previous.type ? { ...item, category: input.name } : item,
+            )
+          : state.transactions,
+        recurringTransactions: renamed
+          ? state.recurringTransactions.map((item) =>
+              item.category === previous.name && item.type === previous.type ? { ...item, category: input.name } : item,
+            )
+          : state.recurringTransactions,
+        budgets:
+          renamed && previous.type === 'expense'
+            ? state.budgets.map((item) => (item.category === previous.name ? { ...item, category: input.name } : item))
+            : state.budgets,
+      };
+    });
   },
   deleteCategory: async (id: string) => {
     await deleteCategory(id);
@@ -283,6 +303,13 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
       recurringTransactions: [recurring, ...state.recurringTransactions],
     }));
     return recurring;
+  },
+  updateRecurringTransaction: async (id, input) => {
+    const updated = await updateRecurringTransaction(id, input);
+    set((state) => ({
+      recurringTransactions: state.recurringTransactions.map((item) => (item.id === id ? updated : item)),
+    }));
+    return updated;
   },
   toggleRecurringTransaction: async (id: string, isActive: boolean) => {
     await toggleRecurringTransaction(id, isActive);

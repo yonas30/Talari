@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 
 import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
+import SettingsRow from '../components/SettingsRow';
+import { colors, radius, spacing } from '../constants/theme';
 import { useUiStore } from '../store/ui';
 import { isAppLockEnabled, setAppLockEnabled } from '../utils/appLock';
 
@@ -38,81 +38,54 @@ export default function SettingsScreen() {
     setLockEnabled(nextValue);
   };
 
-  const rows = [
-    {
-      title: 'Categories',
-      subtitle: 'Add, edit, or delete categories',
-      icon: 'list-outline' as const,
-      onPress: () => router.push('/categories'),
-      showArrow: true,
-    },
-    {
-      title: 'Notifications',
-      subtitle: unreadNotifications > 0 ? `${unreadNotifications} unread` : 'Everything is up to date',
-      icon: 'notifications-outline' as const,
-      onPress: () => router.push('/notifications'),
-      showArrow: true,
-      showDot: unreadNotifications > 0,
-    },
-    {
-      title: 'App lock',
-      subtitle: 'Secure your data with biometrics or passcode',
-      icon: 'lock-closed-outline' as const,
-      toggleValue: lockEnabled,
-      onToggle: () => void onToggleAppLock(),
-      showArrow: false,
-    },
-    {
-      title: 'Export / Restore',
-      subtitle: 'Backup and restore your data',
-      icon: 'download-outline' as const,
-      onPress: () => router.push('/export-data'),
-      showArrow: true,
-    },
-    {
-      title: 'About',
-      subtitle: 'Learn about the app and its story',
-      icon: 'information-circle-outline' as const,
-      onPress: () => router.push('/about'),
-      showArrow: true,
-    },
-  ];
-
   return (
     <View style={styles.screen}>
       <AppHeader title="Settings" />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.card}>
-          {rows.map((row) => (
-            <View key={row.title} style={styles.rowWrap}>
-              {row.showArrow ? (
-                <Pressable style={styles.menuItem} onPress={row.onPress}>
-                  <View style={styles.menuItemContent}>
-                    <Ionicons name={row.icon} size={20} color={colors.navy} />
-                    <View style={styles.menuItemText}>
-                      <Text style={styles.menuItemTitle}>{row.title}</Text>
-                      <Text style={styles.menuItemDescription}>{row.subtitle}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.endColumn}>
-                    {row.showDot && <View style={styles.unreadDot} />}
-                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                  </View>
-                </Pressable>
-              ) : (
-                <View style={styles.menuItem}>
-                  <View style={styles.menuItemContent}>
-                    <Ionicons name={row.icon} size={20} color={colors.navy} />
-                    <View style={styles.menuItemText}>
-                      <Text style={styles.menuItemTitle}>{row.title}</Text>
-                      <Text style={styles.menuItemDescription}>{row.subtitle}</Text>
-                    </View>
-                  </View>
-                  <Switch value={row.toggleValue ?? false} onValueChange={row.onToggle} />
-                </View>
-              )}
-            </View>
-          ))}
+          <SettingsRow
+            icon="cash-outline"
+            title="Currency & Exchange Rates"
+            subtitle="Rates used to convert foreign amounts to ETB"
+            onPress={() => router.push('/exchange-rates')}
+          />
+          <SettingsRow
+            icon="grid-outline"
+            title="Categories"
+            subtitle="Add, edit, or delete categories"
+            onPress={() => router.push('/categories')}
+          />
+          <SettingsRow
+            icon="notifications-outline"
+            title="Notifications"
+            subtitle={unreadNotifications > 0 ? `${unreadNotifications} unread` : 'Everything is up to date'}
+            showDot={unreadNotifications > 0}
+            onPress={() => router.push('/notifications')}
+            isLast
+          />
+        </View>
+
+        <View style={styles.card}>
+          <SettingsRow
+            icon="lock-closed-outline"
+            title="App lock"
+            subtitle="Secure your data with biometrics or passcode"
+            toggleValue={lockEnabled}
+            onToggle={() => void onToggleAppLock()}
+          />
+          <SettingsRow
+            icon="download-outline"
+            title="Export / Restore"
+            subtitle="Back up and restore your data"
+            onPress={() => router.push('/export-data')}
+          />
+          <SettingsRow
+            icon="information-circle-outline"
+            title="About"
+            subtitle="Learn about the app and its story"
+            onPress={() => router.push('/about')}
+            isLast
+          />
         </View>
       </ScrollView>
     </View>
@@ -128,6 +101,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl,
+    gap: spacing.lg,
   },
   card: {
     backgroundColor: colors.surface,
@@ -137,48 +111,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
-  },
-  rowWrap: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    gap: spacing.md,
-  },
-  menuItemContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    flex: 1,
-  },
-  menuItemText: {
-    gap: 2,
-    flex: 1,
-  },
-  menuItemTitle: {
-    fontWeight: '700',
-    color: colors.navy,
-    fontSize: 15,
-  },
-  menuItemDescription: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
-  endColumn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  unreadDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.red,
   },
 });

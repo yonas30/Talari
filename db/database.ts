@@ -28,7 +28,8 @@ import {
   UserOriginInput,
 } from '../types';
 import { assertValidLedger, LedgerError, validateLedger } from '../utils/balances';
-import { toLocalDateKey } from '../utils/dates';
+import { parseDateKey, toLocalDateKey } from '../utils/dates';
+import { advanceDate, getNextDueDate, planRecurringEdit } from '../utils/recurring';
 import { buildTransaction } from '../utils/transactions';
 import { budgets, categories, currencies, exchangeRates, goals, milestones, monthlySnapshots, recurringTransactions, transactions, userOrigin } from './schema';
 
@@ -417,7 +418,25 @@ export async function addCategory(input: Omit<Category, 'id' | 'isDefault'>): Pr
   return category;
 }
 
+// Transactions, budgets and recurring rules reference a category by NAME, so renaming one must carry
+// them along - otherwise old spending silently drops out of its budget and category totals.
 export async function updateCategory(id: string, input: Omit<Category, 'id' | 'isDefault'>): Promise<void> {
+  const previous = database.getFirstSync('SELECT name, type FROM categories WHERE id = ?', id) as
+    | { name: string; type: CategoryType }
+    | null;
+
+  if (previous && previous.name !== input.name) {
+    // Only income/expense categories are referenced by ledger rows; match on type so an income
+    // category and an expense category that share a name stay independent.
+    if (previous.type === 'income' || previous.type === 'expense') {
+      database.runSync('UPDATE transactions SET category = ? WHERE category = ? AND type = ?', input.name, previous.name, previous.type);
+      database.runSync('UPDATE recurring_transactions SET category = ? WHERE category = ? AND type = ?', input.name, previous.name, previous.type);
+    }
+    if (previous.type === 'expense') {
+      database.runSync('UPDATE budgets SET category = ? WHERE category = ?', input.name, previous.name);
+    }
+  }
+
   database.runSync(
     'UPDATE categories SET name = ?, type = ?, icon = ?, color = ? WHERE id = ?',
     input.name,
@@ -831,20 +850,56 @@ export async function toggleRecurringTransaction(id: string, isActive: boolean):
   );
 }
 
-export async function deleteRecurringTransaction(id: string): Promise<void> {
-  database.runSync('DELETE FROM recurring_transactions WHERE id = ?', id);
+// Edits change the rule going forward only; occurrences already posted stay as they are.
+export async function updateRecurringTransaction(
+  id: string,
+  input: RecurringTransactionInput,
+): Promise<RecurringTransaction> {
+  const existing = (await getRecurringTransactions()).find((rule) => rule.id === id);
+  if (!existing) {
+    throw new Error('Recurring transaction not found');
+  }
+
+  const schedule = planRecurringEdit(existing, input);
+  const updated: RecurringTransaction = {
+    ...existing,
+    type: input.type,
+    account: input.account,
+    amount: Number(input.amount),
+    currency: input.currency,
+    category: input.category,
+    source: input.source.trim(),
+    note: input.note?.trim() ? input.note.trim() : null,
+    frequency: input.frequency,
+    startDate: schedule.startDate,
+    lastGeneratedDate: schedule.lastGeneratedDate,
+    updatedAt: nowIso(),
+  };
+
+  database.runSync(
+    `UPDATE recurring_transactions
+      SET type = ?, account = ?, amount = ?, currency = ?, category = ?, source = ?, note = ?, frequency = ?,
+          start_date = ?, last_generated_date = ?, updated_at = ?
+      WHERE id = ?`,
+    updated.type,
+    updated.account,
+    updated.amount,
+    updated.currency,
+    updated.category,
+    updated.source,
+    updated.note,
+    updated.frequency,
+    updated.startDate,
+    updated.lastGeneratedDate,
+    updated.updatedAt,
+    id,
+  );
+
+  return updated;
 }
 
-function advanceDate(date: Date, frequency: RecurringFrequency): Date {
-  const next = new Date(date);
-  if (frequency === 'daily') {
-    next.setDate(next.getDate() + 1);
-  } else if (frequency === 'weekly') {
-    next.setDate(next.getDate() + 7);
-  } else {
-    next.setMonth(next.getMonth() + 1);
-  }
-  return next;
+export async function deleteRecurringTransaction(id: string): Promise<void> {
+  database.runSync('DELETE FROM recurring_transactions WHERE id = ?', id);
 }
 
 // Posts every occurrence that has come due. Each one goes through the same ledger validation as a
@@ -869,8 +924,9 @@ export async function generateDueRecurringTransactions(): Promise<{
       continue;
     }
 
-    const cursor = rule.lastGeneratedDate ? new Date(`${rule.lastGeneratedDate}T00:00:00`) : null;
-    let nextDue = cursor ? advanceDate(cursor, rule.frequency) : new Date(`${rule.startDate}T00:00:00`);
+    // Same schedule maths as the Recurring screen (utils/recurring.ts), including month-end clamping.
+    let nextDue = getNextDueDate(rule);
+    const anchorDay = parseDateKey(rule.startDate).getDate();
 
     let iterations = 0;
     let lastGenerated = rule.lastGeneratedDate;
@@ -909,7 +965,7 @@ export async function generateDueRecurringTransactions(): Promise<{
       }
 
       lastGenerated = dateString;
-      nextDue = advanceDate(nextDue, rule.frequency);
+      nextDue = advanceDate(nextDue, rule.frequency, anchorDay);
       iterations += 1;
     }
 

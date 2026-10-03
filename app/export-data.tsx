@@ -42,11 +42,15 @@ export default function ExportDataScreen() {
   const onExportCsv = async () => {
     setIsBusy(true);
     try {
-      const header = 'date,type,category,amount,currency,source,note';
+      // amount/currency are what was entered; amount_etb is the value every balance and report uses.
+      const header = 'date,type,category,amount,currency,amount_etb,exchange_rate,account,from,to,source,note';
       const rows = transactions.map((item) => {
         const note = (item.note ?? '').replace(/"/g, '""');
         const source = item.source.replace(/"/g, '""');
-        return `${item.date},${item.type},"${item.category}",${item.amount},${item.currency},"${source}","${note}"`;
+        const category = item.category.replace(/"/g, '""');
+        const endpoint = (account: string | null, goalId: string | null) =>
+          account === 'goal' ? `goal:${goalId ?? ''}` : (account ?? '');
+        return `${item.date},${item.type},"${category}",${item.amount},${item.currency},${item.amountETB},${item.exchangeRate},${item.account ?? ''},${endpoint(item.fromAccount, item.fromGoalId)},${endpoint(item.toAccount, item.toGoalId)},"${source}","${note}"`;
       });
       const csv = [header, ...rows].join('\n');
 
