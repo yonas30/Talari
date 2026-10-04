@@ -7,6 +7,7 @@ import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
 import CurrencyPicker from '../components/CurrencyPicker';
 import DateField from '../components/DateField';
+import SegmentedTabs from '../components/SegmentedTabs';
 import { defaultCategories } from '../constants/categories';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
@@ -163,14 +164,14 @@ export default function RecurringScreen() {
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.tabs}>
-          <Pressable style={[styles.tab, tab === 'upcoming' && styles.tabSelected]} onPress={() => setTab('upcoming')}>
-            <Text style={[styles.tabText, tab === 'upcoming' && styles.tabTextSelected]}>Upcoming ({upcomingCount})</Text>
-          </Pressable>
-          <Pressable style={[styles.tab, tab === 'all' && styles.tabSelected]} onPress={() => setTab('all')}>
-            <Text style={[styles.tabText, tab === 'all' && styles.tabTextSelected]}>All ({rules.length})</Text>
-          </Pressable>
-        </View>
+        <SegmentedTabs
+          tabs={[
+            { key: 'upcoming', label: `Upcoming (${upcomingCount})` },
+            { key: 'all', label: `All (${rules.length})` },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
 
         {visibleRules.length === 0 ? (
           <View style={styles.card}>
@@ -407,28 +408,6 @@ const styles = StyleSheet.create({
     ...typography.helper,
     color: colors.textSecondary,
     fontWeight: '700',
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.button,
-    padding: 4,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 9,
-    borderRadius: radius.button - 2,
-  },
-  tabSelected: {
-    backgroundColor: colors.navy,
-  },
-  tabText: {
-    color: colors.navy,
-    fontWeight: '600',
-  },
-  tabTextSelected: {
-    color: '#FFFFFF',
   },
   modalBackdrop: {
     flex: 1,

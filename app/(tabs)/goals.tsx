@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import DateField from '../../components/DateField';
+import SegmentedTabs from '../../components/SegmentedTabs';
 import SheetModal from '../../components/SheetModal';
 import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
@@ -202,16 +203,14 @@ export default function GoalsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.tabs}>
-          <Pressable style={[styles.tab, tab === 'active' && styles.tabSelected]} onPress={() => setTab('active')}>
-            <Text style={[styles.tabText, tab === 'active' && styles.tabTextSelected]}>Active ({activeGoals.length})</Text>
-          </Pressable>
-          <Pressable style={[styles.tab, tab === 'completed' && styles.tabSelected]} onPress={() => setTab('completed')}>
-            <Text style={[styles.tabText, tab === 'completed' && styles.tabTextSelected]}>
-              Completed ({completedGoals.length})
-            </Text>
-          </Pressable>
-        </View>
+        <SegmentedTabs
+          tabs={[
+            { key: 'active', label: `Active (${activeGoals.length})` },
+            { key: 'completed', label: `Completed (${completedGoals.length})` },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
 
         {goals.length > 0 && (
           <Text style={styles.metaText}>
@@ -461,28 +460,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl,
     gap: spacing.md,
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.button,
-    padding: 4,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 9,
-    borderRadius: radius.button - 2,
-  },
-  tabSelected: {
-    backgroundColor: colors.navy,
-  },
-  tabText: {
-    color: colors.navy,
-    fontWeight: '600',
-  },
-  tabTextSelected: {
-    color: '#FFFFFF',
   },
   card: {
     backgroundColor: colors.surface,

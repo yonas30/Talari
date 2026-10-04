@@ -7,7 +7,7 @@
 
 import { findV2LaunchCutoff, runMigrations, SCHEMA_DDL, SCHEMA_VERSION, SqlRunner } from '../db/migrations';
 import { getReadIds, markRead, pruneReads } from '../db/notificationReads';
-import { Budget, ExchangeRate, Milestone, Transaction, TransactionInput } from '../types';
+import { Budget, ExchangeRate, Goal, Milestone, Transaction, TransactionInput } from '../types';
 import { getBalances, LedgerError, LedgerErrorCode } from '../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress, getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { suggestCategoryEmoji } from '../utils/categoryIcons';
@@ -30,6 +30,7 @@ import { CONTROL_LABEL_MAX_SCALE, getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LAB
 import { statusBarStyleForBackground } from '../utils/statusBar';
 import { hasCompletionMilestone } from '../utils/milestones';
 import { budgetNotificationId, getBudgetAlerts } from '../utils/notifications';
+import { filterByType, filterTransactions, TypeFilter } from '../utils/search';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 
 const RATES: ExchangeRate[] = [
@@ -718,6 +719,74 @@ console.log('\nNotifications: over-budget alerts and seen-state storage');
   device.exec('PRAGMA user_version = 3');
   runMigrations({ exec: (sql) => device.exec(sql), all: <T,>(sql: string, ...params: unknown[]) => device.prepare(sql).all(...params) as T[], run: (sql, ...params) => { device.prepare(sql).run(...params); } }, 3);
   check('runMigrations on an already-v3 device still creates notification_reads (CREATE IF NOT EXISTS)', (device.prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE name = 'notification_reads'").all() as { c: number }[])[0].c === 1);
+}
+
+console.log('\nTransactions search: merchant / category / note / transfer / amount');
+{
+  const lg = [{ id: 'laptop', name: 'Laptop', targetAmount: 1, deadline: null, status: 'active' as const, createdAt: '', updatedAt: '' }];
+  let rows: Transaction[] = ledgerOf(income(10000000, 'available', '2025-12-01'));
+  const put = (input: TransactionInput) => { rows = [...rows, planAdd(rows, input, RATES, GOALS)]; return rows[rows.length - 1].id; };
+  const t1 = put({ type: 'expense', amount: 1250.5, currency: 'ETB', category: 'Food', source: 'Bole Taxi', note: 'airport run', account: 'available', date: '2026-01-02' });
+  const t2 = put({ type: 'expense', amount: 300, currency: 'ETB', category: 'Transport', source: 'Ride', account: 'available', date: '2026-01-03' });
+  const t3 = put({ type: 'income', amount: 75000, currency: 'ETB', category: 'Salary', source: 'Acme Ltd', account: 'available', date: '2026-01-04' });
+  const t4 = put({ type: 'transfer', amount: 5000, currency: 'ETB', fromAccount: 'available', toAccount: 'goal', toGoalId: 'laptop', date: '2026-01-05' });
+  const t5 = put({ type: 'expense', amount: 10, currency: 'USD', category: 'Coffee', source: 'Café Moka', note: 'meeting', account: 'available', date: '2026-01-06' });
+  const t6 = put({ type: 'expense', amount: 12500, currency: 'ETB', category: 'Rent', source: 'Landlord', account: 'available', date: '2026-01-07' });
+  const salary0 = rows[0].id;
+  const find = (query: string): string[] => filterTransactions(rows, query, lg).map((r) => r.id);
+  const same = (got: string[], want: string[]) => JSON.stringify([...got].sort()) === JSON.stringify([...want].sort());
+
+  check('empty or whitespace-only query returns everything, in the original order', find('').length === rows.length && find('   ').length === rows.length && JSON.stringify(find('')) === JSON.stringify(rows.map((r) => r.id)));
+  check('merchant / source', same(find('bole'), [t1]) && same(find('landlord'), [t6]) && same(find('acme'), [t3]));
+  check('case-insensitive', same(find('BOLE'), [t1]) && same(find('aCmE LtD'), [t3]));
+  check('partial words match as you type ("bo" finds Bole Taxi; "lan" finds Landlord)', find('bo').includes(t1) && same(find('lan'), [t6]));
+  check('category name', same(find('food'), [t1]) && same(find('transport'), [t2]) && same(find('salary'), [salary0, t3]));
+  check('note text', same(find('airport'), [t1]) && same(find('meeting'), [t5]));
+  check('accent-insensitive: "cafe" finds Café Moka, and "café" does too', same(find('cafe'), [t5]) && same(find('café'), [t5]));
+  check('a transfer is found by its destination goal and by its From -> To labels', same(find('laptop'), [t4]) && find('available').includes(t4));
+  check('every word must match (AND): "food bole" -> the taxi; "food acme" -> nothing', same(find('food bole'), [t1]) && find('food acme').length === 0);
+  check('words can match different fields (category + note)', same(find('coffee meeting'), [t5]));
+  check('amount: exact value, with or without thousands separators', same(find('1250.50'), [t1]) && same(find('1,250.50'), [t1]) && same(find('1250.5'), [t1]));
+  check('amount: a whole number finds the entries whose whole part equals it ("1250" -> 1,250.50, NOT 12,500)', same(find('1250'), [t1]) && same(find('12500'), [t6]));
+  check('amount: typed "300" finds only the 300 entry', same(find('300'), [t2]));
+  check('amount: finds by the ETB value of a foreign entry (550) and by the entered amount (10)', same(find('550'), [t5]) && same(find('10'), [t5]));
+  check('amount with a currency prefix ("etb300") works', same(find('etb300'), [t2]));
+  check('type words match the type: "income" and a 3-letter prefix "inc"', find('income').includes(t3) && find('inc').includes(t3) && !find('income').includes(t1));
+  check('currency is matched as a whole word: "usd" -> the USD entry only; "etb" -> every ETB entry', same(find('usd'), [t5]) && find('etb').length === rows.length - 1);
+  check('single letters do not match every entry through the currency/type labels', filterTransactions(rows, 'q', lg).length === 0);
+  check('no match returns an empty list; regex characters in the query are harmless', find('zzz').length === 0 && find('(').length === 0 && find('[a-z]+').length === 0 && find('.*').length === 0);
+  check('filtering thousands of entries is fast (5,000 rows, 3-word query)', (() => {
+    const many: Transaction[] = Array.from({ length: 5000 }, (_, i) => ({ ...rows[1], id: `m${i}`, source: i % 7 === 0 ? 'Bole Taxi' : 'Ride', note: i % 11 === 0 ? 'airport' : null }));
+    const start = Date.now();
+    const out = filterTransactions(many, 'bole airport food', lg);
+    // i divisible by both 7 and 11 -> 65 of 5,000 carry the merchant, the note AND the Food category
+    return Date.now() - start < 250 && out.length === 65;
+  })());
+}
+
+console.log('\nTransactions type tabs combined with search');
+{
+  let rows: Transaction[] = ledgerOf(income(10000000, 'available', '2025-12-01'));
+  const put = (input: TransactionInput) => { rows = [...rows, planAdd(rows, input, RATES, GOALS)]; return rows[rows.length - 1].id; };
+  const e1 = put({ type: 'expense', amount: 120, currency: 'ETB', category: 'Food', source: 'Bole Cafe', account: 'available', date: '2026-01-02' });
+  const e2 = put({ type: 'expense', amount: 80, currency: 'ETB', category: 'Transport', source: 'Ride', account: 'available', date: '2026-01-02' });
+  const i1 = put({ type: 'income', amount: 5000, currency: 'ETB', category: 'Food', source: 'Food stall sale', account: 'available', date: '2026-01-03' });
+  const t1 = put({ type: 'transfer', amount: 1000, currency: 'ETB', fromAccount: 'available', toAccount: 'saved', date: '2026-01-04', note: 'food fund' });
+  const salary0 = rows[0].id;
+  const none: Goal[] = [];
+  const ids = (list: Transaction[]) => list.map((r) => r.id).sort();
+  const tab = (type: TypeFilter, query = '') => ids(filterTransactions(filterByType(rows, type), query, none));
+
+  check('All is the identity: every entry, original order', JSON.stringify(filterByType(rows, 'all').map((r) => r.id)) === JSON.stringify(rows.map((r) => r.id)));
+  check('Income tab: only income', JSON.stringify(tab('income')) === JSON.stringify(ids(rows.filter((r) => r.type === 'income'))) && !tab('income').includes(e1));
+  check('Expense tab: only expenses', JSON.stringify(tab('expense')) === JSON.stringify([e1, e2].sort()));
+  check('Transfer tab: only transfers', JSON.stringify(tab('transfer')) === JSON.stringify([t1]));
+  check('the tabs partition the ledger (every entry is in exactly one non-All tab)', tab('income').length + tab('expense').length + tab('transfer').length === rows.length);
+  check('"food" on All finds expense + income + the transfer note; on Expense ONLY the expense; on Income ONLY the income', JSON.stringify(tab('all', 'food')) === JSON.stringify([e1, i1, t1].sort().filter((id) => tab('all', 'food').includes(id))) && tab('all', 'food').length === 3 && JSON.stringify(tab('expense', 'food')) === JSON.stringify([e1]) && JSON.stringify(tab('income', 'food')) === JSON.stringify([i1]));
+  check('searching inside a tab never reaches outside it ("food" on Transfer finds only the transfer whose note says food)', JSON.stringify(tab('transfer', 'food')) === JSON.stringify([t1]) && !tab('transfer', 'ride').includes(e2) && tab('transfer', 'ride').length === 0);
+  check('search + tab can be empty even when the word exists elsewhere', tab('income', 'ride').length === 0 && tab('expense', 'stall').length === 0);
+  check('switching tabs keeps the query: the same word gives each tab its own result', tab('expense', 'bole').length === 1 && tab('income', 'bole').length === 0 && tab('all', 'bole').length === 1);
+  check('the Salary income from setup is only on Income/All', tab('income').includes(salary0) && !tab('expense').includes(salary0));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
