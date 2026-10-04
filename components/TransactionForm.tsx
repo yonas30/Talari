@@ -1,6 +1,7 @@
-import { ReactNode, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import AppButton from './AppButton';
 import CategoryPicker from './CategoryPicker';
@@ -74,6 +75,37 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
   // ONE-OFF override for this transaction only - the stored rate changes only on the Exchange Rates page.
   const [rateInput, setRateInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const router = useRouter();
+  // Category ids that existed when the user left for Categories; anything new that appears afterwards (of this
+  // form's type) is what they just created, so it gets selected on return.
+  const idsBeforeAddRef = useRef<Set<string> | null>(null);
+
+  // The form stays mounted underneath the Categories screen (it is pushed on top of the tabs / the edit screen), so
+  // nothing typed here is lost while the user is away - and Back returns straight to it.
+  const onAddCategory = () => {
+    idsBeforeAddRef.current = new Set(categories.map((item) => item.id));
+    router.push('/categories');
+  };
+
+  useEffect(() => {
+    const before = idsBeforeAddRef.current;
+    if (!before) {
+      return;
+    }
+    const created = categories.find((item) => !before.has(item.id) && item.type === type);
+    if (created) {
+      setCategory(created.id);
+      idsBeforeAddRef.current = null;
+    }
+  }, [categories, type]);
+
+  // Back on this screen without having created anything: stop watching, so a category added from Settings later
+  // doesn't unexpectedly get selected here.
+  useFocusEffect(
+    useCallback(() => {
+      idsBeforeAddRef.current = null;
+    }, []),
+  );
 
   const categoryOptions = useMemo(() => {
     if (type === 'transfer') {
@@ -253,6 +285,7 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
                 value={selectedCategory?.id ?? category}
                 options={categoryOptions}
                 onChange={setCategory}
+                onAddCategory={onAddCategory}
               />
             </View>
           </>
