@@ -9,9 +9,10 @@ import { APP_USER_NAME, colors, radius, spacing, typography } from '../../consta
 import { useFinanceStore } from '../../store/finance';
 import { useUiStore } from '../../store/ui';
 import { getBalances } from '../../utils/balances';
-import { calculateBuilderStreak, getBudgetProgress, getCurrentPeriodSummary } from '../../utils/currency';
+import { calculateBuilderStreak, getCurrentPeriodSummary } from '../../utils/currency';
 import { formatDateKey, formatETB, formatNumber, HIDDEN_AMOUNT, transactionTitle } from '../../utils/format';
 import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
+import { getBudgetAlerts } from '../../utils/notifications';
 import { getDashboardMessage } from '../../utils/motivation';
 import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../../utils/reports';
 
@@ -41,29 +42,11 @@ export default function HomeScreen() {
     }
   }, [isReady]);
 
-  const budgetAlerts = useMemo(
-    () =>
-      budgets
-        .map((budget) => {
-          const { spentAmount, limitETB, isOverBudget } = getBudgetProgress(budget, transactions, exchangeRates);
-          if (!isOverBudget || limitETB === null) {
-            return null;
-          }
-
-          const exceeded = spentAmount - limitETB;
-          return {
-            category: budget.category,
-            amount: exceeded,
-            currency: 'ETB',
-          };
-        })
-        .filter((item): item is { category: string; amount: number; currency: string } => item !== null),
-    [budgets, transactions, exchangeRates],
-  );
+  const budgetAlerts = useMemo(() => getBudgetAlerts(budgets, transactions, exchangeRates), [budgets, transactions, exchangeRates]);
 
   useEffect(() => {
     // Drop budget notifications for budgets that are back within their limit (or were deleted).
-    const activeIds = new Set(budgetAlerts.map((alert) => `budget-${alert.category}`));
+    const activeIds = new Set(budgetAlerts.map((alert) => alert.id));
     removeNotificationsWhere((item) => item.type === 'budget' && !activeIds.has(item.id));
 
     if (budgetAlerts.length === 0) {
@@ -71,11 +54,12 @@ export default function HomeScreen() {
     }
 
     const nextNotifications = budgetAlerts.map((alert) => ({
-      id: `budget-${alert.category}`,
-      title: 'Budget alert',
-      description: `${alert.category} is over budget by ${alert.currency} ${alert.amount.toFixed(2)}.`,
+      id: alert.id,
+      title: alert.title,
+      description: alert.description,
       isRead: false,
       type: 'budget' as const,
+      route: alert.route,
     }));
 
     upsertNotifications(nextNotifications);
@@ -127,7 +111,7 @@ export default function HomeScreen() {
                 {budgetAlerts.length === 1 ? `${budgetAlerts[0].category} is over budget` : `${budgetAlerts.length} budgets are over their limit`}
               </Text>
               <Text style={styles.budgetBannerText} numberOfLines={2}>
-                {budgetAlerts.map((alert) => `${alert.category} by ${formatETB(alert.amount)}`).join(' · ')}
+                {budgetAlerts.map((alert) => `${alert.category} by ${formatETB(alert.amountOver)}`).join(' · ')}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.red} />

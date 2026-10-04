@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
@@ -9,6 +10,8 @@ import { useUiStore } from '../store/ui';
 export default function NotificationsScreen() {
   const notifications = useUiStore((state) => state.notifications);
   const markAllNotificationsAsRead = useUiStore((state) => state.markAllNotificationsAsRead);
+  const markNotificationAsRead = useUiStore((state) => state.markNotificationAsRead);
+  const router = useRouter();
 
   useEffect(() => {
     markAllNotificationsAsRead();
@@ -26,7 +29,18 @@ export default function NotificationsScreen() {
           </View>
         ) : (
           notifications.map((notification) => (
-            <Pressable key={notification.id} style={styles.notificationCard}>
+            <Pressable
+              key={notification.id}
+              style={styles.notificationCard}
+              onPress={() => {
+                markNotificationAsRead(notification.id);
+                if (notification.route) {
+                  router.push(notification.route as never);
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={notification.route ? `${notification.title}. ${notification.description} Opens budgets.` : `${notification.title}. ${notification.description}`}
+            >
               <View style={styles.iconWrap}>
                 <Ionicons
                   name={notification.type === 'budget' ? 'wallet-outline' : 'information-circle-outline'}
@@ -40,6 +54,7 @@ export default function NotificationsScreen() {
                   {!notification.isRead && <View style={styles.unreadDot} />}
                 </View>
                 <Text style={styles.description}>{notification.description}</Text>
+                {notification.route && <Text style={styles.action}>Review budgets →</Text>}
               </View>
             </Pressable>
           ))
@@ -105,6 +120,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  action: {
+    ...typography.helper,
+    color: colors.blue,
+    fontWeight: '700',
+    marginTop: 4,
   },
   title: {
     ...typography.sectionTitle,

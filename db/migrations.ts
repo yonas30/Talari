@@ -122,6 +122,11 @@ CREATE TABLE IF NOT EXISTS monthly_snapshots (
   currency TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS notification_reads (
+  id TEXT PRIMARY KEY,
+  read_at TEXT NOT NULL
+);
 `;
 
 function count(db: SqlRunner, sql: string, ...params: unknown[]): number {

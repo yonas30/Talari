@@ -32,6 +32,7 @@ import { assertValidLedger, LedgerError, validateLedger } from '../utils/balance
 import { parseDateKey, toLocalDateKey } from '../utils/dates';
 import { advanceDate, getNextDueDate, planRecurringEdit } from '../utils/recurring';
 import { buildTransaction } from '../utils/transactions';
+import { getReadIds, markRead, pruneReads } from './notificationReads';
 import { runMigrations, SqlRunner } from './migrations';
 import { budgets, categories, currencies, exchangeRates, goals, milestones, monthlySnapshots, recurringTransactions, transactions, userOrigin } from './schema';
 
@@ -50,6 +51,16 @@ const sqlRunner: SqlRunner = {
     database.runSync(sql, ...(params as never[]));
   },
 };
+
+// Ids of notifications the user has already seen (old ones are dropped so the table can't grow without bound).
+export function getReadNotificationIds(): string[] {
+  pruneReads(sqlRunner, new Date(Date.now() - 120 * 86400000).toISOString());
+  return getReadIds(sqlRunner);
+}
+
+export function markNotificationsRead(ids: string[]): void {
+  markRead(sqlRunner, ids, nowIso());
+}
 
 export async function initializeDatabase(): Promise<void> {
   const versionRow = database.getFirstSync('PRAGMA user_version') as { user_version: number } | null;

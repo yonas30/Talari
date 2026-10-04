@@ -45,9 +45,21 @@ export default function AppHeader({ title, notificationCount = 0, onNotification
       <Text style={styles.title}>{title}</Text>
       <View style={styles.rightArea}>
         {onNotificationPress ? (
-          <Pressable onPress={onNotificationPress} hitSlop={10} style={styles.notificationButton}>
+          <Pressable
+            onPress={onNotificationPress}
+            hitSlop={10}
+            style={styles.notificationButton}
+            accessibilityRole="button"
+            accessibilityLabel={notificationCount > 0 ? `Notifications, ${notificationCount} unread` : 'Notifications'}
+          >
             <Ionicons name="notifications-outline" size={22} color={colors.navy} />
-            {notificationCount > 0 && <View style={styles.badge} />}
+            {notificationCount > 0 && (
+              <View style={styles.badge} testID="notification-badge">
+                <Text style={styles.badgeText} maxFontSizeMultiplier={1}>
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </Text>
+              </View>
+            )}
           </Pressable>
         ) : (
           <View style={styles.spacer} />
@@ -83,14 +95,26 @@ const styles = StyleSheet.create({
   notificationButton: {
     position: 'relative',
   },
+  // Red count badge on the bell's top-right corner; the background-coloured ring keeps it legible over the icon.
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: -6,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: 8,
     backgroundColor: colors.red,
+    borderWidth: 1.5,
+    borderColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '800',
   },
   spacer: {
     width: 26,

@@ -6,7 +6,8 @@
 // exercise React Native screens or SQLite; those are covered separately.
 
 import { findV2LaunchCutoff, runMigrations, SCHEMA_DDL, SCHEMA_VERSION, SqlRunner } from '../db/migrations';
-import { ExchangeRate, Milestone, Transaction, TransactionInput } from '../types';
+import { getReadIds, markRead, pruneReads } from '../db/notificationReads';
+import { Budget, ExchangeRate, Milestone, Transaction, TransactionInput } from '../types';
 import { getBalances, LedgerError, LedgerErrorCode } from '../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress, getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { suggestCategoryEmoji } from '../utils/categoryIcons';
@@ -28,6 +29,7 @@ import {
 import { CONTROL_LABEL_MAX_SCALE, getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LABEL_MAX_SCALE } from '../utils/layout';
 import { statusBarStyleForBackground } from '../utils/statusBar';
 import { hasCompletionMilestone } from '../utils/milestones';
+import { budgetNotificationId, getBudgetAlerts } from '../utils/notifications';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 
 const RATES: ExchangeRate[] = [
@@ -662,6 +664,60 @@ console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milest
     check('F: a record for THIS goal id suppresses a duplicate, even if the goal was renamed', hasCompletionMilestone([ms({ goalId: 'g-new', title: 'Old name' })], 'g-new'));
     check('F: streak / manual milestones never count as a goal completion', !hasCompletionMilestone([ms({ type: 'streak', goalId: 'g-new' })], 'g-new'));
   }
+}
+
+console.log('\nNotifications: over-budget alerts and seen-state storage');
+{
+  const budget = (category: string, limit: number, currency = 'ETB'): Budget => ({ id: `b-${category}`, category, monthlyLimit: limit, currency, createdAt: '', updatedAt: '' });
+  const jan = new Date(2026, 0, 15);
+  const base = ledgerOf(income(100000, 'available', '2025-12-01'));
+  const spend = (rows: Transaction[], amount: number, category: string, date: string): Transaction[] => [...rows, planAdd(rows, { type: 'expense', amount, currency: 'ETB', category, account: 'available', date }, RATES, GOALS)];
+
+  // ---- alerts ----
+  const over = spend(base, 1200, 'Food', '2026-01-05');
+  const alerts = getBudgetAlerts([budget('Food', 1000)], over, RATES, jan);
+  check('over budget: one alert with the right id, amount over, title and destination', alerts.length === 1 && alerts[0].id === 'budget-Food-2026-01' && alerts[0].amountOver === 200 && alerts[0].title === 'Over budget' && alerts[0].route === '/budgets', JSON.stringify(alerts));
+  check('the description names the category and the amount', alerts[0].description === 'Food is over its monthly budget by ETB 200.00.', alerts[0].description);
+  check('exactly at the limit is NOT over', getBudgetAlerts([budget('Food', 1200)], over, RATES, jan).length === 0);
+  check('under the limit: no alert', getBudgetAlerts([budget('Food', 5000)], over, RATES, jan).length === 0);
+  check('last month\'s spending does not alert this month', getBudgetAlerts([budget('Food', 1000)], spend(base, 1200, 'Food', '2025-12-20'), RATES, jan).length === 0);
+  check('income and transfers are not spending', getBudgetAlerts([budget('Food', 100)], add(base, transfer(5000, 'available', 'saved', '2026-01-03')), RATES, jan).length === 0);
+  check('only the budget\'s own category counts', getBudgetAlerts([budget('Food', 1000)], spend(base, 9999, 'Transport', '2026-01-05'), RATES, jan).length === 0);
+  check('two budgets over -> two alerts, one each', getBudgetAlerts([budget('Food', 1000), budget('Fun', 100)], spend(over, 500, 'Fun', '2026-01-06'), RATES, jan).length === 2);
+  check('a foreign-currency budget uses the stored rate (10 USD = 550 ETB; 600 spent is over)', getBudgetAlerts([budget('Food', 10, 'USD')], spend(base, 600, 'Food', '2026-01-05'), RATES, jan).length === 1);
+  check('a budget in a currency with no rate cannot be compared, so it does not alert', getBudgetAlerts([budget('Food', 10, 'EUR')], over, RATES, jan).length === 0);
+  check('the id includes the month: same budget, next month = a different notification', budgetNotificationId('Food', '2026-01') !== budgetNotificationId('Food', '2026-02'));
+  check('the id follows the month of the date given (February -> 2026-02)', getBudgetAlerts([budget('Food', 1000)], spend(base, 1200, 'Food', '2026-02-05'), RATES, new Date(2026, 1, 20))[0].id === 'budget-Food-2026-02');
+
+  // ---- seen state is stored (real SQLite) ----
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => { exec(sql: string): void; prepare(sql: string): { all(...p: unknown[]): unknown[]; run(...p: unknown[]): unknown } } };
+  const db = new DatabaseSync(':memory:');
+  db.exec(SCHEMA_DDL);
+  const runner: SqlRunner = {
+    exec: (sql) => db.exec(sql),
+    all: <T,>(sql: string, ...params: unknown[]) => db.prepare(sql).all(...params) as T[],
+    run: (sql, ...params) => {
+      db.prepare(sql).run(...params);
+    },
+  };
+  check('the schema creates the notification_reads table', getReadIds(runner).length === 0);
+  markRead(runner, ['budget-Food-2026-01', 'budget-Fun-2026-01'], '2026-01-10T00:00:00.000Z');
+  check('read ids are stored and returned', JSON.stringify(getReadIds(runner).sort()) === JSON.stringify(['budget-Food-2026-01', 'budget-Fun-2026-01']));
+  markRead(runner, ['budget-Food-2026-01'], '2026-02-01T00:00:00.000Z');
+  check('marking the same id twice is harmless and keeps the first read time', getReadIds(runner).length === 2 && (db.prepare("SELECT read_at AS r FROM notification_reads WHERE id = 'budget-Food-2026-01'").all() as { r: string }[])[0].r === '2026-01-10T00:00:00.000Z');
+  pruneReads(runner, '2026-01-20T00:00:00.000Z');
+  check('old read flags are pruned', getReadIds(runner).length === 0);
+  markRead(runner, ['recent'], '2026-03-01T00:00:00.000Z');
+  pruneReads(runner, '2026-01-20T00:00:00.000Z');
+  check('recent read flags survive pruning', getReadIds(runner).length === 1);
+
+  // an already-migrated device gets the table on its next launch without a version bump
+  const device = new DatabaseSync(':memory:');
+  device.exec('CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT, type TEXT, icon TEXT, color TEXT, is_default INTEGER)');
+  device.exec('PRAGMA user_version = 3');
+  runMigrations({ exec: (sql) => device.exec(sql), all: <T,>(sql: string, ...params: unknown[]) => device.prepare(sql).all(...params) as T[], run: (sql, ...params) => { device.prepare(sql).run(...params); } }, 3);
+  check('runMigrations on an already-v3 device still creates notification_reads (CREATE IF NOT EXISTS)', (device.prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE name = 'notification_reads'").all() as { c: number }[])[0].c === 1);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

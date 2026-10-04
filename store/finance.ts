@@ -16,6 +16,7 @@ import {
   generateDueRecurringTransactions,
   getBudgets,
   getCategories,
+  getReadNotificationIds,
   getCurrencies,
   getExchangeRates,
   getGoals,
@@ -67,6 +68,8 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
   isReady: false,
   loadData: async () => {
     await initializeDatabase();
+    // Before anything can raise a notification, so already-seen ones don't flash up as unread again.
+    useUiStore.getState().hydrateReadIds(getReadNotificationIds());
     const { failures } = await generateDueRecurringTransactions();
     if (failures.length > 0) {
       useUiStore.getState().upsertNotifications(
