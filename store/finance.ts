@@ -40,6 +40,7 @@ import { Account, Category, CurrencyCode, FinanceStoreState, Goal, Transaction, 
 import { getBalances, LedgerError } from '../utils/balances';
 import { getCurrentPeriodSummary, getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { todayKey } from '../utils/dates';
+import { hasCompletionMilestone } from '../utils/milestones';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 import { useUiStore } from './ui';
 
@@ -360,15 +361,14 @@ async function reconcileGoal(goalId: string): Promise<void> {
   }
 
   if (percent >= 100) {
-    const alreadyRecorded = state.milestones.some(
-      (item) => item.type === 'goal_completed' && item.title === goal.name,
-    );
-    if (!alreadyRecorded) {
+    // By goal id (utils/milestones.ts) - matching on the title let an unrelated or leftover record suppress this one.
+    if (!hasCompletionMilestone(state.milestones, goal.id)) {
       const milestone = await addMilestone({
         title: goal.name,
         description: `Reached your ${goal.name} goal of ETB ${goal.targetAmount.toFixed(2)}.`,
         date: todayKey(),
         type: 'goal_completed',
+        goalId: goal.id,
       });
       useFinanceStore.setState((prev) => ({ milestones: [milestone, ...prev.milestones] }));
     }

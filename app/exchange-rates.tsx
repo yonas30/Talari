@@ -70,6 +70,7 @@ export default function ExchangeRatesScreen() {
                 <View key={currency.code} style={styles.rateRow}>
                   <Text style={styles.label}>
                     {currency.code} → {homeCurrency}
+                    {findRate(currency.code) === undefined ? '  ·  not set (required before logging this currency)' : ''}
                   </Text>
                   <TextInput
                     style={styles.input}

@@ -15,6 +15,7 @@ import {
   GoalInput,
   ExchangeRate,
   Milestone,
+  MilestoneInput,
   MilestoneType,
   MonthlySnapshot,
   RecurringFailure,
@@ -31,6 +32,7 @@ import { assertValidLedger, LedgerError, validateLedger } from '../utils/balance
 import { parseDateKey, toLocalDateKey } from '../utils/dates';
 import { advanceDate, getNextDueDate, planRecurringEdit } from '../utils/recurring';
 import { buildTransaction } from '../utils/transactions';
+import { runMigrations, SqlRunner } from './migrations';
 import { budgets, categories, currencies, exchangeRates, goals, milestones, monthlySnapshots, recurringTransactions, transactions, userOrigin } from './schema';
 
 export const database = openDatabaseSync('my-finances.db');
@@ -40,138 +42,19 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Bump when the ledger schema changes. V2 is a clean-slate data layer (Part V): the ledger tables are
-// dropped and recreated once; categories, currencies, rates, budgets and journey data are kept.
-const SCHEMA_VERSION = 2;
+// Adapts expo-sqlite to the engine-agnostic runner used by the migrations (db/migrations.ts).
+const sqlRunner: SqlRunner = {
+  exec: (sql) => database.execSync(sql),
+  all: <T>(sql: string, ...params: unknown[]) => database.getAllSync(sql, ...(params as never[])) as T[],
+  run: (sql, ...params) => {
+    database.runSync(sql, ...(params as never[]));
+  },
+};
 
 export async function initializeDatabase(): Promise<void> {
   const versionRow = database.getFirstSync('PRAGMA user_version') as { user_version: number } | null;
-  if ((versionRow?.user_version ?? 0) < SCHEMA_VERSION) {
-    database.execSync(`
-      DROP TABLE IF EXISTS transactions;
-      DROP TABLE IF EXISTS goals;
-      DROP TABLE IF EXISTS recurring_transactions;
-      DROP TABLE IF EXISTS monthly_snapshots;
-      PRAGMA user_version = ${SCHEMA_VERSION};
-    `);
-  }
-
-  database.execSync(`
-    CREATE TABLE IF NOT EXISTS categories (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      icon TEXT NOT NULL,
-      color TEXT NOT NULL,
-      is_default INTEGER NOT NULL DEFAULT 1
-    );
-
-    CREATE TABLE IF NOT EXISTS currencies (
-      code TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      is_default INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS transactions (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL,
-      amount_etb REAL NOT NULL,
-      exchange_rate REAL NOT NULL,
-      category TEXT NOT NULL DEFAULT '',
-      source TEXT NOT NULL DEFAULT '',
-      account TEXT,
-      from_account TEXT,
-      from_goal_id TEXT,
-      to_account TEXT,
-      to_goal_id TEXT,
-      date TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      note TEXT,
-      is_automatic INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS exchange_rates (
-      id TEXT PRIMARY KEY,
-      from_currency TEXT NOT NULL,
-      to_currency TEXT NOT NULL,
-      rate REAL NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS goals (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      target_amount REAL NOT NULL,
-      deadline TEXT,
-      status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS budgets (
-      id TEXT PRIMARY KEY,
-      category TEXT NOT NULL,
-      monthly_limit REAL NOT NULL,
-      currency TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS recurring_transactions (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      account TEXT NOT NULL DEFAULT 'available',
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL,
-      category TEXT NOT NULL,
-      source TEXT NOT NULL DEFAULT '',
-      note TEXT,
-      frequency TEXT NOT NULL,
-      start_date TEXT NOT NULL,
-      last_generated_date TEXT,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS user_origin (
-      id TEXT PRIMARY KEY,
-      story_text TEXT NOT NULL DEFAULT '',
-      starting_point TEXT NOT NULL DEFAULT '',
-      why_building TEXT NOT NULL DEFAULT '',
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS milestones (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      date TEXT NOT NULL,
-      type TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS monthly_snapshots (
-      id TEXT PRIMARY KEY,
-      month TEXT NOT NULL,
-      income REAL NOT NULL,
-      expenses REAL NOT NULL,
-      savings REAL NOT NULL,
-      currency TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-  `);
-
-  // Added after the V2 schema shipped, so databases created earlier need the column added in place
-  // (dropping the table again would wipe real data).
-  const transactionColumns = database.getAllSync('PRAGMA table_info(transactions)') as { name: string }[];
-  if (!transactionColumns.some((column) => column.name === 'is_automatic')) {
-    database.execSync('ALTER TABLE transactions ADD COLUMN is_automatic INTEGER NOT NULL DEFAULT 0');
-  }
+  // Creates / upgrades the schema and runs each one-time data migration exactly once (see db/migrations.ts).
+  runMigrations(sqlRunner, versionRow?.user_version ?? 0);
 
   const countResult = database.getAllSync('SELECT COUNT(*) AS count FROM categories') as Array<{ count: number }>;
   const totalCategories = Number(countResult[0]?.count ?? 0);
@@ -192,31 +75,9 @@ export async function initializeDatabase(): Promise<void> {
     database.execSync('COMMIT');
   }
 
-  const defaultRates = [
-    { fromCurrency: 'ETB', toCurrency: 'USD', rate: 0.0083 },
-    { fromCurrency: 'USD', toCurrency: 'ETB', rate: 120.48 },
-    { fromCurrency: 'ETB', toCurrency: 'EUR', rate: 0.0076 },
-    { fromCurrency: 'EUR', toCurrency: 'ETB', rate: 131.58 },
-    { fromCurrency: 'ETB', toCurrency: 'GBP', rate: 0.0065 },
-    { fromCurrency: 'GBP', toCurrency: 'ETB', rate: 153.85 },
-  ] as const;
-
-  const rateCount = database.getAllSync('SELECT COUNT(*) AS count FROM exchange_rates') as Array<{ count: number }>;
-  if (Number(rateCount[0]?.count ?? 0) === 0) {
-    database.execSync('BEGIN');
-    for (const entry of defaultRates) {
-      const id = `${entry.fromCurrency}-${entry.toCurrency}`;
-      database.runSync(
-        'INSERT INTO exchange_rates (id, from_currency, to_currency, rate, updated_at) VALUES (?, ?, ?, ?, ?)',
-        id,
-        entry.fromCurrency,
-        entry.toCurrency,
-        entry.rate,
-        nowIso(),
-      );
-    }
-    database.execSync('COMMIT');
-  }
+  // Exchange rates are deliberately NOT seeded. A made-up default (the old USD->ETB 120.48 etc.) would silently
+  // convert real amounts at a fabricated rate; with no rate stored, entering a foreign-currency amount is blocked
+  // until the user sets a real one on the Exchange Rates page (V2 Parts D and E).
 
   const defaultCurrencies = [
     { code: 'ETB', name: 'Ethiopian Birr' },
@@ -695,7 +556,9 @@ export async function importAllData(payload: BackupPayload): Promise<void> {
     database.execSync('DELETE FROM goals');
     database.execSync('DELETE FROM budgets');
 
-    for (const category of payload.categories) {
+    // A backup taken before the V1-leftover cleanup may still carry the legacy savings classification, which has no
+    // meaning in V2 - do not restore it.
+    for (const category of payload.categories.filter((item) => item.type !== 'savings')) {
       database.runSync(
         'INSERT INTO categories (id, name, type, icon, color, is_default) VALUES (?, ?, ?, ?, ?, ?)',
         category.id,
@@ -1022,29 +885,39 @@ export async function upsertOrigin(input: UserOriginInput): Promise<UserOrigin> 
 
 export async function getMilestones(): Promise<Milestone[]> {
   const rows = database.getAllSync(
-    'SELECT id, title, description, date, type, created_at AS createdAt FROM milestones ORDER BY date DESC',
-  ) as Array<{ id: string; title: string; description: string; date: string; type: MilestoneType; createdAt: string }>;
+    'SELECT id, title, description, date, type, goal_id AS goalId, created_at AS createdAt FROM milestones ORDER BY date DESC',
+  ) as Array<{
+    id: string;
+    title: string;
+    description: string;
+    date: string;
+    type: MilestoneType;
+    goalId: string | null;
+    createdAt: string;
+  }>;
 
   return rows;
 }
 
-export async function addMilestone(input: Omit<Milestone, 'id' | 'createdAt'>): Promise<Milestone> {
+export async function addMilestone(input: MilestoneInput): Promise<Milestone> {
   const milestone: Milestone = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     title: input.title,
     description: input.description,
     date: input.date,
     type: input.type,
+    goalId: input.goalId ?? null,
     createdAt: nowIso(),
   };
 
   database.runSync(
-    'INSERT INTO milestones (id, title, description, date, type, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO milestones (id, title, description, date, type, goal_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     milestone.id,
     milestone.title,
     milestone.description,
     milestone.date,
     milestone.type,
+    milestone.goalId,
     milestone.createdAt,
   );
 

@@ -7,5 +7,4 @@ export const defaultCategories: Category[] = [
   { id: 'rent', name: 'Rent', type: 'expense', icon: '🏠', color: '#ef4444', isDefault: true },
   { id: 'transport', name: 'Transport', type: 'expense', icon: '🚕', color: '#3b82f6', isDefault: true },
   { id: 'shopping', name: 'Shopping', type: 'expense', icon: '🛍️', color: '#8b5cf6', isDefault: true },
-  { id: 'savings', name: 'Savings', type: 'savings', icon: '🏦', color: '#14b8a6', isDefault: true },
 ];

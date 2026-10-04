@@ -159,8 +159,12 @@ export interface Milestone {
   description: string;
   date: string;
   type: MilestoneType;
+  // The goal a goal_completed milestone belongs to (null for streaks / manual entries).
+  goalId: string | null;
   createdAt: string;
 }
+
+export type MilestoneInput = Omit<Milestone, 'id' | 'createdAt' | 'goalId'> & { goalId?: string | null };
 
 export interface UserOrigin {
   id: string;
@@ -224,5 +228,5 @@ export interface FinanceStoreState {
   toggleRecurringTransaction: (id: string, isActive: boolean) => Promise<void>;
   deleteRecurringTransaction: (id: string) => Promise<void>;
   saveOrigin: (input: UserOriginInput) => Promise<UserOrigin>;
-  addMilestone: (input: Omit<Milestone, 'id' | 'createdAt'>) => Promise<Milestone>;
+  addMilestone: (input: MilestoneInput) => Promise<Milestone>;
 }

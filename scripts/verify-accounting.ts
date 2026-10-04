@@ -5,7 +5,8 @@
 // getBalances), so it checks the real validation and balance logic - not a copy of it. It cannot
 // exercise React Native screens or SQLite; those are covered separately.
 
-import { ExchangeRate, Transaction, TransactionInput } from '../types';
+import { findV2LaunchCutoff, runMigrations, SCHEMA_DDL, SCHEMA_VERSION, SqlRunner } from '../db/migrations';
+import { ExchangeRate, Milestone, Transaction, TransactionInput } from '../types';
 import { getBalances, LedgerError, LedgerErrorCode } from '../utils/balances';
 import { calculateBuilderStreak, getBudgetProgress, getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { suggestCategoryEmoji } from '../utils/categoryIcons';
@@ -26,6 +27,7 @@ import {
 } from '../utils/reports';
 import { CONTROL_LABEL_MAX_SCALE, getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LABEL_MAX_SCALE } from '../utils/layout';
 import { statusBarStyleForBackground } from '../utils/statusBar';
+import { hasCompletionMilestone } from '../utils/milestones';
 import { planAdd, planDelete, planEdit } from '../utils/transactions';
 
 const RATES: ExchangeRate[] = [
@@ -481,6 +483,185 @@ console.log('\nLayout: tab bar clearance at any system font size');
   check('bar stops growing past the label cap (3x == 1.3x), so it never balloons', getTabBarMetrics(3, 24).height === getTabBarMetrics(1.3, 24).height);
   check('one shared cap for tab labels and small controls (links, pills, chart labels)', CONTROL_LABEL_MAX_SCALE === TAB_LABEL_MAX_SCALE && CONTROL_LABEL_MAX_SCALE === 1.3);
   check('bar grows with font scale up to the cap', getTabBarMetrics(1.3, 24).height > getTabBarMetrics(1, 24).height);
+}
+
+console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milestone matching by goal id');
+{
+  interface NodeStatement {
+    all(...params: unknown[]): unknown[];
+    run(...params: unknown[]): unknown;
+    get(...params: unknown[]): unknown;
+  }
+  interface NodeDb {
+    exec(sql: string): void;
+    prepare(sql: string): NodeStatement;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => NodeDb };
+
+  const runnerFor = (db: NodeDb): SqlRunner => ({
+    exec: (sql) => db.exec(sql),
+    all: <T,>(sql: string, ...params: unknown[]) => db.prepare(sql).all(...params) as T[],
+    run: (sql, ...params) => {
+      db.prepare(sql).run(...params);
+    },
+  });
+  const ids = (db: NodeDb, table: string, key = 'id'): string[] =>
+    (db.prepare(`SELECT ${key} AS k FROM ${table} ORDER BY ${key}`).all() as { k: string }[]).map((row) => row.k);
+  const version = (db: NodeDb): number => (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+  const countOf = (db: NodeDb, table: string): number => (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
+
+  // The V1 schema exactly as the V1 build created it (V1 snapshot commit d5059f4), including its later ALTERs.
+  const V1_DDL = `
+    CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, icon TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE currencies (code TEXT PRIMARY KEY, name TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE transactions (id TEXT PRIMARY KEY, type TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL, category TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', date TEXT NOT NULL, timestamp TEXT NOT NULL, note TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE exchange_rates (id TEXT PRIMARY KEY, from_currency TEXT NOT NULL, to_currency TEXT NOT NULL, rate REAL NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE goals (id TEXT PRIMARY KEY, name TEXT NOT NULL, target_amount REAL NOT NULL, currency TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE budgets (id TEXT PRIMARY KEY, category TEXT NOT NULL, monthly_limit REAL NOT NULL, currency TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE recurring_transactions (id TEXT PRIMARY KEY, type TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL, category TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', note TEXT, frequency TEXT NOT NULL, start_date TEXT NOT NULL, last_generated_date TEXT, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE user_origin (id TEXT PRIMARY KEY, story_text TEXT NOT NULL DEFAULT '', starting_point TEXT NOT NULL DEFAULT '', why_building TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);
+    CREATE TABLE milestones (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', date TEXT NOT NULL, type TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE monthly_snapshots (id TEXT PRIMARY KEY, month TEXT NOT NULL, income REAL NOT NULL, expenses REAL NOT NULL, savings REAL NOT NULL, currency TEXT NOT NULL, created_at TEXT NOT NULL);
+    ALTER TABLE transactions ADD COLUMN goal_id TEXT;
+    ALTER TABLE goals ADD COLUMN deadline TEXT;
+    ALTER TABLE goals ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+  `;
+  const V1 = '2025-09-10T08:00:00.000Z';
+  const T0 = '2026-01-05T09:00:00.000Z'; // first V2 launch
+  const afterT0 = (days: number) => new Date(Date.parse(T0) + days * 86400000).toISOString();
+
+  const v1Device = (): NodeDb => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(V1_DDL);
+    const cat = db.prepare('INSERT INTO categories (id,name,type,icon,color,is_default) VALUES (?,?,?,?,?,?)');
+    for (const [id, name, type] of [
+      ['salary', 'Salary', 'income'], ['freelance', 'Freelance', 'income'], ['food', 'Food', 'expense'], ['rent', 'Rent', 'expense'],
+      ['transport', 'Transport', 'expense'], ['shopping', 'Shopping', 'expense'], ['savings', 'Savings', 'savings'],
+    ]) cat.run(id, name, type, 'x', '#000', 1);
+    cat.run('v1-coffee', 'Coffee', 'expense', 'x', '#000', 0);
+    cat.run('v1-side', 'Side gig', 'income', 'x', '#000', 0);
+    const cur = db.prepare('INSERT INTO currencies (code,name,is_default) VALUES (?,?,?)');
+    for (const code of ['ETB', 'USD', 'EUR', 'GBP', 'CAD']) cur.run(code, code, 1);
+    const rate = db.prepare('INSERT INTO exchange_rates VALUES (?,?,?,?,?)');
+    rate.run('USD-ETB', 'USD', 'ETB', 155, V1); rate.run('EUR-ETB', 'EUR', 'ETB', 131.58, V1);
+    db.prepare('INSERT INTO goals (id,name,target_amount,currency,deadline,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run('g-old', 'Laptop', 20000, 'ETB', null, 'completed', V1, V1);
+    db.prepare('INSERT INTO transactions (id,type,amount,currency,category,source,date,timestamp,note,goal_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run('t1', 'income', 50000, 'ETB', 'Salary', 'Job', '2025-09-01', V1, null, null, V1, V1);
+    db.prepare('INSERT INTO budgets VALUES (?,?,?,?,?,?)').run('b-old1', 'Food', 5000, 'ETB', V1, V1);
+    db.prepare('INSERT INTO budgets VALUES (?,?,?,?,?,?)').run('b-old2', 'Coffee', 800, 'ETB', V1, V1);
+    db.prepare('INSERT INTO recurring_transactions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run('r1', 'expense', 8000, 'ETB', 'Rent', 'Landlord', null, 'monthly', '2025-08-01', '2025-09-01', 1, V1, V1);
+    db.prepare('INSERT INTO user_origin VALUES (?,?,?,?,?)').run('o-old', 'my V1 story', 'start', 'why', V1);
+    db.prepare('INSERT INTO milestones VALUES (?,?,?,?,?,?)').run('m-old1', 'Laptop', 'V1 goal done', '2025-09-03', 'goal_completed', V1);
+    db.prepare('INSERT INTO milestones VALUES (?,?,?,?,?,?)').run('m-old2', 'First streak', 'V1 streak', '2025-09-30', 'streak', V1);
+    db.prepare('INSERT INTO monthly_snapshots VALUES (?,?,?,?,?,?,?)').run('s-old', '2025-09', 1, 1, 1, 'ETB', V1);
+    return db;
+  };
+
+  // A device that already ran the first V2 build (user_version 2): ledger tables rebuilt, everything else kept,
+  // then some V2-era usage after the first launch (T0).
+  const v2Device = (): NodeDb => {
+    const db = v1Device();
+    db.exec('DROP TABLE transactions; DROP TABLE goals; DROP TABLE recurring_transactions; DROP TABLE monthly_snapshots;');
+    db.exec(SCHEMA_DDL); // creates the four rebuilt tables; the kept ones (incl. milestones without goal_id) stay as they were
+    db.exec('PRAGMA user_version = 2');
+    db.prepare('INSERT INTO monthly_snapshots VALUES (?,?,?,?,?,?,?)').run('s-v2', '2025-12', 0, 0, 0, 'ETB', T0);
+    db.prepare('INSERT INTO goals (id,name,target_amount,deadline,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run('g-v2', 'Laptop', 20000, null, 'completed', afterT0(1), afterT0(1));
+    db.prepare('INSERT INTO milestones VALUES (?,?,?,?,?,?)').run('m-v2', 'Laptop', 'V2 goal done', '2026-01-07', 'goal_completed', afterT0(2));
+    db.prepare('INSERT INTO milestones VALUES (?,?,?,?,?,?)').run('m-v2-streak', 'V2 streak', 'x', '2026-01-08', 'streak', afterT0(3));
+    db.prepare('UPDATE budgets SET monthly_limit = 6000, updated_at = ? WHERE id = ?').run(afterT0(2), 'b-old1'); // V1 budget edited in V2
+    db.prepare('INSERT INTO budgets VALUES (?,?,?,?,?,?)').run('b-v2', 'Transport', 2000, 'ETB', afterT0(3), afterT0(3));
+    db.prepare('UPDATE exchange_rates SET rate = 140, updated_at = ? WHERE id = ?').run(afterT0(1), 'EUR-ETB'); // V1 rate re-set in V2
+    db.prepare('INSERT INTO user_origin VALUES (?,?,?,?,?)').run('o-v2', 'my V2 story', 's', 'w', afterT0(4));
+    db.prepare('INSERT INTO categories (id,name,type,icon,color,is_default) VALUES (?,?,?,?,?,?)').run('v2-sav', 'Rainy day', 'savings', 'x', '#000', 0);
+    db.prepare('INSERT INTO categories (id,name,type,icon,color,is_default) VALUES (?,?,?,?,?,?)').run('v2-cat', 'Gym', 'expense', 'x', '#000', 0);
+    return db;
+  };
+
+  // ---- A. V1 device, first launch of the migrated build (user_version 0) -------------------------------------
+  {
+    const db = v1Device();
+    const categoriesBefore = ids(db, 'categories').filter((id) => id !== 'savings');
+    const currenciesBefore = ids(db, 'currencies', 'code');
+    check('V1 database is at user_version 0 before', version(db) === 0);
+    const purged = runMigrations(runnerFor(db), 0);
+    check('A: every V1 milestone is gone', countOf(db, 'milestones') === 0, JSON.stringify(ids(db, 'milestones')));
+    check('A: every V1 budget is gone', countOf(db, 'budgets') === 0);
+    check('A: every V1 exchange rate is gone (placeholder defaults are re-seeded by initializeDatabase, not kept)', countOf(db, 'exchange_rates') === 0);
+    check('A: the V1 origin story is gone', countOf(db, 'user_origin') === 0);
+    check('A: the legacy Savings category is gone', !ids(db, 'categories').includes('savings'));
+    check('A: all other categories (defaults AND custom) are untouched', JSON.stringify(ids(db, 'categories')) === JSON.stringify(categoriesBefore), JSON.stringify(ids(db, 'categories')));
+    check('A: currencies are untouched', JSON.stringify(ids(db, 'currencies', 'code')) === JSON.stringify(currenciesBefore));
+    check('A: V1 ledger tables were rebuilt empty (transactions, goals, recurring, snapshots)', ['transactions', 'goals', 'recurring_transactions', 'monthly_snapshots'].every((t) => countOf(db, t) === 0));
+    check('A: reported counts match (2 milestones, 2 budgets, 2 rates, 1 origin, 1 savings category)', purged?.milestones === 2 && purged?.budgets === 2 && purged?.exchangeRates === 2 && purged?.origin === 1 && purged?.savingsCategories === 1, JSON.stringify(purged));
+    check('A: user_version is now 3', version(db) === SCHEMA_VERSION && SCHEMA_VERSION === 3);
+    check('A: milestones now has a goal_id column', (db.prepare('PRAGMA table_info(milestones)').all() as { name: string }[]).some((c) => c.name === 'goal_id'));
+  }
+
+  // ---- B. V2 device that already ran the first V2 build (user_version 2) ----------------------------------------
+  {
+    const db = v2Device();
+    check('B: cutoff = the first monthly snapshot (first V2 launch)', findV2LaunchCutoff(runnerFor(db)) === T0);
+    const currenciesBefore = ids(db, 'currencies', 'code');
+    const goalsBefore = ids(db, 'goals');
+    runMigrations(runnerFor(db), 2);
+    check('B: V1 milestones removed, V2-era milestones kept', JSON.stringify(ids(db, 'milestones')) === JSON.stringify(['m-v2', 'm-v2-streak']), JSON.stringify(ids(db, 'milestones')));
+    check('B: V1 budget removed, V1 budget you edited in V2 kept, V2 budget kept', JSON.stringify(ids(db, 'budgets')) === JSON.stringify(['b-old1', 'b-v2']), JSON.stringify(ids(db, 'budgets')));
+    check('B: stale V1 rate removed, rate re-set in V2 kept', JSON.stringify(ids(db, 'exchange_rates')) === JSON.stringify(['EUR-ETB']), JSON.stringify(ids(db, 'exchange_rates')));
+    check('B: V1 origin story removed, V2-edited one kept', JSON.stringify(ids(db, 'user_origin')) === JSON.stringify(['o-v2']));
+    check('B: savings categories removed regardless of date (V1 default AND one made in V2)', !ids(db, 'categories').some((id) => id === 'savings' || id === 'v2-sav'));
+    check('B: every non-savings category survives, including V1 and V2 custom ones', ['salary', 'food', 'v1-coffee', 'v1-side', 'v2-cat'].every((id) => ids(db, 'categories').includes(id)) && countOf(db, 'categories') === 9, String(countOf(db, 'categories')));
+    check('B: currencies and V2 goals untouched', JSON.stringify(ids(db, 'currencies', 'code')) === JSON.stringify(currenciesBefore) && JSON.stringify(ids(db, 'goals')) === JSON.stringify(goalsBefore));
+    const linked = db.prepare("SELECT goal_id FROM milestones WHERE id = 'm-v2'").get() as { goal_id: string | null };
+    check('B: the kept V2 goal-completed milestone was linked to its goal id', linked.goal_id === 'g-v2', String(linked.goal_id));
+    const streak = db.prepare("SELECT goal_id FROM milestones WHERE id = 'm-v2-streak'").get() as { goal_id: string | null };
+    check('B: a streak milestone stays unlinked', streak.goal_id === null);
+    check('B: user_version is now 3', version(db) === 3);
+
+    // one-time: a later launch must never purge again
+    db.prepare('INSERT INTO budgets VALUES (?,?,?,?,?,?)').run('b-late', 'Food', 1, 'ETB', V1, V1); // old-looking row added afterwards
+    db.prepare('INSERT INTO categories (id,name,type,icon,color,is_default) VALUES (?,?,?,?,?,?)').run('late-sav', 'Late', 'savings', 'x', '#000', 0);
+    const second = runMigrations(runnerFor(db), 3);
+    check('B: re-running at version 3 is a no-op (nothing purged)', second === null && ids(db, 'budgets').includes('b-late') && ids(db, 'categories').includes('late-sav'));
+  }
+
+  // ---- C. fresh install -------------------------------------------------------------------------------------------
+  {
+    const db = new DatabaseSync(':memory:');
+    runMigrations(runnerFor(db), 0);
+    check('C: fresh install creates every table and ends at version 3', version(db) === 3 && ['categories', 'currencies', 'transactions', 'goals', 'budgets', 'milestones', 'user_origin', 'monthly_snapshots', 'exchange_rates', 'recurring_transactions'].every((t) => countOf(db, t) === 0));
+  }
+
+  // ---- D. all-or-nothing --------------------------------------------------------------------------------------------
+  {
+    const db = v2Device();
+    const base = runnerFor(db);
+    const failing: SqlRunner = { ...base, run: (sql, ...params) => { if (sql.includes('DELETE FROM user_origin')) throw new Error('disk full'); base.run(sql, ...params); } };
+    let threw = false;
+    try { runMigrations(failing, 2); } catch { threw = true; }
+    check('D: a failure part-way throws, leaves user_version at 2, and rolls back every earlier delete', threw && version(db) === 2 && ids(db, 'milestones').length === 4 && ids(db, 'budgets').length === 3 && ids(db, 'categories').includes('savings'), `v${version(db)} milestones ${ids(db, 'milestones').length}`);
+    runMigrations(base, 2);
+    check('D: the next launch retries and completes', version(db) === 3 && ids(db, 'milestones').length === 2);
+  }
+
+  // ---- E. cutoff fallbacks --------------------------------------------------------------------------------------------
+  {
+    const db = new DatabaseSync(':memory:');
+    db.exec(SCHEMA_DDL);
+    check('E: no V2 footprint at all -> cutoff null (everything old is V1)', findV2LaunchCutoff(runnerFor(db)) === null);
+    db.prepare('INSERT INTO goals (id,name,target_amount,deadline,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run('g', 'x', 1, null, 'active', '2026-02-01T00:00:00.000Z', '2026-02-01T00:00:00.000Z');
+    check('E: falls back to the oldest V2 goal when there is no snapshot', findV2LaunchCutoff(runnerFor(db)) === '2026-02-01T00:00:00.000Z');
+    db.prepare('INSERT INTO monthly_snapshots VALUES (?,?,?,?,?,?,?)').run('s', '2026-01', 0, 0, 0, 'ETB', '2026-01-15T00:00:00.000Z');
+    check('E: the snapshot wins when it exists', findV2LaunchCutoff(runnerFor(db)) === '2026-01-15T00:00:00.000Z');
+  }
+
+  // ---- F. milestones match by goal id, never title -------------------------------------------------------------------
+  {
+    const ms = (over: Partial<Milestone>): Milestone => ({ id: 'm', title: 'Laptop', description: '', date: '2026-01-01', type: 'goal_completed', goalId: null, createdAt: '', ...over });
+    check('F: a leftover record titled "Laptop" (no goal id) no longer suppresses a new "Laptop" goal', !hasCompletionMilestone([ms({ goalId: null })], 'g-new'));
+    check('F: a record for a DIFFERENT goal with the same title does not suppress it either', !hasCompletionMilestone([ms({ goalId: 'g-other' })], 'g-new'));
+    check('F: a record for THIS goal id suppresses a duplicate, even if the goal was renamed', hasCompletionMilestone([ms({ goalId: 'g-new', title: 'Old name' })], 'g-new'));
+    check('F: streak / manual milestones never count as a goal completion', !hasCompletionMilestone([ms({ type: 'streak', goalId: 'g-new' })], 'g-new'));
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
