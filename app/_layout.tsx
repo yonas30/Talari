@@ -61,8 +61,6 @@ export default function RootLayout() {
       </AuthGate>
       {splashActive && (
         <SplashOverlay
-          // The lock screen and Home share this background, so it is the colour of whichever comes next.
-          appBackground={colors.background}
           ready={isReady && lockResolved}
           fontsLoaded={fontsLoaded}
           onFadeStart={onSplashFadeStart}

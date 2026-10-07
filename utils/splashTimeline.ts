@@ -5,7 +5,8 @@
 // Why one clock instead of many independent animations: a single `t` can be jumped (tap to skip), held (app not
 // ready yet) and resumed without any animation getting out of step with the others.
 
-export type SplashMode = 'first' | 'repeat' | 'reduced';
+// 'full' is the one timeline every cold start plays; 'reduced' is the still version for the OS Reduce Motion setting.
+export type SplashMode = 'full' | 'reduced';
 
 export type SplashFrame = {
   stem: { o: number; dy: number };
@@ -17,36 +18,29 @@ export type SplashFrame = {
   lock: number;
   /** Rise progress of the six wordmark letters, 0 = hidden below its mask. */
   letters: number[];
-  /** Opacity of everything except the band. */
-  others: number;
-  /** Scale of the zoom into the band. */
-  zoom: number;
-  /** 0 = white band, 1 = band in the app background colour. */
-  bandMix: number;
-  /** Opacity of the full-screen app-background layer. */
-  cover: number;
-  /** Opacity of the whole overlay. */
+  /** Exit progress of the whole lockup: opacity is 1 - exit, scale is 1 + EXIT_SCALE * exit. */
+  exit: number;
+  /** Opacity of the orange overlay itself. */
   overlay: number;
 };
 
 export type SplashSchedule = {
-  /** Time at which the animation is complete and waits for the app (the cover layer is fully opaque here). */
+  /** Time at which the animation waits for the app (everything is on screen, nothing has started to leave). */
   holdAt: number;
   /** End of the overlay fade-out. */
   end: number;
-  /** When the zoom starts (first launch: also where tap-to-skip jumps to). */
-  zoomStart: number;
 };
 
 export const SCHEDULES: Record<SplashMode, SplashSchedule> = {
-  first: { holdAt: 4.9, end: 5.25, zoomStart: 3.7 },
-  repeat: { holdAt: 1.3, end: 1.55, zoomStart: 0.4 },
-  reduced: { holdAt: 0.6, end: 0.85, zoomStart: 0.6 },
+  full: { holdAt: 3.7, end: 4.5 },
+  reduced: { holdAt: 0.8, end: 1.05 },
 };
 
-// The full zoom is ~150x. Scaling that far is heavy and gains nothing: by ~60x the band already fills the screen
-// and the app-background cover layer takes over, so the zoom is capped here.
-export const ZOOM_CAP = 60;
+// Exit of the full timeline: the lockup fades and grows slightly (about the screen centre), then the orange follows.
+export const EXIT_START = 3.7;
+export const EXIT_END = 4.5;
+export const OVERLAY_FADE_START = 3.9;
+export const EXIT_SCALE = 0.06;
 
 function clamp01(value: number): number {
   'worklet';
@@ -98,52 +92,37 @@ function easeMove(p: number): number {
   return cubicBezier(0.65, 0, 0.25, 1, p);
 }
 
-function easeZoom(p: number): number {
-  'worklet';
-  return cubicBezier(0.55, 0.05, 0.9, 0.5, p);
-}
-
 function easeOut(p: number): number {
   'worklet';
   return cubicBezier(0, 0, 0.58, 1, p);
 }
 
-// Start/end times (seconds) of the zoom-out phase fades, per mode.
-function exitTimes(mode: SplashMode) {
+// Standard "ease" used by the exit.
+function easeExit(p: number): number {
   'worklet';
-  if (mode === 'first') {
-    return { fade: [3.7, 4.15], zoom: [3.7, 4.9], tween: [4.1, 4.9], cover: [4.5, 4.9], overlay: [4.9, 5.25] };
-  }
-  if (mode === 'repeat') {
-    return { fade: [0.4, 0.75], zoom: [0.4, 1.3], tween: [0.5, 1.2], cover: [0.9, 1.3], overlay: [1.3, 1.55] };
-  }
-  // Reduced motion: no zoom, no fade of parts - only the final crossfade into the app.
-  return { fade: [9, 10], zoom: [9, 10], tween: [9, 10], cover: [9, 10], overlay: [0.6, 0.85] };
+  return cubicBezier(0.4, 0, 0.2, 1, p);
 }
 
 export function splashFrame(t: number, mode: SplashMode): SplashFrame {
   'worklet';
-  const exit = exitTimes(mode);
-  const built = mode !== 'first';
+  const full = mode === 'full';
 
-  // Build-up (first launch only). In the other modes the symbol is simply there from the first frame.
-  const stemP = built ? 1 : easeSoft(seg(t, 0.15, 0.6));
-  const leglP = built ? 1 : easeSoft(seg(t, 0.35, 0.8));
-  const bandP = built ? 1 : easeSoft(seg(t, 0.6, 1.05));
-  const legrP = built ? 1 : easeSoft(seg(t, 0.85, 1.3));
+  // Build-up. In the reduced version the finished symbol is simply there from the first frame.
+  const stemP = full ? easeSoft(seg(t, 0.15, 0.6)) : 1;
+  const leglP = full ? easeSoft(seg(t, 0.35, 0.8)) : 1;
+  const bandP = full ? easeSoft(seg(t, 0.6, 1.05)) : 1;
+  const legrP = full ? easeSoft(seg(t, 0.85, 1.3)) : 1;
   let dotScale = 1;
-  if (!built) {
+  if (full) {
     dotScale = t < 1.3 ? 1.25 * easeOut(seg(t, 1.15, 1.3)) : 1.25 - 0.25 * easeOut(seg(t, 1.3, 1.45));
   }
 
-  const lock = mode === 'first' ? easeMove(seg(t, 1.6, 2.15)) : 0;
+  const lock = full ? easeMove(seg(t, 1.6, 2.15)) : 0;
   const letters: number[] = [];
   for (let i = 0; i < 6; i += 1) {
     const start = 1.9 + 0.06 * i;
-    letters.push(mode === 'first' ? easeSoft(seg(t, start, start + 0.45)) : 0);
+    letters.push(full ? easeSoft(seg(t, start, start + 0.45)) : 0);
   }
-
-  const zoomP = easeZoom(seg(t, exit.zoom[0], exit.zoom[1]));
 
   return {
     stem: { o: stemP, dy: -26 * (1 - stemP) },
@@ -153,17 +132,14 @@ export function splashFrame(t: number, mode: SplashMode): SplashFrame {
     dotScale,
     lock,
     letters,
-    others: 1 - seg(t, exit.fade[0], exit.fade[1]),
-    // Geometric interpolation: equal time steps give equal zoom *ratios*, which is how a camera push-in reads.
-    zoom: Math.exp(Math.log(ZOOM_CAP) * zoomP),
-    bandMix: seg(t, exit.tween[0], exit.tween[1]),
-    cover: seg(t, exit.cover[0], exit.cover[1]),
-    overlay: 1 - seg(t, exit.overlay[0], exit.overlay[1]),
+    exit: full ? easeExit(seg(t, EXIT_START, EXIT_END)) : 0,
+    // Full: orange fades 3.90-4.50 (it starts once the lockup is already leaving). Reduced: a plain 0.25 s crossfade.
+    overlay: full ? 1 - easeExit(seg(t, OVERLAY_FADE_START, EXIT_END)) : 1 - seg(t, SCHEDULES.reduced.holdAt, SCHEDULES.reduced.end),
   };
 }
 
 // Tagline: KNOW . CONTROL . GROW. Its own clock `c` (seconds since the tagline started) so that it can wait for the
-// Inter font without the rest of the timeline waiting. c = 0 is 2.45 s on the first-launch timeline.
+// Inter font without the rest of the timeline waiting. c = 0 is 2.45 s on the timeline.
 export const TAGLINE_DURATION = 0.8;
 export const TAGLINE_START = 2.45;
 
@@ -177,39 +153,26 @@ export function taglineFrame(c: number): TaglineFrame {
   };
 }
 
-// Tap-to-skip. A tap must not cut: from whatever is on screen at time t0 the parts fade out over SKIP_FADE seconds
-// (a band that has not appeared yet fades in over the same time), then the zoom and reveal run compressed to
-// SKIP_ZOOM seconds - half the speed of the normal 1.2 s zoom, with every sub-phase scaled by the same factor.
+// Tap-to-skip. A tap must not cut: from whatever is on screen at time t0 the lockup fades out over SKIP_FADE seconds
+// (as it is, frozen - nothing jumps), then the orange overlay fades over SKIP_OVERLAY.
+// Together that is the 0.5 s compressed exit.
 export const SKIP_FADE = 0.2;
-export const SKIP_ZOOM = 0.6;
-const SKIP_OVERLAY_FADE = 0.175;
+export const SKIP_OVERLAY = 0.3;
 
 export type SkipSnapshot = SplashFrame & { t0: number };
 
 export function skipSchedule(t0: number): SplashSchedule {
   'worklet';
-  return { holdAt: t0 + SKIP_FADE + SKIP_ZOOM, end: t0 + SKIP_FADE + SKIP_ZOOM + SKIP_OVERLAY_FADE, zoomStart: t0 };
+  return { holdAt: t0 + SKIP_FADE, end: t0 + SKIP_FADE + SKIP_OVERLAY };
 }
 
 export function skipFrame(t: number, from: SkipSnapshot): SplashFrame {
   'worklet';
   const c = t - from.t0;
-  const fade = seg(c, 0, SKIP_FADE);
-  const z = c - SKIP_FADE;
   return {
-    // Everything that was on screen stays exactly where it was and only fades.
-    stem: from.stem,
-    legl: from.legl,
-    legr: from.legr,
-    dotScale: from.dotScale,
-    lock: from.lock,
-    letters: from.letters,
-    others: from.others * (1 - fade),
-    band: { o: from.band.o + (1 - from.band.o) * fade, dx: from.band.dx * (1 - fade) },
-    zoom: Math.exp(Math.log(ZOOM_CAP) * easeZoom(seg(z, 0, SKIP_ZOOM))),
-    // Same proportions as the normal 3.70-4.90 zoom: tween over its last two thirds, cover over its last third.
-    bandMix: seg(z, SKIP_ZOOM / 3, SKIP_ZOOM),
-    cover: seg(z, (2 * SKIP_ZOOM) / 3, SKIP_ZOOM),
-    overlay: 1 - seg(c, SKIP_FADE + SKIP_ZOOM, SKIP_FADE + SKIP_ZOOM + SKIP_OVERLAY_FADE),
+    // Everything that was on screen stays exactly where it was and only leaves with the normal exit motion.
+    ...from,
+    exit: easeExit(seg(c, 0, SKIP_FADE)),
+    overlay: 1 - easeExit(seg(c, SKIP_FADE, SKIP_FADE + SKIP_OVERLAY)),
   };
 }

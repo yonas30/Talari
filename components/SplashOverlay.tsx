@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, BackHandler, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
+  ReduceMotion,
   cancelAnimation,
-  interpolateColor,
-  useAnimatedProps,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -16,7 +15,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import {
-  BAND_CENTER,
   SYMBOL_ASPECT,
   SYMBOL_DOT,
   SYMBOL_PATHS,
@@ -27,6 +25,7 @@ import {
   WORDMARK_VIEWBOX,
 } from '../assets/brand/talariPaths';
 import {
+  EXIT_SCALE,
   SCHEDULES,
   SplashFrame,
   SplashMode,
@@ -39,27 +38,22 @@ import {
   splashFrame,
   taglineFrame,
 } from '../utils/splashTimeline';
-import { hasSeenIntroSplash, markIntroSplashSeen } from '../utils/splashFlag';
 
 const ORANGE = '#F47C20';
 const WHITE = '#FFFFFF';
 const PEACH = '#FFD9B8';
 
-// react-native-svg on Android draws an <Svg> into a bitmap the size of the view and then scales THAT bitmap when the
-// view is transformed. Zooming a normally-sized band 60x would therefore be a blurry bitmap. The band is drawn at
-// this multiple of its on-screen size and shrunk back with a transform, so the first few x of the zoom are sharp.
-const BAND_OVERSAMPLE = 1.6;
-
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+// Reanimated honours the OS "Reduce motion / Remove animations" setting by default: every withTiming then JUMPS to its
+// end value. That is exactly what the reduced-motion version must not do (it is the one that has to show the still
+// symbol for 0.8 s before fading), so the splash clock opts out explicitly.
+const LINEAR = { easing: Easing.linear, reduceMotion: ReduceMotion.Never } as const;
 
 type Props = {
-  /** The colour behind the splash (the screen the user lands on). The band turns into this colour as it grows. */
-  appBackground: string;
-  /** The app has finished initialising (database, migrations). The overlay holds on its last frame until then. */
+  /** The app has finished initialising (database, migrations) and we know whether the lock screen comes first. */
   ready: boolean;
   /** Inter SemiBold is loaded. The tagline waits for it rather than showing a fallback font. */
   fontsLoaded: boolean;
-  /** The overlay has started its final fade-out: whatever comes next (lock screen, Home) is about to be revealed. */
+  /** The exit has started: whatever comes next (lock screen, Home) is about to be revealed. */
   onFadeStart?: () => void;
   onFinish: () => void;
 };
@@ -70,7 +64,7 @@ const WORDMARK_BOX = `${WORDMARK_VIEWBOX.x} ${WORDMARK_VIEWBOX.y} ${WORDMARK_VIE
 const DOT_LETTER = [1, 3];
 const TAGLINE_WORDS = ['KNOW', 'CONTROL', 'GROW'];
 
-export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFadeStart, onFinish }: Props) {
+export default function SplashOverlay({ ready, fontsLoaded, onFadeStart, onFinish }: Props) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [mode, setMode] = useState<SplashMode | null>(null);
   const [animationDone, setAnimationDone] = useState(false);
@@ -84,6 +78,7 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
   const finishingRef = useRef(false);
   const skippedRef = useRef(false);
   const startedAtRef = useRef(0);
+  const skipRef = useRef<() => void>(() => undefined);
 
   // Everything is laid out from the 390 x 844 design: sizes scale with width, and the vertical centre keeps its
   // proportional position (400 / 844) so the lockup sits where the design puts it on taller or shorter phones.
@@ -95,7 +90,6 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
     const symbolWidth = 150 * k;
     const symbolHeight = symbolWidth * SYMBOL_ASPECT;
     const wordmarkWidth = 200 * k;
-    const wordmarkHeight = wordmarkWidth * WORDMARK_ASPECT;
     return {
       k,
       centreX,
@@ -106,7 +100,7 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
       dockScale: 92 / 150,
       wordmarkLeft: x(150),
       wordmarkWidth,
-      wordmarkHeight,
+      wordmarkHeight: wordmarkWidth * WORDMARK_ASPECT,
       taglineTop: centreY + 70 * k,
       dotOrigin: [
         ((SYMBOL_DOT.cx - SYMBOL_VIEWBOX.x) / SYMBOL_VIEWBOX.width) * symbolWidth,
@@ -117,24 +111,26 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
   }, [screenWidth, screenHeight]);
   const { k } = geometry;
 
-  // ---- decide which version to play -------------------------------------------------------------------------------
+  // ---- decide which version to play: the full one, or the still one when the OS asks for reduced motion ---------------
+  // (On Android "Remove animations" sets the transition animation scale to 0, which is what this reports.)
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([hasSeenIntroSplash(), AccessibilityInfo.isReduceMotionEnabled().catch(() => false)]).then(
-      ([seen, reduceMotion]) => {
-        if (cancelled) {
-          return;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .catch(() => false)
+      .then((reduceMotion) => {
+        if (!cancelled) {
+          setMode(reduceMotion ? 'reduced' : 'full');
         }
-        if (reduceMotion) {
-          void markIntroSplashSeen();
-          setMode('reduced');
-        } else {
-          setMode(seen ? 'repeat' : 'first');
-        }
-      },
-    );
+      });
+    // If the user switches reduced motion on while the splash is already playing, finish quickly rather than keep moving.
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+      if (enabled) {
+        skipRef.current();
+      }
+    });
     return () => {
       cancelled = true;
+      subscription.remove();
     };
   }, []);
 
@@ -165,7 +161,7 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
   const animateTo = useCallback(
     (to: number, seconds: number, onDone: () => void) => {
       t.set(
-        withTiming(to, { duration: seconds * 1000, easing: Easing.linear }, (finished) => {
+        withTiming(to, { duration: seconds * 1000, ...LINEAR }, (finished) => {
           'worklet';
           if (finished) {
             scheduleOnRN(onDone);
@@ -176,7 +172,7 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
     [t],
   );
 
-  // ---- run the clock ---------------------------------------------------------------------------------------------
+  // ---- run the clock up to the hold point --------------------------------------------------------------------------
   useEffect(() => {
     if (!mode) {
       return;
@@ -184,22 +180,11 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
     const schedule = SCHEDULES[mode];
     startedAtRef.current = Date.now();
     animateTo(schedule.holdAt, schedule.holdAt, onHoldReached);
-
-    // The first-launch flag is set when the zoom begins (or on skip), so quitting mid-intro replays it.
-    let flagTimer: ReturnType<typeof setTimeout> | undefined;
-    if (mode === 'first') {
-      flagTimer = setTimeout(() => void markIntroSplashSeen(), schedule.zoomStart * 1000);
-    }
-    return () => {
-      if (flagTimer) {
-        clearTimeout(flagTimer);
-      }
-      cancelAnimation(t);
-    };
+    return () => cancelAnimation(t);
   }, [mode, t, animateTo, onHoldReached]);
 
-  // Animation complete + app ready -> fade the overlay away. If the app is slower, the last frame (the app's own
-  // background colour) simply stays up until it is.
+  // Hold point reached + app ready (store loaded, lock state known) -> run the exit. If the app is slower, the splash
+  // simply stays on its last frame until it is, and the biometric prompt (see onFadeStart) waits for the same moment.
   useEffect(() => {
     if (!mode || !animationDone || !ready || finishingRef.current) {
       return;
@@ -212,40 +197,49 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
 
   // ---- tagline clock: starts at 2.45 s, but never before Inter is loaded --------------------------------------------
   useEffect(() => {
-    if (mode !== 'first' || !fontsLoaded || skippedRef.current) {
+    if (mode !== 'full' || !fontsLoaded || skippedRef.current) {
       return;
     }
     const wait = Math.max(0, TAGLINE_START * 1000 - (Date.now() - startedAtRef.current));
     const timer = setTimeout(() => {
       if (!skippedRef.current) {
-        tagClock.set(withTiming(TAGLINE_DURATION, { duration: TAGLINE_DURATION * 1000, easing: Easing.linear }));
+        tagClock.set(withTiming(TAGLINE_DURATION, { duration: TAGLINE_DURATION * 1000, ...LINEAR }));
       }
     }, wait);
     return () => clearTimeout(timer);
   }, [mode, fontsLoaded, tagClock]);
 
-  // ---- tap to skip (first launch only) -----------------------------------------------------------------------------
+  // ---- tap to skip -------------------------------------------------------------------------------------------------
   const skip = () => {
-    if (mode !== 'first' || skippedRef.current || finishingRef.current) {
+    if (!mode || skippedRef.current || finishingRef.current) {
       return;
     }
-    if (t.get() >= SCHEDULES.first.zoomStart) {
-      return;
+    const schedule = SCHEDULES[mode];
+    const now = t.get();
+    if (now >= schedule.holdAt) {
+      return; // already at the end of the animation; the exit starts as soon as the app is ready
     }
     skippedRef.current = true;
-    void markIntroSplashSeen();
     cancelAnimation(t);
     cancelAnimation(tagClock);
+    if (mode === 'reduced') {
+      // Nothing moves in this version: go straight to the point where it waits for the app, then crossfade.
+      t.set(schedule.holdAt);
+      setAnimationDone(true);
+      return;
+    }
     // Freeze what is on screen right now and continue from it (see skipFrame): no jump to a later point of the timeline.
-    const now = t.get();
-    const schedule = skipSchedule(now);
-    snapshot.set({ ...splashFrame(now, 'first'), t0: now });
+    const skipPlan = skipSchedule(now);
+    snapshot.set({ ...splashFrame(now, 'full'), t0: now });
     setSkipT0(now);
-    animateTo(schedule.holdAt, schedule.holdAt - now, onHoldReached);
+    animateTo(skipPlan.holdAt, skipPlan.holdAt - now, onHoldReached);
   };
+  useEffect(() => {
+    skipRef.current = skip;
+  });
 
   // ---- per-frame values (UI thread) --------------------------------------------------------------------------------
-  const activeMode: SplashMode = mode ?? 'repeat';
+  const activeMode: SplashMode = mode ?? 'full';
   const frame = useDerivedValue(() => {
     const from = snapshot.value;
     return from ? skipFrame(t.value, from) : splashFrame(t.value, activeMode);
@@ -253,24 +247,11 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
   const tagFrame = useDerivedValue(() => taglineFrame(tagClock.value));
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: frame.value.overlay }));
-  // Zoom about the centre of the band wherever it currently is (docked at 92 wide, centred at 150 wide, or anywhere in
-  // between when the user skips). A scale about point P with the view's default centre origin C is
-  // translate((P - C)(1 - s)) then scale(s).
-  const zoomStyle = useAnimatedStyle(() => {
-    const { zoom, lock } = frame.value;
-    const scale = 1 + (geometry.dockScale - 1) * lock;
-    const originX = geometry.centreX + geometry.dockShift * lock + (BAND_CENTER.x - 0.5) * geometry.symbolWidth * scale;
-    const originY = geometry.centreY + (BAND_CENTER.y - 0.5) * geometry.symbolHeight * scale;
-    return {
-      transform: [
-        { translateX: (originX - screenWidth / 2) * (1 - zoom) },
-        { translateY: (originY - screenHeight / 2) * (1 - zoom) },
-        { scale: zoom },
-      ],
-    };
-  });
-  const coverStyle = useAnimatedStyle(() => ({ opacity: frame.value.cover }));
-  const othersStyle = useAnimatedStyle(() => ({ opacity: frame.value.others }));
+  // The whole lockup leaves together: it fades and grows slightly about the screen centre (the wrapper's own centre).
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: 1 - frame.value.exit,
+    transform: [{ scale: 1 + EXIT_SCALE * frame.value.exit }],
+  }));
   const lockStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: geometry.dockShift * frame.value.lock },
@@ -281,6 +262,10 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
     opacity: frame.value.stem.o,
     transform: [{ translateY: frame.value.stem.dy * k }],
   }));
+  const bandStyle = useAnimatedStyle(() => ({
+    opacity: frame.value.band.o,
+    transform: [{ translateX: frame.value.band.dx * k }],
+  }));
   const leglStyle = useAnimatedStyle(() => ({
     opacity: frame.value.legl.o,
     transform: [{ translateX: frame.value.legl.dx * k }, { translateY: frame.value.legl.dy * k }],
@@ -290,21 +275,11 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
     transform: [{ translateX: frame.value.legr.dx * k }, { translateY: frame.value.legr.dy * k }],
   }));
   const dotStyle = useAnimatedStyle(() => ({ transform: [{ scale: frame.value.dotScale }] }));
-  const bandStyle = useAnimatedStyle(() => ({
-    opacity: frame.value.band.o,
-    // Translation is in on-screen design units, but this layer is drawn BAND_OVERSAMPLE times larger and shrunk back.
-    transform: [{ translateX: frame.value.band.dx * k * BAND_OVERSAMPLE }],
-  }));
-  const bandProps = useAnimatedProps(() => ({
-    fill: interpolateColor(frame.value.bandMix, [0, 1], [WHITE, appBackground]),
-  }));
 
   const wordmarkHeight = geometry.wordmarkHeight;
   const taglineLine = Math.round(13.5 * k * 1.45);
-
   const symbolLeft = geometry.centreX - geometry.symbolWidth / 2;
   const symbolTop = geometry.centreY - geometry.symbolHeight / 2;
-  const overscan = (BAND_OVERSAMPLE - 1) / 2;
 
   return (
     <Animated.View
@@ -316,7 +291,7 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
       importantForAccessibility="no-hide-descendants"
     >
       {mode && (
-        <Animated.View style={[StyleSheet.absoluteFill, zoomStyle]}>
+        <Animated.View style={[StyleSheet.absoluteFill, contentStyle]}>
           <Animated.View
             style={[
               styles.absolute,
@@ -324,54 +299,39 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
               lockStyle,
             ]}
           >
-            {/* The band: drawn oversampled (see BAND_OVERSAMPLE), and NOT part of the group that fades out. */}
-            <View
+            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, stemStyle]}>
+              <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
+                <Path d={SYMBOL_PATHS.stem} fill={WHITE} />
+              </Svg>
+            </Animated.View>
+            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, bandStyle]}>
+              <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
+                <Path d={SYMBOL_PATHS.band} fill={WHITE} />
+              </Svg>
+            </Animated.View>
+            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, leglStyle]}>
+              <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
+                <Path d={SYMBOL_PATHS.legl} fill={WHITE} />
+              </Svg>
+            </Animated.View>
+            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, legrStyle]}>
+              <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
+                <Path d={SYMBOL_PATHS.legr} fill={WHITE} />
+              </Svg>
+            </Animated.View>
+            <Animated.View
               pointerEvents="none"
-              style={[
-                styles.absolute,
-                {
-                  left: -geometry.symbolWidth * overscan,
-                  top: -geometry.symbolHeight * overscan,
-                  width: geometry.symbolWidth * BAND_OVERSAMPLE,
-                  height: geometry.symbolHeight * BAND_OVERSAMPLE,
-                  transform: [{ scale: 1 / BAND_OVERSAMPLE }],
-                },
-              ]}
+              style={[StyleSheet.absoluteFill, { transformOrigin: geometry.dotOrigin }, dotStyle]}
             >
-              <Animated.View style={[StyleSheet.absoluteFill, bandStyle]}>
-                <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
-                  <AnimatedPath d={SYMBOL_PATHS.band} animatedProps={bandProps} fill={WHITE} />
-                </Svg>
-              </Animated.View>
-            </View>
-
-            <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, othersStyle]}>
-              <Animated.View style={[StyleSheet.absoluteFill, stemStyle]}>
-                <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
-                  <Path d={SYMBOL_PATHS.stem} fill={WHITE} />
-                </Svg>
-              </Animated.View>
-              <Animated.View style={[StyleSheet.absoluteFill, leglStyle]}>
-                <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
-                  <Path d={SYMBOL_PATHS.legl} fill={WHITE} />
-                </Svg>
-              </Animated.View>
-              <Animated.View style={[StyleSheet.absoluteFill, legrStyle]}>
-                <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
-                  <Path d={SYMBOL_PATHS.legr} fill={WHITE} />
-                </Svg>
-              </Animated.View>
-              <Animated.View style={[StyleSheet.absoluteFill, { transformOrigin: geometry.dotOrigin }, dotStyle]}>
-                <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
-                  <Circle cx={SYMBOL_DOT.cx} cy={SYMBOL_DOT.cy} r={SYMBOL_DOT.r} fill={PEACH} />
-                </Svg>
-              </Animated.View>
+              <Svg width="100%" height="100%" viewBox={SYMBOL_BOX}>
+                <Circle cx={SYMBOL_DOT.cx} cy={SYMBOL_DOT.cy} r={SYMBOL_DOT.r} fill={PEACH} />
+              </Svg>
             </Animated.View>
           </Animated.View>
 
-          {mode === 'first' && (
+          {mode === 'full' && (
             <>
-              <Animated.View
+              <View
                 pointerEvents="none"
                 style={[
                   styles.absolute,
@@ -381,19 +341,15 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
                     width: geometry.wordmarkWidth,
                     height: wordmarkHeight,
                   },
-                  othersStyle,
                 ]}
               >
                 {WORDMARK_LETTERS.map((letterPath, index) => (
                   <RisingLetter key={index} frame={frame} index={index} path={letterPath} height={wordmarkHeight} />
                 ))}
-              </Animated.View>
+              </View>
 
               {fontsLoaded && (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[styles.tagline, { top: geometry.taglineTop, gap: 11 * k }, othersStyle]}
-                >
+                <View pointerEvents="none" style={[styles.tagline, { top: geometry.taglineTop, gap: 11 * k }]}>
                   {TAGLINE_WORDS.map((word, index) => (
                     <TaglineItem
                       key={word}
@@ -405,48 +361,15 @@ export default function SplashOverlay({ appBackground, ready, fontsLoaded, onFad
                       showDot={index < TAGLINE_WORDS.length - 1}
                     />
                   ))}
-                </Animated.View>
+                </View>
               )}
             </>
           )}
         </Animated.View>
       )}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: appBackground }, coverStyle]} />
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    backgroundColor: ORANGE,
-    // Above the router, the drawer and every modal-less screen.
-    zIndex: 1000,
-    elevation: 1000,
-  },
-  absolute: {
-    position: 'absolute',
-  },
-  mask: {
-    overflow: 'hidden',
-  },
-  tagline: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  taglineItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  taglineText: {
-    color: WHITE,
-    fontFamily: 'Inter_600SemiBold',
-    includeFontPadding: false,
-  },
-});
 
 type FrameValue = SharedValue<SplashFrame>;
 
@@ -527,3 +450,35 @@ function TaglineItem({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    backgroundColor: ORANGE,
+    // Above the router, the drawer and every modal-less screen.
+    zIndex: 1000,
+    elevation: 1000,
+  },
+  absolute: {
+    position: 'absolute',
+  },
+  mask: {
+    overflow: 'hidden',
+  },
+  tagline: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  taglineItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  taglineText: {
+    color: WHITE,
+    fontFamily: 'Inter_600SemiBold',
+    includeFontPadding: false,
+  },
+});
