@@ -3,9 +3,21 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 import AppButton from './AppButton';
+import { colors } from '../constants/theme';
 import { isAppLockEnabled } from '../utils/appLock';
 
-export default function AuthGate({ children }: { children: React.ReactNode }) {
+type Props = {
+  children: React.ReactNode;
+  /** Called once, as soon as it is known whether the lock screen or the app comes first. */
+  onLockResolved?: () => void;
+  /**
+   * False holds back the automatic biometric prompt (the Unlock button still works). The splash uses this so that no
+   * system dialog appears over its animation.
+   */
+  promptAllowed?: boolean;
+};
+
+export default function AuthGate({ children, onLockResolved, promptAllowed = true }: Props) {
   const [lockRequired, setLockRequired] = useState<boolean | null>(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +34,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     }
 
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Unlock My Finances',
+      promptMessage: 'Unlock Talari',
       fallbackLabel: 'Use passcode',
     });
 
@@ -39,14 +51,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       if (!enabled) {
         setIsUnlocked(true);
       }
+      onLockResolved?.();
     });
-  }, []);
+    // onLockResolved must be a stable callback (it is only ever called once the lock state is known).
+  }, [onLockResolved]);
 
   useEffect(() => {
-    if (lockRequired) {
+    if (lockRequired && promptAllowed) {
       void attemptUnlock();
     }
-  }, [lockRequired]);
+  }, [lockRequired, promptAllowed]);
 
   if (lockRequired === null) {
     return (
@@ -59,7 +73,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   if (lockRequired && !isUnlocked) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>My Finances is locked</Text>
+        <Text style={styles.title}>Talari is locked</Text>
         {error && <Text style={styles.error}>{error}</Text>}
         <AppButton title="Unlock" variant="primary" onPress={() => void attemptUnlock()} />
       </View>
@@ -74,7 +88,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.background,
     gap: 16,
     padding: 20,
   },

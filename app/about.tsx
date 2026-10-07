@@ -9,7 +9,7 @@ export default function AboutScreen() {
       <AppHeader title="About" />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.card}>
-          <Text style={styles.title}>My Finances</Text>
+          <Text style={styles.title}>Talari</Text>
           <Text style={styles.version}>Version 1.0.0</Text>
           <Text style={styles.body}>
             This is not a generic budgeting app. It's a personal tool built as part of a "LIFE 2.0" journey —

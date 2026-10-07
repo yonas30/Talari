@@ -19,7 +19,7 @@ export default function ExportDataScreen() {
     setIsBusy(true);
     try {
       const payload = await exportAllData();
-      const file = new File(Paths.cache, `my-finances-backup-${Date.now()}.json`);
+      const file = new File(Paths.cache, `talari-backup-${Date.now()}.json`);
       if (file.exists) {
         file.delete();
       }
@@ -54,7 +54,7 @@ export default function ExportDataScreen() {
       });
       const csv = [header, ...rows].join('\n');
 
-      const file = new File(Paths.cache, `my-finances-transactions-${Date.now()}.csv`);
+      const file = new File(Paths.cache, `talari-transactions-${Date.now()}.csv`);
       if (file.exists) {
         file.delete();
       }

@@ -1,21 +1,20 @@
 {
   "expo": {
-    "name": "my-finances-app",
+    "name": "Talari",
     "slug": "my-finances-app",
     "version": "1.0.0",
     "scheme": "myfinancesapp",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/brand/talari-icon-1024.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#F47C20",
+        "foregroundImage": "./assets/brand/talari-adaptive-foreground-1024.png",
+        "monochromeImage": "./assets/brand/talari-adaptive-monochrome-1024.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.yonaskuku.myfinancesapp"
@@ -29,13 +28,27 @@
       "expo-sharing",
       "expo-secure-store",
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F47C20",
+          "imageWidth": 200,
+          "android": {
+            "image": "./assets/brand/splash-blank.png"
+          },
+          "dark": {
+            "backgroundColor": "#F47C20"
+          }
+        }
+      ]
     ],
     "extra": {
       "router": {},
       "eas": {
         "projectId": "fe3e5d57-e674-4de0-adf8-bb16fe241a38"
       }
-    }
+    },
+    "backgroundColor": "#F47C20"
   }
 }
