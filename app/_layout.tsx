@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AuthGate from '../components/AuthGate';
 import SideDrawer from '../components/SideDrawer';
 import SplashOverlay from '../components/SplashOverlay';
-import { colors } from '../constants/theme';
+import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 import { useFinanceStore } from '../store/finance';
 import { statusBarStyleForBackground } from '../utils/statusBar';
 
@@ -20,6 +20,15 @@ void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 const SPLASH_BACKGROUND = '#F47C20';
 
 export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootLayoutContent />
+    </ThemeProvider>
+  );
+}
+
+function RootLayoutContent() {
+  const { colors, ready: themeReady } = useTheme();
   const loadData = useFinanceStore((state) => state.loadData);
   const isReady = useFinanceStore((state) => state.isReady);
   const insets = useSafeAreaInsets();
@@ -39,8 +48,8 @@ export default function RootLayout() {
 
   return (
     <>
-      {/* Icons always visible: dark icons on the light app background, light icons if it ever turns dark. */}
-      <StatusBar style={statusBarStyleForBackground(splashActive ? SPLASH_BACKGROUND : colors.background)} />
+      {/* Icons always visible: dark icons on a light app background, light icons on a dark one. */}
+      <StatusBar style={statusBarStyleForBackground(splashActive ? SPLASH_BACKGROUND : colors.bg)} />
       <AuthGate onLockResolved={onLockResolved} promptAllowed={!splashActive || splashFading}>
       {/*
         The five main sections live in the (tabs) group. Every other screen is a real stack entry above
@@ -51,17 +60,18 @@ export default function RootLayout() {
         screenOptions={{
           headerShown: false,
           // Stack screens have no tab bar, so keep their bottom content out of the gesture/nav bar area.
-          contentStyle: { backgroundColor: colors.background, paddingBottom: insets.bottom },
+          contentStyle: { backgroundColor: colors.bg, paddingBottom: insets.bottom },
         }}
       >
         {/* The tab bar already accounts for the bottom inset itself. */}
-        <Stack.Screen name="(tabs)" options={{ contentStyle: { backgroundColor: colors.background } }} />
+        <Stack.Screen name="(tabs)" options={{ contentStyle: { backgroundColor: colors.bg } }} />
       </Stack>
         <SideDrawer />
       </AuthGate>
       {splashActive && (
         <SplashOverlay
-          ready={isReady && lockResolved}
+          // The saved theme is read before the splash leaves, so the first revealed frame already has the right scheme.
+          ready={isReady && lockResolved && themeReady}
           fontsLoaded={fontsLoaded}
           onFadeStart={onSplashFadeStart}
           onFinish={() => setSplashActive(false)}
