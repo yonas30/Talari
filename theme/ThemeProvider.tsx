@@ -83,3 +83,9 @@ export function useTheme(): ThemeContextValue {
   }
   return value;
 }
+
+// For shared components that must also work outside a provider (tests, the splash before the tree is up): same value as
+// useTheme() when there is a provider, the Light palette otherwise.
+export function useThemeColors(): ThemeColors {
+  return useContext(ThemeContext)?.colors ?? palettes.light;
+}

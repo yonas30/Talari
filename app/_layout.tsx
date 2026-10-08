@@ -1,5 +1,3 @@
-import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
-import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -9,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AuthGate from '../components/AuthGate';
 import SideDrawer from '../components/SideDrawer';
 import SplashOverlay from '../components/SplashOverlay';
+import { useAppFonts } from '../theme/fonts';
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 import { useFinanceStore } from '../store/finance';
 import { statusBarStyleForBackground } from '../utils/statusBar';
@@ -39,8 +38,9 @@ function RootLayoutContent() {
   const [splashFading, setSplashFading] = useState(false);
   const onLockResolved = useCallback(() => setLockResolved(true), []);
   const onSplashFadeStart = useCallback(() => setSplashFading(true), []);
-  // Inter is only used by the splash tagline; it loads while the animation plays.
-  const [fontsLoaded] = useFonts({ Inter_600SemiBold });
+  // Inter + Plus Jakarta Sans load while the animation plays. The splash holds on its full lockup until they are ready
+  // (or 4 s have passed - see FONT_WAIT_LIMIT_MS - so a font problem can never trap the user on the splash).
+  const fonts = useAppFonts();
 
   useEffect(() => {
     void loadData();
@@ -71,8 +71,8 @@ function RootLayoutContent() {
       {splashActive && (
         <SplashOverlay
           // The saved theme is read before the splash leaves, so the first revealed frame already has the right scheme.
-          ready={isReady && lockResolved && themeReady}
-          fontsLoaded={fontsLoaded}
+          ready={isReady && lockResolved && themeReady && fonts.ready}
+          fontsLoaded={fonts.loaded}
           onFadeStart={onSplashFadeStart}
           onFinish={() => setSplashActive(false)}
         />
