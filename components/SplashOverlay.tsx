@@ -64,6 +64,17 @@ const WORDMARK_BOX = `${WORDMARK_VIEWBOX.x} ${WORDMARK_VIEWBOX.y} ${WORDMARK_VIE
 const DOT_LETTER = [1, 3];
 const TAGLINE_WORDS = ['KNOW', 'CONTROL', 'GROW'];
 
+// Tagline metrics (design units, scaled by k). Android adds letter spacing around every glyph, so each word's box is
+// given a little extra room on the right - otherwise the last glyph (the wide W of KNOW and GROW) can be cut off by the
+// word's mask - and the row is shifted back by half of that room so the tagline stays centred on screen.
+function taglineMetrics(k: number) {
+  const letterSpacing = 0.22 * 13.5 * k;
+  const rightRoom = letterSpacing + 2 * k;
+  // Half of the spacing sits on each side of a glyph, so the visual gaps to the dots are reduced by that half.
+  const gap = 11 * k - letterSpacing / 2;
+  return { letterSpacing, rightRoom, gap, dotMargin: gap - rightRoom };
+}
+
 export default function SplashOverlay({ ready, fontsLoaded, onFadeStart, onFinish }: Props) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [mode, setMode] = useState<SplashMode | null>(null);
@@ -349,7 +360,13 @@ export default function SplashOverlay({ ready, fontsLoaded, onFadeStart, onFinis
               </View>
 
               {fontsLoaded && (
-                <View pointerEvents="none" style={[styles.tagline, { top: geometry.taglineTop, gap: 11 * k }]}>
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.tagline,
+                    { top: geometry.taglineTop, gap: taglineMetrics(k).gap, transform: [{ translateX: taglineMetrics(k).rightRoom / 2 }] },
+                  ]}
+                >
                   {TAGLINE_WORDS.map((word, index) => (
                     <TaglineItem
                       key={word}
@@ -414,6 +431,7 @@ function TaglineItem({
   line: number;
   showDot: boolean;
 }) {
+  const { letterSpacing, rightRoom, dotMargin } = taglineMetrics(k);
   const wordStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (1 - tagFrame.value.words[index]) * line }] }));
   const dotStyle = useAnimatedStyle(() => ({ transform: [{ scale: tagFrame.value.dots[Math.min(index, 1)] }] }));
   return (
@@ -429,9 +447,8 @@ function TaglineItem({
               {
                 fontSize: 13.5 * k,
                 lineHeight: line,
-                letterSpacing: 0.22 * 13.5 * k,
-                // RN adds letter spacing after the last glyph too; pull it back so the line stays centred.
-                marginRight: -0.22 * 13.5 * k,
+                letterSpacing,
+                paddingRight: rightRoom,
               },
             ]}
           >
@@ -442,7 +459,7 @@ function TaglineItem({
       {showDot && (
         <Animated.View
           style={[
-            { width: 5 * k, height: 5 * k, borderRadius: 2.5 * k, backgroundColor: PEACH, marginLeft: 11 * k },
+            { width: 5 * k, height: 5 * k, borderRadius: 2.5 * k, backgroundColor: PEACH, marginLeft: dotMargin },
             dotStyle,
           ]}
         />
@@ -475,6 +492,8 @@ const styles = StyleSheet.create({
   taglineItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    // Never squeeze a word on a narrow screen: a squeezed word would clip its last glyph.
+    flexShrink: 0,
   },
   taglineText: {
     color: WHITE,
