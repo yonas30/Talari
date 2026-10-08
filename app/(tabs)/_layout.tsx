@@ -55,7 +55,15 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.textSecondary,
         // Same cap the bar height is computed with.
         tabBarLabel: ({ color, children }) => (
-          <AppText maxFontSizeMultiplier={TAB_LABEL_MAX_SCALE} numberOfLines={1} style={{ fontSize: TAB_LABEL_FONT_SIZE, color }}>
+          // Inter is about 7% wider than the old system font: "Transactions" is 67 dp at 11 sp but a tab is only 64-82 dp wide
+          // (and 88 dp at the 1.3x cap), so the label may shrink a little instead of being cut off with an ellipsis.
+          <AppText
+            maxFontSizeMultiplier={TAB_LABEL_MAX_SCALE}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+            style={{ fontSize: TAB_LABEL_FONT_SIZE, color }}
+          >
             {children}
           </AppText>
         ),
