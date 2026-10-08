@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 import AppButton from './AppButton';
-import { colors } from '../constants/theme';
+import { useThemeColors } from '../theme/ThemeProvider';
 import { isAppLockEnabled } from '../utils/appLock';
 import AppText from './AppText';
 
@@ -19,6 +19,7 @@ type Props = {
 };
 
 export default function AuthGate({ children, onLockResolved, promptAllowed = true }: Props) {
+  const colors = useThemeColors();
   const [lockRequired, setLockRequired] = useState<boolean | null>(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,17 +66,17 @@ export default function AuthGate({ children, onLockResolved, promptAllowed = tru
 
   if (lockRequired === null) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1d4ed8" />
+      <View style={[styles.center, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (lockRequired && !isUnlocked) {
     return (
-      <View style={styles.center}>
-        <AppText style={styles.title}>Talari is locked</AppText>
-        {error && <AppText style={styles.error}>{error}</AppText>}
+      <View style={[styles.center, { backgroundColor: colors.bg }]}>
+        <AppText style={[styles.title, { color: colors.text }]}>Talari is locked</AppText>
+        {error && <AppText style={[styles.error, { color: colors.expense }]}>{error}</AppText>}
         <AppButton title="Unlock" variant="primary" onPress={() => void attemptUnlock()} />
       </View>
     );
@@ -89,17 +90,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
     gap: 16,
     padding: 20,
   },
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0f172a',
   },
   error: {
-    color: '#dc2626',
     fontSize: 13,
   },
 });

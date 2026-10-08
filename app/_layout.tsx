@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import { useCallback, useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -45,6 +46,14 @@ function RootLayoutContent() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // app.json paints the root view orange so the first frame has no white edge. Once the splash is gone, the root view takes
+  // the active scheme's background, so an overscroll or a slow screen never shows orange (or white in Dark).
+  useEffect(() => {
+    if (!splashActive) {
+      void SystemUI.setBackgroundColorAsync(colors.bg).catch(() => undefined);
+    }
+  }, [splashActive, colors.bg]);
 
   return (
     <>

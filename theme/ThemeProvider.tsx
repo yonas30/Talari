@@ -16,7 +16,7 @@ export interface ThemeContextValue {
   ready: boolean;
 }
 
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+export const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const DEV_CYCLE: ThemeMode[] = ['light', 'dark', 'system'];
 
