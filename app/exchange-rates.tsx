@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
+import AppText from '../components/AppText';
+import AppTextInput from '../components/AppTextInput';
 
 export default function ExchangeRatesScreen() {
   const exchangeRates = useFinanceStore((state) => state.exchangeRates);
@@ -60,19 +62,19 @@ export default function ExchangeRatesScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Manual rates (to {homeCurrency})</Text>
-            <Text style={styles.helper}>These rates are used to convert every transaction into your home currency.</Text>
+            <AppText style={styles.sectionTitle}>Manual rates (to {homeCurrency})</AppText>
+            <AppText style={styles.helper}>These rates are used to convert every transaction into your home currency.</AppText>
 
             {otherCurrencies.length === 0 ? (
-              <Text style={styles.helper}>Add another currency below to set its exchange rate.</Text>
+              <AppText style={styles.helper}>Add another currency below to set its exchange rate.</AppText>
             ) : (
               otherCurrencies.map((currency) => (
                 <View key={currency.code} style={styles.rateRow}>
-                  <Text style={styles.label}>
+                  <AppText style={styles.label}>
                     {currency.code} → {homeCurrency}
                     {findRate(currency.code) === undefined ? '  ·  not set (required before logging this currency)' : ''}
-                  </Text>
-                  <TextInput
+                  </AppText>
+                  <AppTextInput
                     style={styles.input}
                     value={rateInputs[currency.code] ?? String(findRate(currency.code) ?? '')}
                     onChangeText={(value) => {
@@ -92,18 +94,18 @@ export default function ExchangeRatesScreen() {
                   selected={ratesSaved}
                   onPress={() => void onSaveRates()}
                 />
-                {ratesSaved && <Text style={styles.successText}>Manual exchange rates updated.</Text>}
+                {ratesSaved && <AppText style={styles.successText}>Manual exchange rates updated.</AppText>}
               </View>
             )}
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Your currencies</Text>
+            <AppText style={styles.sectionTitle}>Your currencies</AppText>
             {currencies.map((currency) => (
               <View key={currency.code} style={styles.currencyRow}>
                 <View style={styles.currencyInfo}>
-                  <Text style={styles.currencyCode}>{currency.code}</Text>
-                  <Text style={styles.helper}>{currency.name}</Text>
+                  <AppText style={styles.currencyCode}>{currency.code}</AppText>
+                  <AppText style={styles.helper}>{currency.name}</AppText>
                 </View>
                 {!currency.isDefault && (
                   <Pressable onPress={() => onDeleteCurrency(currency.code)}>
@@ -113,8 +115,8 @@ export default function ExchangeRatesScreen() {
               </View>
             ))}
 
-            <Text style={styles.label}>Add a currency</Text>
-            <TextInput
+            <AppText style={styles.label}>Add a currency</AppText>
+            <AppTextInput
               style={styles.input}
               value={newCode}
               onChangeText={setNewCode}
@@ -122,7 +124,7 @@ export default function ExchangeRatesScreen() {
               autoCapitalize="characters"
               maxLength={6}
             />
-            <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Name, e.g. Canadian Dollar" />
+            <AppTextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Name, e.g. Canadian Dollar" />
             <AppButton title="Add currency" variant="primary" onPress={() => void onAddCurrency()} />
           </View>
         </ScrollView>

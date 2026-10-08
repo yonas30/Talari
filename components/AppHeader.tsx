@@ -1,10 +1,11 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, typography } from '../constants/theme';
 import { useUiStore } from '../store/ui';
+import AppText from './AppText';
 
 interface AppHeaderProps {
   title: string;
@@ -42,7 +43,7 @@ export default function AppHeader({ title, notificationCount = 0, onNotification
           <Ionicons name="menu" size={26} color={colors.navy} />
         </Pressable>
       )}
-      <Text style={styles.title}>{title}</Text>
+      <AppText style={styles.title}>{title}</AppText>
       <View style={styles.rightArea}>
         {onNotificationPress ? (
           <Pressable
@@ -55,9 +56,9 @@ export default function AppHeader({ title, notificationCount = 0, onNotification
             <Ionicons name="notifications-outline" size={22} color={colors.navy} />
             {notificationCount > 0 && (
               <View style={styles.badge} testID="notification-badge">
-                <Text style={styles.badgeText} maxFontSizeMultiplier={1}>
+                <AppText style={styles.badgeText} maxFontSizeMultiplier={1}>
                   {notificationCount > 9 ? '9+' : notificationCount}
-                </Text>
+                </AppText>
               </View>
             )}
           </Pressable>

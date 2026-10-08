@@ -1,7 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 import Svg, { Circle, G } from 'react-native-svg';
+import AppText from './AppText';
 
 export interface DonutSlice {
   label: string;
@@ -67,7 +68,7 @@ export default function DonutChart({ data, size = 160, strokeWidth = 24, centerL
         {(centerLabel || centerValue) && (
           <View style={[styles.centerOverlay, { paddingHorizontal: strokeWidth + 6 }]} pointerEvents="none">
             {centerValue && (
-              <Text
+              <AppText
                 style={styles.centerValue}
                 numberOfLines={1}
                 adjustsFontSizeToFit
@@ -75,12 +76,12 @@ export default function DonutChart({ data, size = 160, strokeWidth = 24, centerL
                 maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}
               >
                 {centerValue}
-              </Text>
+              </AppText>
             )}
             {centerLabel && (
-              <Text style={styles.centerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+              <AppText style={styles.centerLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
                 {centerLabel}
-              </Text>
+              </AppText>
             )}
           </View>
         )}
@@ -90,10 +91,10 @@ export default function DonutChart({ data, size = 160, strokeWidth = 24, centerL
         {data.slice(0, 6).map((slice) => (
           <View key={slice.label} style={styles.legendRow}>
             <View style={[styles.dot, { backgroundColor: slice.color }]} />
-            <Text style={styles.legendLabel} numberOfLines={1}>
+            <AppText style={styles.legendLabel} numberOfLines={1}>
               {slice.label}
               {total > 0 ? ` · ${Math.round((slice.amount / total) * 100)}%` : ''}
-            </Text>
+            </AppText>
           </View>
         ))}
       </View>

@@ -1,10 +1,11 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, typography } from '../constants/theme';
 import { useUiStore } from '../store/ui';
+import AppText from './AppText';
 
 interface DrawerLink {
   label: string;
@@ -38,11 +39,11 @@ export default function SideDrawer() {
       <Pressable style={styles.backdrop} onPress={closeDrawer}>
         <Pressable style={styles.drawer} onPress={(event) => event.stopPropagation()}>
           <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.title}>More</Text>
+            <AppText style={styles.title}>More</AppText>
             {links.map((link) => (
               <Pressable key={link.route} style={styles.linkRow} onPress={() => onNavigate(link.route)}>
                 <Ionicons name={link.icon} size={22} color={colors.navy} />
-                <Text style={styles.linkLabel}>{link.label}</Text>
+                <AppText style={styles.linkLabel}>{link.label}</AppText>
               </Pressable>
             ))}
           </ScrollView>

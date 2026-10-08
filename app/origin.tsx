@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
+import AppText from '../components/AppText';
+import AppTextInput from '../components/AppTextInput';
 
 export default function OriginScreen() {
   const router = useRouter();
@@ -33,14 +35,14 @@ export default function OriginScreen() {
       {/* The soft keyboard doesn't resize an edge-to-edge window; lift the form so inputs stay visible. */}
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
-          <Text style={styles.subtitle}>
+          <AppText style={styles.subtitle}>
             This is your story, in your own words. It's never generated for you — only you write this,
             and your dashboard will occasionally remind you of it.
-          </Text>
+          </AppText>
 
           <View style={styles.card}>
-            <Text style={styles.label}>Where did you start financially?</Text>
-            <TextInput
+            <AppText style={styles.label}>Where did you start financially?</AppText>
+            <AppTextInput
               style={styles.textArea}
               value={startingPoint}
               onChangeText={setStartingPoint}
@@ -51,8 +53,8 @@ export default function OriginScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.label}>Why are you building this?</Text>
-            <TextInput
+            <AppText style={styles.label}>Why are you building this?</AppText>
+            <AppTextInput
               style={styles.textArea}
               value={whyBuilding}
               onChangeText={setWhyBuilding}
@@ -63,8 +65,8 @@ export default function OriginScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.label}>Your story</Text>
-            <TextInput
+            <AppText style={styles.label}>Your story</AppText>
+            <AppTextInput
               style={styles.textArea}
               value={storyText}
               onChangeText={setStoryText}

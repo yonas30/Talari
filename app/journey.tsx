@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppHeader from '../components/AppHeader';
@@ -7,6 +7,7 @@ import { colors, radius, spacing, typography } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { calculateBuilderStreak } from '../utils/currency';
 import { formatDateKey, formatNumber } from '../utils/format';
+import AppText from '../components/AppText';
 
 // 'YYYY-MM' -> 'September 2026'
 function formatMonthKey(key: string): string {
@@ -38,39 +39,39 @@ export default function JourneyScreen() {
         <View style={[styles.card, styles.heroCard]}>
           <View style={styles.statHeader}>
             <Ionicons name="flash" size={22} color={colors.orange} />
-            <Text style={styles.statTitle}>Your Momentum</Text>
+            <AppText style={styles.statTitle}>Your Momentum</AppText>
           </View>
-          <Text style={styles.streakNumber}>{longestStreak}</Text>
-          <Text style={styles.streakLabel}>day streak</Text>
-          <Text style={styles.streakSupport}>
+          <AppText style={styles.streakNumber}>{longestStreak}</AppText>
+          <AppText style={styles.streakLabel}>day streak</AppText>
+          <AppText style={styles.streakSupport}>
             {longestStreak > 0 ? "You're tracking consistently!" : 'Record something today to start your streak.'}
-          </Text>
+          </AppText>
         </View>
 
         {incomeGrowth !== null && (
           <View style={styles.card}>
             <View style={styles.statHeader}>
             <Ionicons name="arrow-up" size={22} color={colors.olive} />
-              <Text style={styles.statTitle}>Income Growth</Text>
+              <AppText style={styles.statTitle}>Income Growth</AppText>
             </View>
-            <Text style={styles.growthValue}>
+            <AppText style={styles.growthValue}>
               {incomeGrowth >= 0 ? '+' : ''}{incomeGrowth.toFixed(0)}%
-            </Text>
-            <Text style={styles.growthLabel}>
+            </AppText>
+            <AppText style={styles.growthLabel}>
               since your first tracked month
-            </Text>
+            </AppText>
           </View>
         )}
 
         <View style={styles.card}>
           <View style={styles.statHeader}>
             <Ionicons name="calendar" size={22} color={colors.navy} />
-            <Text style={styles.statTitle}>Monthly History</Text>
+            <AppText style={styles.statTitle}>Monthly History</AppText>
           </View>
           {monthlySnapshots.length === 0 ? (
-            <Text style={styles.emptyState}>
+            <AppText style={styles.emptyState}>
               Come back after your first full month of tracking — your growth chart will appear here.
-            </Text>
+            </AppText>
           ) : (
             <View style={styles.snapshotList}>
               {monthlySnapshots
@@ -84,25 +85,25 @@ export default function JourneyScreen() {
                       index === monthlySnapshots.length - 1 && styles.snapshotRowLast,
                     ]}
                   >
-                    <Text style={styles.snapshotMonth}>{formatMonthKey(snapshot.month)}</Text>
+                    <AppText style={styles.snapshotMonth}>{formatMonthKey(snapshot.month)}</AppText>
                     <View style={styles.snapshotMetrics}>
                       <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>In</Text>
-                        <Text style={[styles.metricValue, { color: colors.statusIncome }]}>
+                        <AppText style={styles.metricLabel}>In</AppText>
+                        <AppText style={[styles.metricValue, { color: colors.statusIncome }]}>
                           {snapshot.currency} {formatNumber(snapshot.income, 0)}
-                        </Text>
+                        </AppText>
                       </View>
                       <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>Out</Text>
-                        <Text style={[styles.metricValue, { color: colors.statusExpense }]}>
+                        <AppText style={styles.metricLabel}>Out</AppText>
+                        <AppText style={[styles.metricValue, { color: colors.statusExpense }]}>
                           {snapshot.currency} {formatNumber(snapshot.expenses, 0)}
-                        </Text>
+                        </AppText>
                       </View>
                       <View style={styles.metricItem}>
-                        <Text style={styles.metricLabel}>Set aside</Text>
-                        <Text style={[styles.metricValue, { color: colors.olive }]}>
+                        <AppText style={styles.metricLabel}>Set aside</AppText>
+                        <AppText style={[styles.metricValue, { color: colors.olive }]}>
                           {snapshot.currency} {formatNumber(snapshot.savings, 0)}
-                        </Text>
+                        </AppText>
                       </View>
                     </View>
                   </View>
@@ -114,12 +115,12 @@ export default function JourneyScreen() {
         <View style={styles.card}>
           <View style={styles.statHeader}>
             <Ionicons name="star" size={22} color={colors.orange} />
-            <Text style={styles.statTitle}>Milestones</Text>
+            <AppText style={styles.statTitle}>Milestones</AppText>
           </View>
           {milestones.length === 0 ? (
-            <Text style={styles.emptyState}>
+            <AppText style={styles.emptyState}>
               No milestones yet — complete a goal or build a long streak to earn your first one.
-            </Text>
+            </AppText>
           ) : (
             <View style={styles.milestoneList}>
               {milestones.map((milestone, index) => (
@@ -132,9 +133,9 @@ export default function JourneyScreen() {
                 >
                   <View style={styles.milestoneBullet} />
                   <View style={styles.milestoneContent}>
-                    <Text style={styles.milestoneTitle}>{milestone.title}</Text>
-                    <Text style={styles.milestoneDescription}>{milestone.description}</Text>
-                    <Text style={styles.milestoneDate}>{formatDateKey(milestone.date)}</Text>
+                    <AppText style={styles.milestoneTitle}>{milestone.title}</AppText>
+                    <AppText style={styles.milestoneDescription}>{milestone.description}</AppText>
+                    <AppText style={styles.milestoneDate}>{formatDateKey(milestone.date)}</AppText>
                   </View>
                 </View>
               ))}

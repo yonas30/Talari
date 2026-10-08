@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
@@ -9,6 +9,7 @@ import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { exportAllData, importAllData, BackupPayload } from '../db/database';
 import { useFinanceStore } from '../store/finance';
+import AppText from '../components/AppText';
 
 export default function ExportDataScreen() {
   const loadData = useFinanceStore((state) => state.loadData);
@@ -109,19 +110,19 @@ export default function ExportDataScreen() {
       <AppHeader title="Export / Restore" />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Export your data</Text>
-          <Text style={styles.description}>
+          <AppText style={styles.sectionTitle}>Export your data</AppText>
+          <AppText style={styles.description}>
             Save a copy of all your transactions, categories, goals, and budgets as a JSON file you can keep safe or move to another device.
-          </Text>
+          </AppText>
           <AppButton title="Export backup (JSON)" variant="primary" onPress={() => void onExport()} disabled={isBusy} />
           <AppButton title="Export transactions (CSV)" onPress={() => void onExportCsv()} disabled={isBusy} />
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Restore from backup</Text>
-          <Text style={styles.description}>
+          <AppText style={styles.sectionTitle}>Restore from backup</AppText>
+          <AppText style={styles.description}>
             Importing a backup replaces all current data on this device with the contents of the selected file.
-          </Text>
+          </AppText>
           <AppButton title="Import backup" onPress={() => void onImport()} disabled={isBusy} />
         </View>
       </ScrollView>

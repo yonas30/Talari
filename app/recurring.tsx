@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,6 +15,8 @@ import { Account, CurrencyCode, RecurringFrequency, RecurringTransaction, Recurr
 import { todayKey } from '../utils/dates';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 import { getNextDueDate } from '../utils/recurring';
+import AppText from '../components/AppText';
+import AppTextInput from '../components/AppTextInput';
 
 function getFrequencyLabel(freq: RecurringFrequency): string {
   return freq === 'daily' ? 'Every day' : freq === 'weekly' ? 'Every week' : 'Every month';
@@ -148,8 +150,8 @@ export default function RecurringScreen() {
       <AppHeader title="Recurring" />
       <View style={styles.topBar}>
         <View style={styles.topBarText}>
-          <Text style={styles.pageTitle}>Recurring transactions</Text>
-          <Text style={styles.pageSubtitle}>Automate the entries you make regularly.</Text>
+          <AppText style={styles.pageTitle}>Recurring transactions</AppText>
+          <AppText style={styles.pageSubtitle}>Automate the entries you make regularly.</AppText>
         </View>
         <Pressable
           style={styles.addButton}
@@ -175,11 +177,11 @@ export default function RecurringScreen() {
 
         {visibleRules.length === 0 ? (
           <View style={styles.card}>
-            <Text style={styles.emptyState}>
+            <AppText style={styles.emptyState}>
               {rules.length === 0
                 ? 'No recurring transactions yet — tap + to set up automated tracking.'
                 : 'Nothing is scheduled. Switch a rule back on from the All tab.'}
-            </Text>
+            </AppText>
           </View>
         ) : (
           visibleRules.map(({ rule, nextDate }) => {
@@ -196,14 +198,14 @@ export default function RecurringScreen() {
                 accessibilityLabel={`${rule.category}, tap to edit`}
               >
                 <View style={[styles.iconBadge, { backgroundColor: `${categoryMeta.color}1A` }]}>
-                  <Text style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{categoryMeta.icon}</Text>
+                  <AppText style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{categoryMeta.icon}</AppText>
                 </View>
                 <View style={styles.ruleInfo}>
                   <View style={styles.ruleTopLine}>
-                    <Text style={styles.ruleCategory} numberOfLines={1}>
+                    <AppText style={styles.ruleCategory} numberOfLines={1}>
                       {rule.category}
-                    </Text>
-                    <Text
+                    </AppText>
+                    <AppText
                       style={[styles.ruleAmount, { color: isExpense ? colors.statusExpense : colors.statusIncome }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
@@ -211,14 +213,14 @@ export default function RecurringScreen() {
                     >
                       {isExpense ? '-' : '+'}
                       {rule.currency} {rule.amount.toFixed(2)}
-                    </Text>
+                    </AppText>
                   </View>
-                  <Text style={styles.ruleMeta} numberOfLines={1}>
+                  <AppText style={styles.ruleMeta} numberOfLines={1}>
                     {getFrequencyLabel(rule.frequency)} ·{' '}
                     {rule.isActive
                       ? `Next: ${nextDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
                       : 'Paused'}
-                  </Text>
+                  </AppText>
                 </View>
                 <Pressable
                   onPress={() => void toggleRecurringTransaction(rule.id, !rule.isActive)}
@@ -257,7 +259,7 @@ export default function RecurringScreen() {
             onPress={(event) => event.stopPropagation()}
           >
             <View style={styles.modalHeader}>
-              <Text style={[styles.sectionTitle, styles.modalTitle]}>{editing ? 'Edit recurring transaction' : 'New recurring transaction'}</Text>
+              <AppText style={[styles.sectionTitle, styles.modalTitle]}>{editing ? 'Edit recurring transaction' : 'New recurring transaction'}</AppText>
               <Pressable onPress={resetForm}>
                 <Ionicons name="close" size={22} color={colors.textSecondary} />
               </Pressable>
@@ -278,28 +280,28 @@ export default function RecurringScreen() {
         </View>
 
         <View style={styles.amountRow}>
-          <TextInput style={styles.amountInput} value={amount} onChangeText={setAmount} placeholder="Amount" keyboardType="decimal-pad" />
+          <AppTextInput style={styles.amountInput} value={amount} onChangeText={setAmount} placeholder="Amount" keyboardType="decimal-pad" />
           <CurrencyPicker value={currency} onChange={setCurrency} />
         </View>
 
-        <Text style={styles.label}>Category</Text>
+        <AppText style={styles.label}>Category</AppText>
         <Pressable style={styles.dropdown} onPress={() => setIsCategoryOpen((value) => !value)}>
-          <Text style={styles.dropdownText}>{category || 'Choose a category'}</Text>
+          <AppText style={styles.dropdownText}>{category || 'Choose a category'}</AppText>
           <Ionicons name={isCategoryOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
         </Pressable>
         {isCategoryOpen && (
           <View style={styles.categoryOptions}>
             {categoryOptions.map((item) => (
               <Pressable key={item.id} style={styles.categoryOption} onPress={() => { setCategory(item.name); setIsCategoryOpen(false); }}>
-                <Text style={styles.dropdownText}>{item.icon} {item.name}</Text>
+                <AppText style={styles.dropdownText}>{item.icon} {item.name}</AppText>
               </Pressable>
             ))}
           </View>
         )}
 
-        <TextInput style={styles.input} value={source} onChangeText={setSource} placeholder="Source / place" />
+        <AppTextInput style={styles.input} value={source} onChangeText={setSource} placeholder="Source / place" />
 
-        <Text style={styles.label}>{type === 'income' ? 'Into' : 'Pay from'}</Text>
+        <AppText style={styles.label}>{type === 'income' ? 'Into' : 'Pay from'}</AppText>
         <View style={styles.segmented}>
           {(['available', 'saved'] as const).map((option) => (
             <AppButton
@@ -311,7 +313,7 @@ export default function RecurringScreen() {
           ))}
         </View>
 
-        <Text style={styles.label}>Frequency</Text>
+        <AppText style={styles.label}>Frequency</AppText>
         <View style={styles.segmented}>
           {(['daily', 'weekly', 'monthly'] as const).map((option) => (
             <AppButton key={option} title={option} selected={frequency === option} onPress={() => setFrequency(option)} />
@@ -320,13 +322,13 @@ export default function RecurringScreen() {
         {canEditDate ? (
           <DateField label="Start date" value={startDate} onChange={setStartDate} />
         ) : (
-          <Text style={styles.label}>
+          <AppText style={styles.label}>
             Next: {editing ? getNextDueDate(editing).toLocaleDateString() : ''} · changes apply to future entries only.
-          </Text>
+          </AppText>
         )}
 
         <View style={styles.switchRow}>
-          <Text style={styles.label}>Active</Text>
+          <AppText style={styles.label}>Active</AppText>
           <Switch
             value={isActive}
             onValueChange={setIsActive}

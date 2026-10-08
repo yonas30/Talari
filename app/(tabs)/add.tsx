@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -6,6 +6,7 @@ import TransactionForm from '../../components/TransactionForm';
 import { colors, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
 import { TransactionInput } from '../../types';
+import AppText from '../../components/AppText';
 
 export default function AddTransactionScreen() {
   const router = useRouter();
@@ -21,7 +22,7 @@ export default function AddTransactionScreen() {
 
   return (
     <View style={styles.screen}>
-      <Text style={[styles.title, { marginTop: insets.top + 16 }]}>Add Transaction</Text>
+      <AppText style={[styles.title, { marginTop: insets.top + 16 }]}>Add Transaction</AppText>
       <TransactionForm submitLabel="Save" onSubmit={onSubmit} resetOnSuccess />
     </View>
   );

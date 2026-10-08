@@ -1,6 +1,7 @@
-import { Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, ViewStyle } from 'react-native';
 
 import { colors } from '../constants/theme';
+import AppText from './AppText';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
@@ -31,7 +32,7 @@ export default function AppButton({ title, onPress, variant = 'secondary', selec
         style,
       ]}
     >
-      <Text
+      <AppText
         style={[
           styles.text,
           isPrimary && styles.textOnDark,
@@ -40,7 +41,7 @@ export default function AppButton({ title, onPress, variant = 'secondary', selec
         ]}
       >
         {title}
-      </Text>
+      </AppText>
     </Pressable>
   );
 }

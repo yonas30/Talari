@@ -1,6 +1,7 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
+import AppText from './AppText';
 
 export interface BarDatum {
   label: string;
@@ -22,9 +23,9 @@ export default function HorizontalBarChart({ data }: HorizontalBarChartProps) {
         const percent = total > 0 ? Math.round((item.amount / total) * 100) : 0;
         return (
           <View key={item.label} style={styles.row}>
-            <Text style={styles.label} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+            <AppText style={styles.label} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
               {item.label}
-            </Text>
+            </AppText>
             <View style={styles.trackWrap}>
               <View style={styles.track}>
                 <View
@@ -35,9 +36,9 @@ export default function HorizontalBarChart({ data }: HorizontalBarChartProps) {
                 />
               </View>
             </View>
-            <Text style={styles.percent} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+            <AppText style={styles.percent} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
               {percent}%
-            </Text>
+            </AppText>
           </View>
         );
       })}

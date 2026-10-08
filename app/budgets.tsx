@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppButton from '../components/AppButton';
@@ -14,6 +14,8 @@ import { Budget, CurrencyCode } from '../types';
 import { getBudgetProgress } from '../utils/currency';
 import { formatETB } from '../utils/format';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
+import AppText from '../components/AppText';
+import AppTextInput from '../components/AppTextInput';
 
 // Share of the limit at which a budget is flagged as "close" before it is actually exceeded.
 const NEAR_LIMIT_PERCENT = 80;
@@ -83,8 +85,8 @@ export default function BudgetsScreen() {
       <AppHeader title="Budgets" />
       <View style={styles.topBar}>
         <View style={styles.topBarText}>
-          <Text style={styles.pageTitle}>Monthly budgets</Text>
-          <Text style={styles.pageSubtitle}>Spending is tracked in ETB against each limit.</Text>
+          <AppText style={styles.pageTitle}>Monthly budgets</AppText>
+          <AppText style={styles.pageSubtitle}>Spending is tracked in ETB against each limit.</AppText>
         </View>
         <Pressable style={styles.addButton} onPress={openCreate} accessibilityRole="button" accessibilityLabel="Add a budget">
           <Ionicons name="add" size={22} color="#FFFFFF" />
@@ -94,7 +96,7 @@ export default function BudgetsScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         {budgets.length === 0 ? (
           <View style={styles.card}>
-            <Text style={styles.emptyState}>No budgets yet — tap + to set a monthly limit for a category.</Text>
+            <AppText style={styles.emptyState}>No budgets yet — tap + to set a monthly limit for a category.</AppText>
           </View>
         ) : (
           budgets.map((budget) => {
@@ -113,19 +115,19 @@ export default function BudgetsScreen() {
               >
                 <View style={styles.cardHeader}>
                   <View style={[styles.iconBadge, { backgroundColor: `${meta.color}1A` }]}>
-                    <Text style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{meta.icon}</Text>
+                    <AppText style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{meta.icon}</AppText>
                   </View>
                   <View style={styles.cardTitleGroup}>
-                    <Text style={styles.cardTitle} numberOfLines={1}>
+                    <AppText style={styles.cardTitle} numberOfLines={1}>
                       {budget.category}
-                    </Text>
-                    <Text style={styles.amountText} numberOfLines={2}>
+                    </AppText>
+                    <AppText style={styles.amountText} numberOfLines={2}>
                       {limitETB === null
                         ? `${formatETB(spentAmount)} spent — set a ${budget.currency} exchange rate to track this limit`
                         : `${formatETB(spentAmount)} of ${formatETB(limitETB)}`}
-                    </Text>
+                    </AppText>
                   </View>
-                  {limitETB !== null && <Text style={[styles.percent, { color: accent }]}>{Math.round(percent)}%</Text>}
+                  {limitETB !== null && <AppText style={[styles.percent, { color: accent }]}>{Math.round(percent)}%</AppText>}
                 </View>
 
                 {limitETB !== null && (
@@ -133,13 +135,13 @@ export default function BudgetsScreen() {
                     <View style={styles.progressTrack}>
                       <View style={[styles.progressFill, { width: `${Math.min(percent, 100)}%`, backgroundColor: accent }]} />
                     </View>
-                    <Text style={[styles.status, { color: isOverBudget ? colors.red : colors.textSecondary }]}>
+                    <AppText style={[styles.status, { color: isOverBudget ? colors.red : colors.textSecondary }]}>
                       {isOverBudget
                         ? `Over budget by ${formatETB(spentAmount - limitETB)} this month`
                         : isNear
                           ? `Close to the limit · ${formatETB(limitETB - spentAmount)} left`
                           : `On track · ${formatETB(limitETB - spentAmount)} left`}
-                    </Text>
+                    </AppText>
                   </>
                 )}
               </Pressable>
@@ -149,11 +151,11 @@ export default function BudgetsScreen() {
       </ScrollView>
 
       <SheetModal visible={isSheetOpen} onClose={closeSheet}>
-        <Text style={styles.sheetTitle}>{editingBudget ? `Edit ${editingBudget.category} budget` : 'Set a monthly limit'}</Text>
+        <AppText style={styles.sheetTitle}>{editingBudget ? `Edit ${editingBudget.category} budget` : 'Set a monthly limit'}</AppText>
 
         {!editingBudget && (
           <>
-            <Text style={styles.label}>Category</Text>
+            <AppText style={styles.label}>Category</AppText>
             <CategoryPicker
               value={category}
               options={expenseCategories}
@@ -162,9 +164,9 @@ export default function BudgetsScreen() {
           </>
         )}
 
-        <Text style={styles.label}>Monthly limit</Text>
+        <AppText style={styles.label}>Monthly limit</AppText>
         <View style={styles.amountRow}>
-          <TextInput
+          <AppTextInput
             style={styles.input}
             value={monthlyLimit}
             onChangeText={setMonthlyLimit}
@@ -179,7 +181,7 @@ export default function BudgetsScreen() {
         {editingBudget && (
           <Pressable style={styles.deleteLink} onPress={() => onDelete(editingBudget)} accessibilityRole="button">
             <Ionicons name="trash-outline" size={16} color={colors.red} />
-            <Text style={styles.deleteLinkText}>Delete budget</Text>
+            <AppText style={styles.deleteLinkText}>Delete budget</AppText>
           </Pressable>
         )}
       </SheetModal>

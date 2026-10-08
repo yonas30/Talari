@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
+import AppText from './AppText';
 
 export interface TrendLinePoint {
   label: string;
@@ -94,11 +95,11 @@ export default function TrendLineChart({ data, width: widthProp, height = 140 }:
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.dot, { backgroundColor: '#16A34A' }]} />
-          <Text style={styles.legendText}>Income</Text>
+          <AppText style={styles.legendText}>Income</AppText>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.dot, { backgroundColor: '#D95C5C' }]} />
-          <Text style={styles.legendText}>Expense</Text>
+          <AppText style={styles.legendText}>Expense</AppText>
         </View>
       </View>
     </View>

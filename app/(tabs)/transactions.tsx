@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
@@ -9,6 +9,8 @@ import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
 import { formatDateKey, formatETB, formatNumber, transactionTitle } from '../../utils/format';
 import { filterByType, filterTransactions, TypeFilter } from '../../utils/search';
+import AppText from '../../components/AppText';
+import AppTextInput from '../../components/AppTextInput';
 
 const TYPE_TABS: TabOption<TypeFilter>[] = [
   { key: 'all', label: 'All' },
@@ -55,7 +57,7 @@ export default function TransactionsScreen() {
       <AppHeader title="Transactions" />
       {transactions.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyState}>No transactions yet — add your first one.</Text>
+          <AppText style={styles.emptyState}>No transactions yet — add your first one.</AppText>
         </View>
       ) : (
         <>
@@ -64,7 +66,7 @@ export default function TransactionsScreen() {
           </View>
           <View style={styles.searchBox}>
             <Ionicons name="search" size={18} color={colors.textSecondary} />
-            <TextInput
+            <AppTextInput
               style={styles.searchInput}
               value={query}
               onChangeText={setQuery}
@@ -82,11 +84,11 @@ export default function TransactionsScreen() {
               </Pressable>
             )}
           </View>
-          <Text style={styles.hint}>
+          <AppText style={styles.hint}>
             {isSearching
               ? `${visible.length} of ${inTab.length} ${noun.plural}`
               : 'Tap any entry to edit or delete it.'}
-          </Text>
+          </AppText>
           <FlatList
             data={visible}
             keyExtractor={(item) => item.id}
@@ -95,16 +97,16 @@ export default function TransactionsScreen() {
             keyboardDismissMode="on-drag"
             ListEmptyComponent={
               <View style={styles.noMatch}>
-                <Text style={styles.emptyState}>
+                <AppText style={styles.emptyState}>
                   {isSearching ? `No ${noun.plural} match “${query.trim()}”.` : `No ${noun.plural} yet.`}
-                </Text>
+                </AppText>
                 {isSearching ? (
                   <Pressable onPress={() => setQuery('')} accessibilityRole="button">
-                    <Text style={styles.clearLink}>Clear search</Text>
+                    <AppText style={styles.clearLink}>Clear search</AppText>
                   </Pressable>
                 ) : (
                   <Pressable onPress={() => setTypeFilter('all')} accessibilityRole="button">
-                    <Text style={styles.clearLink}>Show all</Text>
+                    <AppText style={styles.clearLink}>Show all</AppText>
                   </Pressable>
                 )}
               </View>
@@ -119,27 +121,27 @@ export default function TransactionsScreen() {
                   onPress={() => router.push(`/edit-transaction/${item.id}`)}
                 >
                   <View style={styles.itemContent}>
-                    <Text style={styles.category} numberOfLines={2}>
+                    <AppText style={styles.category} numberOfLines={2}>
                       {title}
-                    </Text>
-                    <Text style={styles.meta} numberOfLines={2}>
+                    </AppText>
+                    <AppText style={styles.meta} numberOfLines={2}>
                       {formatDateKey(item.date)}
                       {item.account ? ` · ${item.type === 'income' ? 'into' : 'from'} ${item.account === 'saved' ? 'Saved' : 'Available'}` : ''}
-                    </Text>
+                    </AppText>
                     {detailLine(item.source, item.note) !== '' && (
-                      <Text style={styles.detail} numberOfLines={1}>
+                      <AppText style={styles.detail} numberOfLines={1}>
                         {detailLine(item.source, item.note)}
-                      </Text>
+                      </AppText>
                     )}
                   </View>
                   <View style={styles.amountWrap}>
-                    <Text style={styles.amount} maxFontSizeMultiplier={1.3} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                    <AppText style={styles.amount} maxFontSizeMultiplier={1.3} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                       {formatETB(item.amountETB)}
-                    </Text>
-                    {isForeign && <Text style={styles.converted} maxFontSizeMultiplier={1.3} numberOfLines={1}>(originally {formatNumber(item.amount)} {item.currency})</Text>}
-                    <Text style={[styles.type, { color: item.type === 'income' ? colors.statusIncome : item.type === 'transfer' ? colors.olive : colors.statusExpense }]}>
+                    </AppText>
+                    {isForeign && <AppText style={styles.converted} maxFontSizeMultiplier={1.3} numberOfLines={1}>(originally {formatNumber(item.amount)} {item.currency})</AppText>}
+                    <AppText style={[styles.type, { color: item.type === 'income' ? colors.statusIncome : item.type === 'transfer' ? colors.olive : colors.statusExpense }]}>
                       {item.type}
-                    </Text>
+                    </AppText>
                   </View>
                 </Pressable>
               );

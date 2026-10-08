@@ -1,7 +1,8 @@
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, spacing, typography } from '../constants/theme';
+import AppText from './AppText';
 
 interface SettingsRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -35,8 +36,8 @@ export default function SettingsRow({
         <Ionicons name={icon} size={18} color={colors.navy} />
       </View>
       <View style={styles.text}>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        <AppText style={styles.title}>{title}</AppText>
+        {subtitle ? <AppText style={styles.subtitle}>{subtitle}</AppText> : null}
       </View>
       {isToggle ? (
         <Switch

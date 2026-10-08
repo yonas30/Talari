@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { CurrencyCode } from '../types';
+import AppText from './AppText';
 
 interface CurrencyPickerProps {
   value: CurrencyCode;
@@ -21,7 +22,7 @@ export default function CurrencyPicker({ value, onChange }: CurrencyPickerProps)
   return (
     <>
       <Pressable style={styles.trigger} onPress={() => setIsOpen(true)}>
-        <Text style={styles.triggerText}>{value}</Text>
+        <AppText style={styles.triggerText}>{value}</AppText>
         <Ionicons name="chevron-down" size={16} color={colors.navy} />
       </Pressable>
 
@@ -37,7 +38,7 @@ export default function CurrencyPicker({ value, onChange }: CurrencyPickerProps)
                   setIsOpen(false);
                 }}
               >
-                <Text style={[styles.optionText, currency === value && styles.optionTextSelected]}>{currency}</Text>
+                <AppText style={[styles.optionText, currency === value && styles.optionTextSelected]}>{currency}</AppText>
                 {currency === value && <Ionicons name="checkmark" size={18} color={colors.orange} />}
               </Pressable>
             ))}

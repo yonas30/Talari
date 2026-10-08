@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppButton from './AppButton';
 import { colors, radius, spacing } from '../constants/theme';
 import { parseDateKey, toLocalDateKey } from '../utils/dates';
+import AppText from './AppText';
 
 interface DateField {
   label: string;
@@ -35,7 +36,7 @@ export default function DateField({ label, value, onChange }: DateField) {
     <View style={styles.container}>
       <Pressable style={styles.row} onPress={() => setShowPicker(true)}>
         <Ionicons name="calendar-outline" size={18} color={colors.navy} />
-        <Text style={styles.rowText}>{value ?? `Pick ${label.toLowerCase()}`}</Text>
+        <AppText style={styles.rowText}>{value ?? `Pick ${label.toLowerCase()}`}</AppText>
         <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
       </Pressable>
       {showPicker && (

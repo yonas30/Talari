@@ -1,10 +1,11 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../../constants/theme';
 import { getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LABEL_MAX_SCALE } from '../../utils/layout';
+import AppText from '../../components/AppText';
 
 export default function TabsLayout() {
   // The app draws edge-to-edge on Android, so the bar must add the system navigation inset itself or
@@ -54,9 +55,9 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.textSecondary,
         // Same cap the bar height is computed with.
         tabBarLabel: ({ color, children }) => (
-          <Text maxFontSizeMultiplier={TAB_LABEL_MAX_SCALE} numberOfLines={1} style={{ fontSize: TAB_LABEL_FONT_SIZE, color }}>
+          <AppText maxFontSizeMultiplier={TAB_LABEL_MAX_SCALE} numberOfLines={1} style={{ fontSize: TAB_LABEL_FONT_SIZE, color }}>
             {children}
-          </Text>
+          </AppText>
         ),
         tabBarIconStyle: { marginTop: 2 },
         tabBarStyle: {

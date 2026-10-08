@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -15,6 +15,7 @@ import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 import { getBudgetAlerts } from '../../utils/notifications';
 import { getDashboardMessage } from '../../utils/motivation';
 import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../../utils/reports';
+import AppText from '../../components/AppText';
 
 // Money amounts in transaction cards stop scaling past this multiplier so extreme accessibility
 // font sizes can't push them out of the card; other text keeps scaling normally.
@@ -94,8 +95,8 @@ export default function HomeScreen() {
       <AppHeader title="Home" notificationCount={unreadCount} onNotificationPress={onNotificationPress} />
       <ScrollView contentContainerStyle={styles.container}>
         <View>
-          <Text style={styles.greeting}>{getGreeting()}, {APP_USER_NAME} 👋</Text>
-          <Text style={styles.motivation}>{motivationalMessage}</Text>
+          <AppText style={styles.greeting}>{getGreeting()}, {APP_USER_NAME} 👋</AppText>
+          <AppText style={styles.motivation}>{motivationalMessage}</AppText>
         </View>
 
         {budgetAlerts.length > 0 && (
@@ -107,12 +108,12 @@ export default function HomeScreen() {
           >
             <Ionicons name="warning" size={20} color={colors.red} />
             <View style={styles.flexShrink}>
-              <Text style={styles.budgetBannerTitle}>
+              <AppText style={styles.budgetBannerTitle}>
                 {budgetAlerts.length === 1 ? `${budgetAlerts[0].category} is over budget` : `${budgetAlerts.length} budgets are over their limit`}
-              </Text>
-              <Text style={styles.budgetBannerText} numberOfLines={2}>
+              </AppText>
+              <AppText style={styles.budgetBannerText} numberOfLines={2}>
                 {budgetAlerts.map((alert) => `${alert.category} by ${formatETB(alert.amountOver)}`).join(' · ')}
-              </Text>
+              </AppText>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.red} />
           </Pressable>
@@ -120,7 +121,7 @@ export default function HomeScreen() {
 
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Total Balance</Text>
+            <AppText style={styles.balanceLabel}>Total Balance</AppText>
             <Pressable
               onPress={toggleBalanceVisibility}
               hitSlop={8}
@@ -130,62 +131,62 @@ export default function HomeScreen() {
               <Ionicons name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'} size={20} color="#FFFFFF" />
             </Pressable>
           </View>
-          <Text style={styles.balanceValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+          <AppText style={styles.balanceValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
             {mask(balances.total)}
-          </Text>
+          </AppText>
         </View>
 
         <View style={styles.row}>
           <View style={styles.balanceTile}>
-            <Text style={styles.tileLabel}>Available</Text>
-            <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+            <AppText style={styles.tileLabel}>Available</AppText>
+            <AppText style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
               {mask(balances.available)}
-            </Text>
+            </AppText>
           </View>
           <View style={styles.balanceTile}>
-            <Text style={styles.tileLabel}>Saved</Text>
-            <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+            <AppText style={styles.tileLabel}>Saved</AppText>
+            <AppText style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
               {mask(balances.saved)}
-            </Text>
+            </AppText>
           </View>
         </View>
 
-        <Text style={styles.periodTitle}>This Month · {monthName}</Text>
+        <AppText style={styles.periodTitle}>This Month · {monthName}</AppText>
         <View style={styles.row}>
           <View style={styles.summaryCard}>
             <View style={[styles.summaryIconCircle, { backgroundColor: colors.oliveLight }]}>
               <Ionicons name="trending-up" size={16} color={colors.statusIncome} />
             </View>
-            <Text style={styles.tileLabel}>Income</Text>
-            <Text
+            <AppText style={styles.tileLabel}>Income</AppText>
+            <AppText
               style={[styles.summaryValue, { color: colors.statusIncome }]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.6}
             >
               {formatNumber(periodSummary.income)}
-            </Text>
+            </AppText>
           </View>
           <View style={styles.summaryCard}>
             <View style={[styles.summaryIconCircle, { backgroundColor: colors.redLight }]}>
               <Ionicons name="trending-down" size={16} color={colors.statusExpense} />
             </View>
-            <Text style={styles.tileLabel}>Expenses</Text>
-            <Text
+            <AppText style={styles.tileLabel}>Expenses</AppText>
+            <AppText
               style={[styles.summaryValue, { color: colors.statusExpense }]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.6}
             >
               {formatNumber(periodSummary.expenses)}
-            </Text>
+            </AppText>
           </View>
         </View>
 
         {/* Net is this month's income minus expenses - a flow, not a balance, so it is never labelled "Available". */}
         <View style={styles.netCard}>
-          <Text style={styles.tileLabel}>Net (Income − Expenses)</Text>
-          <Text
+          <AppText style={styles.tileLabel}>Net (Income − Expenses)</AppText>
+          <AppText
             style={[styles.netValue, { color: periodSummary.net < 0 ? colors.statusExpense : colors.statusIncome }]}
             numberOfLines={1}
             adjustsFontSizeToFit
@@ -193,30 +194,30 @@ export default function HomeScreen() {
           >
             {periodSummary.net > 0 ? '+' : ''}
             {formatNumber(periodSummary.net)}
-          </Text>
+          </AppText>
         </View>
 
         <Pressable style={styles.streakCard}>
           <View style={styles.streakLeft}>
-            <Text style={styles.streakEmoji}>🔥</Text>
+            <AppText style={styles.streakEmoji}>🔥</AppText>
             <View style={styles.flexShrink}>
-              <Text style={styles.streakText}>{builderStreak} day streak</Text>
-              <Text style={styles.streakSupport}>
+              <AppText style={styles.streakText}>{builderStreak} day streak</AppText>
+              <AppText style={styles.streakSupport}>
                 {builderStreak > 0 ? "You're doing great!" : 'Record something today to start your streak.'}
-              </Text>
+              </AppText>
             </View>
           </View>
         </Pressable>
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, styles.sectionHeading]}>Spending this month</Text>
+            <AppText style={[styles.sectionTitle, styles.sectionHeading]}>Spending this month</AppText>
             <Pressable style={styles.seeAllButton} onPress={() => router.navigate('/reports')}>
-              <Text style={styles.seeAll} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>See details →</Text>
+              <AppText style={styles.seeAll} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>See details →</AppText>
             </Pressable>
           </View>
           {monthlyBreakdown.length === 0 ? (
-            <Text style={styles.emptyState}>No expenses logged yet this month.</Text>
+            <AppText style={styles.emptyState}>No expenses logged yet this month.</AppText>
           ) : (
             <DonutChart
               data={monthlyBreakdown}
@@ -228,13 +229,13 @@ export default function HomeScreen() {
 
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, styles.sectionHeading]}>Recent transactions</Text>
+            <AppText style={[styles.sectionTitle, styles.sectionHeading]}>Recent transactions</AppText>
             <Pressable style={styles.seeAllButton} onPress={() => router.navigate('/transactions')}>
-              <Text style={styles.seeAll} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>See all →</Text>
+              <AppText style={styles.seeAll} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>See all →</AppText>
             </Pressable>
           </View>
           {recentTransactions.length === 0 ? (
-            <Text style={styles.emptyState}>No transactions yet — add your first one.</Text>
+            <AppText style={styles.emptyState}>No transactions yet — add your first one.</AppText>
           ) : (
             recentTransactions.map((transaction) => {
               const isExpense = transaction.type === 'expense';
@@ -260,17 +261,17 @@ export default function HomeScreen() {
                       />
                     </View>
                     <View style={styles.transactionText}>
-                      <Text style={styles.transactionCategory} numberOfLines={1}>
+                      <AppText style={styles.transactionCategory} numberOfLines={1}>
                         {transactionTitle(transaction, goals)}
-                      </Text>
-                      <Text style={styles.transactionMeta} numberOfLines={1}>
+                      </AppText>
+                      <AppText style={styles.transactionMeta} numberOfLines={1}>
                         {isTransfer ? '' : `${transaction.source} · `}
                         {formatDateKey(transaction.date)}
-                      </Text>
+                      </AppText>
                     </View>
                   </View>
                   <View style={styles.transactionAmountWrap}>
-                    <Text
+                    <AppText
                       style={[styles.transactionAmount, { color: isTransfer ? colors.navy : tint }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
@@ -279,11 +280,11 @@ export default function HomeScreen() {
                     >
                       {sign}
                       {formatETB(transaction.amountETB)}
-                    </Text>
+                    </AppText>
                     {transaction.currency !== 'ETB' && (
-                      <Text style={styles.transactionOriginal} numberOfLines={1} maxFontSizeMultiplier={MONEY_MAX_FONT_SCALE}>
+                      <AppText style={styles.transactionOriginal} numberOfLines={1} maxFontSizeMultiplier={MONEY_MAX_FONT_SCALE}>
                         (originally {formatNumber(transaction.amount)} {transaction.currency})
-                      </Text>
+                      </AppText>
                     )}
                   </View>
                 </View>

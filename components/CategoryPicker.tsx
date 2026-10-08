@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '../constants/theme';
+import AppText from './AppText';
 
 interface CategoryOption {
   id: string;
@@ -28,9 +29,9 @@ export default function CategoryPicker({ value, options, onChange, onAddCategory
   return (
     <>
       <Pressable style={styles.trigger} onPress={() => setIsOpen(true)}>
-        <Text style={styles.triggerText} numberOfLines={1}>
+        <AppText style={styles.triggerText} numberOfLines={1}>
           {selected ? `${selected.icon} ${selected.name}` : 'Choose a category'}
-        </Text>
+        </AppText>
         <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
       </Pressable>
 
@@ -47,13 +48,13 @@ export default function CategoryPicker({ value, options, onChange, onAddCategory
                     setIsOpen(false);
                   }}
                 >
-                  <Text style={[styles.optionText, selected?.id === item.id && styles.optionTextSelected]}>
+                  <AppText style={[styles.optionText, selected?.id === item.id && styles.optionTextSelected]}>
                     {item.icon} {item.name}
-                  </Text>
+                  </AppText>
                   {selected?.id === item.id && <Ionicons name="checkmark" size={18} color={colors.orange} />}
                 </Pressable>
               ))}
-              {options.length === 0 && <Text style={styles.empty}>No categories of this type yet.</Text>}
+              {options.length === 0 && <AppText style={styles.empty}>No categories of this type yet.</AppText>}
               {onAddCategory && (
                 <Pressable
                   style={styles.option}
@@ -64,7 +65,7 @@ export default function CategoryPicker({ value, options, onChange, onAddCategory
                   accessibilityRole="button"
                   accessibilityLabel="Add category"
                 >
-                  <Text style={styles.addText}>+ Add category</Text>
+                  <AppText style={styles.addText}>+ Add category</AppText>
                   <Ionicons name="chevron-forward" size={18} color={colors.orange} />
                 </Pressable>
               )}

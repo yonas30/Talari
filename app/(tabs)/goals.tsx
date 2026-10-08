@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,6 +15,8 @@ import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 import { getProjectedCompletionDate } from '../../utils/currency';
 import { formatDateKey, formatETB } from '../../utils/format';
 import { toLocalDateKey } from '../../utils/dates';
+import AppText from '../../components/AppText';
+import AppTextInput from '../../components/AppTextInput';
 
 type MoveMode = 'add' | 'withdraw';
 
@@ -175,7 +177,7 @@ export default function GoalsScreen() {
             accessibilityLabel={`Add money to ${goal.name}`}
           >
             <Ionicons name="add-circle-outline" size={16} color={colors.orange} />
-            <Text style={styles.addActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Add money</Text>
+            <AppText style={styles.addActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Add money</AppText>
           </Pressable>
         )}
         {held > 0 && (
@@ -186,7 +188,7 @@ export default function GoalsScreen() {
             accessibilityLabel={`Withdraw money from ${goal.name}`}
           >
             <Ionicons name="arrow-down-circle-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.withdrawActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Withdraw</Text>
+            <AppText style={styles.withdrawActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Withdraw</AppText>
           </Pressable>
         )}
       </View>
@@ -196,7 +198,7 @@ export default function GoalsScreen() {
   return (
     <View style={styles.screen}>
       <View style={[styles.headerRow, { paddingTop: insets.top + 12 }]}>
-        <Text style={styles.title}>Savings Goals</Text>
+        <AppText style={styles.title}>Savings Goals</AppText>
         <Pressable style={styles.addButton} onPress={openCreateGoal} accessibilityRole="button" accessibilityLabel="Create a goal">
           <Ionicons name="add" size={22} color="#FFFFFF" />
         </Pressable>
@@ -213,16 +215,16 @@ export default function GoalsScreen() {
         />
 
         {goals.length > 0 && (
-          <Text style={styles.metaText}>
+          <AppText style={styles.metaText}>
             {formatETB(totalInGoals)} is set aside in goals. It is still part of your Total Balance — withdraw it to
             Available or Saved to spend it.
-          </Text>
+          </AppText>
         )}
 
         {tab === 'active' &&
           (activeGoals.length === 0 ? (
             <View style={styles.card}>
-              <Text style={styles.emptyState}>No active goals yet — tap + to create your first savings goal.</Text>
+              <AppText style={styles.emptyState}>No active goals yet — tap + to create your first savings goal.</AppText>
             </View>
           ) : (
             activeGoals.map((goal) => {
@@ -235,10 +237,10 @@ export default function GoalsScreen() {
                     <View style={styles.goalIconCircle}>
                       <Ionicons name="flag" size={18} color={colors.orange} />
                     </View>
-                    <Text style={styles.goalName} numberOfLines={1}>
+                    <AppText style={styles.goalName} numberOfLines={1}>
                       {goal.name}
-                    </Text>
-                    <Text style={styles.percentBadge}>{percent.toFixed(0)}%</Text>
+                    </AppText>
+                    <AppText style={styles.percentBadge}>{percent.toFixed(0)}%</AppText>
                     <Pressable
                       style={styles.dotsButton}
                       onPress={() => setMenuGoalId(goal.id)}
@@ -254,12 +256,12 @@ export default function GoalsScreen() {
                     <View style={[styles.progressFill, { width: `${percent}%` }]} />
                   </View>
 
-                  <Text style={styles.goalText}>
+                  <AppText style={styles.goalText}>
                     {formatETB(held)} of {formatETB(goal.targetAmount)}
-                  </Text>
-                  {goal.deadline && <Text style={styles.metaText}>Deadline: {formatDateKey(goal.deadline)}</Text>}
+                  </AppText>
+                  {goal.deadline && <AppText style={styles.metaText}>Deadline: {formatDateKey(goal.deadline)}</AppText>}
                   {projectedDate && (
-                    <Text style={styles.metaText}>Projected completion: {formatDateKey(toLocalDateKey(projectedDate))}</Text>
+                    <AppText style={styles.metaText}>Projected completion: {formatDateKey(toLocalDateKey(projectedDate))}</AppText>
                   )}
 
                   {renderActions(goal, true)}
@@ -271,7 +273,7 @@ export default function GoalsScreen() {
         {tab === 'completed' &&
           (completedGoals.length === 0 ? (
             <View style={styles.card}>
-              <Text style={styles.emptyState}>No completed goals yet.</Text>
+              <AppText style={styles.emptyState}>No completed goals yet.</AppText>
             </View>
           ) : (
             completedGoals.map((goal) => (
@@ -281,10 +283,10 @@ export default function GoalsScreen() {
                     <Ionicons name="checkmark-circle" size={18} color={colors.olive} />
                   </View>
                   <View style={styles.completedInfo}>
-                    <Text style={styles.goalName} numberOfLines={1}>
+                    <AppText style={styles.goalName} numberOfLines={1}>
                       {goal.name}
-                    </Text>
-                    <Text style={styles.metaText}>Completed · {formatDateKey(goal.updatedAt.slice(0, 10))}</Text>
+                    </AppText>
+                    <AppText style={styles.metaText}>Completed · {formatDateKey(goal.updatedAt.slice(0, 10))}</AppText>
                   </View>
                   <Pressable
                     style={styles.dotsButton}
@@ -296,9 +298,9 @@ export default function GoalsScreen() {
                     <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
                   </Pressable>
                 </View>
-                <Text style={styles.goalText}>
+                <AppText style={styles.goalText}>
                   {formatETB(heldBy(goal))} of {formatETB(goal.targetAmount)}
-                </Text>
+                </AppText>
                 {/* A finished goal still holds its money until it is moved out. */}
                 {renderActions(goal, false)}
               </View>
@@ -308,9 +310,9 @@ export default function GoalsScreen() {
 
       {/* Create / edit goal */}
       <SheetModal visible={isCreateOpen || editingGoalId !== null} onClose={closeGoalModal}>
-        <Text style={styles.sectionTitle}>{editingGoalId ? 'Edit goal' : 'Create a new goal'}</Text>
-        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Goal name" />
-        <TextInput
+        <AppText style={styles.sectionTitle}>{editingGoalId ? 'Edit goal' : 'Create a new goal'}</AppText>
+        <AppTextInput style={styles.input} value={name} onChangeText={setName} placeholder="Goal name" />
+        <AppTextInput
           style={styles.input}
           value={targetAmount}
           onChangeText={setTargetAmount}
@@ -319,7 +321,7 @@ export default function GoalsScreen() {
         />
         <DateField label="Deadline" value={deadline} onChange={setDeadline} />
         <Pressable style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]} onPress={() => void onSaveGoal()}>
-          <Text style={styles.confirmButtonText}>{editingGoalId ? 'Save changes' : 'Create goal'}</Text>
+          <AppText style={styles.confirmButtonText}>{editingGoalId ? 'Save changes' : 'Create goal'}</AppText>
         </Pressable>
       </SheetModal>
 
@@ -327,15 +329,15 @@ export default function GoalsScreen() {
       <SheetModal visible={move !== null} onClose={closeMove}>
         {move && moveGoal && (
           <>
-            <Text style={styles.sectionTitle} numberOfLines={1}>
+            <AppText style={styles.sectionTitle} numberOfLines={1}>
               {move.mode === 'add' ? `Add money to ${moveGoal.name}` : `Withdraw from ${moveGoal.name}`}
-            </Text>
-            <Text style={styles.metaText}>
+            </AppText>
+            <AppText style={styles.metaText}>
               Holds {formatETB(moveGoalHeld)} of {formatETB(moveGoal.targetAmount)}. This moves money you already
               have; your Total Balance does not change.
-            </Text>
+            </AppText>
 
-            <TextInput
+            <AppTextInput
               style={styles.amountInput}
               value={moveAmount}
               onChangeText={setMoveAmount}
@@ -349,17 +351,17 @@ export default function GoalsScreen() {
                   style={styles.quickChip}
                   onPress={() => setMoveAmount(String(Math.round((moveGoal.targetAmount - moveGoalHeld) * 100) / 100))}
                 >
-                  <Text style={styles.quickChipText}>Remaining {formatETB(moveGoal.targetAmount - moveGoalHeld)}</Text>
+                  <AppText style={styles.quickChipText}>Remaining {formatETB(moveGoal.targetAmount - moveGoalHeld)}</AppText>
                 </Pressable>
               )}
               {move.mode === 'withdraw' && moveGoalHeld > 0 && (
                 <Pressable style={styles.quickChip} onPress={() => setMoveAmount(String(moveGoalHeld))}>
-                  <Text style={styles.quickChipText}>All {formatETB(moveGoalHeld)}</Text>
+                  <AppText style={styles.quickChipText}>All {formatETB(moveGoalHeld)}</AppText>
                 </Pressable>
               )}
             </View>
 
-            <Text style={styles.fieldLabel}>{move.mode === 'add' ? 'From' : 'To'}</Text>
+            <AppText style={styles.fieldLabel}>{move.mode === 'add' ? 'From' : 'To'}</AppText>
             {(['available', 'saved'] as const).map((account) => {
               const selected = moveAccount === account;
               return (
@@ -375,20 +377,20 @@ export default function GoalsScreen() {
                     size={20}
                     color={selected ? colors.orange : colors.textSecondary}
                   />
-                  <Text style={styles.accountName}>{ACCOUNT_LABELS[account]}</Text>
-                  <Text style={styles.accountBalance} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE} numberOfLines={1}>{formatETB(balances[account])}</Text>
+                  <AppText style={styles.accountName}>{ACCOUNT_LABELS[account]}</AppText>
+                  <AppText style={styles.accountBalance} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE} numberOfLines={1}>{formatETB(balances[account])}</AppText>
                 </Pressable>
               );
             })}
 
-            {moveShortfall && <Text style={styles.warningText}>{moveShortfall}</Text>}
+            {moveShortfall && <AppText style={styles.warningText}>{moveShortfall}</AppText>}
 
             <Pressable
               style={({ pressed }) => [styles.confirmButton, (pressed || isMoving) && styles.pressed]}
               onPress={() => void onConfirmMove()}
               disabled={isMoving}
             >
-              <Text style={styles.confirmButtonText}>{move.mode === 'add' ? 'Add money' : 'Withdraw'}</Text>
+              <AppText style={styles.confirmButtonText}>{move.mode === 'add' ? 'Add money' : 'Withdraw'}</AppText>
             </Pressable>
           </>
         )}
@@ -407,7 +409,7 @@ export default function GoalsScreen() {
               }}
             >
               <Ionicons name="create-outline" size={20} color={colors.navy} />
-              <Text style={styles.menuOptionText}>Edit goal</Text>
+              <AppText style={styles.menuOptionText}>Edit goal</AppText>
             </Pressable>
             <Pressable
               style={styles.menuOption}
@@ -418,7 +420,7 @@ export default function GoalsScreen() {
               }}
             >
               <Ionicons name="trash-outline" size={20} color={colors.red} />
-              <Text style={[styles.menuOptionText, styles.deleteText]}>Delete goal</Text>
+              <AppText style={[styles.menuOptionText, styles.deleteText]}>Delete goal</AppText>
             </Pressable>
           </View>
         </Pressable>

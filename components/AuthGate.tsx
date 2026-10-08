@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 
 import AppButton from './AppButton';
 import { colors } from '../constants/theme';
 import { isAppLockEnabled } from '../utils/appLock';
+import AppText from './AppText';
 
 type Props = {
   children: React.ReactNode;
@@ -73,8 +74,8 @@ export default function AuthGate({ children, onLockResolved, promptAllowed = tru
   if (lockRequired && !isUnlocked) {
     return (
       <View style={styles.center}>
-        <Text style={styles.title}>Talari is locked</Text>
-        {error && <Text style={styles.error}>{error}</Text>}
+        <AppText style={styles.title}>Talari is locked</AppText>
+        {error && <AppText style={styles.error}>{error}</AppText>}
         <AppButton title="Unlock" variant="primary" onPress={() => void attemptUnlock()} />
       </View>
     );

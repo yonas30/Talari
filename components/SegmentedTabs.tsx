@@ -1,7 +1,8 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius } from '../constants/theme';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
+import AppText from './AppText';
 
 export interface TabOption<T extends string> {
   key: T;
@@ -32,7 +33,7 @@ export default function SegmentedTabs<T extends string>({ tabs, value, onChange 
             accessibilityState={{ selected }}
             accessibilityLabel={tab.label}
           >
-            <Text
+            <AppText
               style={[styles.tabText, selected && styles.tabTextSelected]}
               numberOfLines={1}
               adjustsFontSizeToFit
@@ -40,7 +41,7 @@ export default function SegmentedTabs<T extends string>({ tabs, value, onChange 
               maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}
             >
               {tab.label}
-            </Text>
+            </AppText>
           </Pressable>
         );
       })}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppButton from '../components/AppButton';
@@ -10,6 +10,8 @@ import { useFinanceStore } from '../store/finance';
 import { Category, CategoryType } from '../types';
 import { CATEGORY_EMOJI_CHOICES, suggestCategoryEmoji } from '../utils/categoryIcons';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
+import AppText from '../components/AppText';
+import AppTextInput from '../components/AppTextInput';
 
 type EditableType = 'income' | 'expense';
 
@@ -132,7 +134,7 @@ export default function CategoriesScreen() {
       <AppHeader title="Categories" />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.headerRow}>
-          <Text style={[styles.sectionTitle, styles.headerTitle]}>Manage categories</Text>
+          <AppText style={[styles.sectionTitle, styles.headerTitle]}>Manage categories</AppText>
           <Pressable style={styles.addButton} onPress={openCreateModal} accessibilityRole="button" accessibilityLabel="New category">
             <Ionicons name="add" size={22} color="#FFFFFF" />
           </Pressable>
@@ -140,22 +142,22 @@ export default function CategoriesScreen() {
 
         {sections.map((section) => (
           <View key={section} style={styles.card}>
-            <Text style={styles.groupTitle}>{SECTION_TITLES[section]}</Text>
+            <AppText style={styles.groupTitle}>{SECTION_TITLES[section]}</AppText>
             {grouped[section].length === 0 ? (
-              <Text style={styles.emptyState}>No {section} categories yet — tap + to add one.</Text>
+              <AppText style={styles.emptyState}>No {section} categories yet — tap + to add one.</AppText>
             ) : (
               grouped[section].map((item, index) => {
                 const used = usageCount(item);
                 return (
                   <View key={item.id} style={[styles.categoryRow, index === grouped[section].length - 1 && styles.lastRow]}>
                     <View style={[styles.iconCircle, { backgroundColor: `${item.color}1A` }]}>
-                      <Text style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{item.icon}</Text>
+                      <AppText style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{item.icon}</AppText>
                     </View>
                     <View style={styles.categoryText}>
-                      <Text style={styles.categoryName} numberOfLines={1}>
+                      <AppText style={styles.categoryName} numberOfLines={1}>
                         {item.name}
-                      </Text>
-                      {used > 0 && <Text style={styles.usage}>{used} in use</Text>}
+                      </AppText>
+                      {used > 0 && <AppText style={styles.usage}>{used} in use</AppText>}
                     </View>
                     <Pressable onPress={() => openEditModal(item)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`}>
                       <Ionicons name="pencil-outline" size={18} color={colors.navy} />
@@ -172,8 +174,8 @@ export default function CategoriesScreen() {
       </ScrollView>
 
       <SheetModal visible={isModalOpen} onClose={closeModal}>
-        <Text style={styles.sectionTitle}>{editingId ? 'Edit category' : 'New category'}</Text>
-        <TextInput
+        <AppText style={styles.sectionTitle}>{editingId ? 'Edit category' : 'New category'}</AppText>
+        <AppTextInput
           style={styles.input}
           value={name}
           onChangeText={onNameChange}
@@ -194,7 +196,7 @@ export default function CategoriesScreen() {
         </View>
 
         <View style={styles.iconSection}>
-          <Text style={styles.label}>Icon {iconChosen ? '' : '· suggested from the name'}</Text>
+          <AppText style={styles.label}>Icon {iconChosen ? '' : '· suggested from the name'}</AppText>
           <View style={styles.iconGrid}>
             {CATEGORY_EMOJI_CHOICES.map((emoji) => (
               <Pressable
@@ -207,7 +209,7 @@ export default function CategoriesScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected: icon === emoji }}
               >
-                <Text style={styles.iconOptionEmoji} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{emoji}</Text>
+                <AppText style={styles.iconOptionEmoji} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{emoji}</AppText>
               </Pressable>
             ))}
           </View>

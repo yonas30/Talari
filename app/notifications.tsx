@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../components/AppHeader';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useUiStore } from '../store/ui';
+import AppText from '../components/AppText';
 
 export default function NotificationsScreen() {
   const notifications = useUiStore((state) => state.notifications);
@@ -24,8 +25,8 @@ export default function NotificationsScreen() {
         {notifications.length === 0 ? (
           <View style={styles.emptyStateCard}>
             <Ionicons name="notifications-off-outline" size={28} color={colors.textSecondary} />
-            <Text style={styles.emptyTitle}>No notifications yet</Text>
-            <Text style={styles.emptyText}>You’re all caught up for now.</Text>
+            <AppText style={styles.emptyTitle}>No notifications yet</AppText>
+            <AppText style={styles.emptyText}>You’re all caught up for now.</AppText>
           </View>
         ) : (
           notifications.map((notification) => (
@@ -50,11 +51,11 @@ export default function NotificationsScreen() {
               </View>
               <View style={styles.body}>
                 <View style={styles.titleRow}>
-                  <Text style={styles.title}>{notification.title}</Text>
+                  <AppText style={styles.title}>{notification.title}</AppText>
                   {!notification.isRead && <View style={styles.unreadDot} />}
                 </View>
-                <Text style={styles.description}>{notification.description}</Text>
-                {notification.route && <Text style={styles.action}>Review budgets →</Text>}
+                <AppText style={styles.description}>{notification.description}</AppText>
+                {notification.route && <AppText style={styles.action}>Review budgets →</AppText>}
               </View>
             </Pressable>
           ))

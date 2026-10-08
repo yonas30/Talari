@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppHeader from '../../components/AppHeader';
@@ -28,6 +28,7 @@ import {
   shiftWeek,
   startOfWeek,
 } from '../../utils/reports';
+import AppText from '../../components/AppText';
 
 interface PeriodNavProps {
   label: string;
@@ -44,9 +45,9 @@ function PeriodNav({ label, canGoForward, onBack, onForward }: PeriodNavProps) {
       <Pressable onPress={onBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Previous period">
         <Ionicons name="chevron-back" size={22} color={colors.navy} />
       </Pressable>
-      <Text style={styles.monthLabel} numberOfLines={2} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+      <AppText style={styles.monthLabel} numberOfLines={2} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
         {label}
-      </Text>
+      </AppText>
       <Pressable
         onPress={onForward}
         disabled={!canGoForward}
@@ -124,7 +125,7 @@ export default function ReportsScreen() {
               style={[styles.pill, range === option && styles.pillSelected]}
               onPress={() => setRange(option)}
             >
-              <Text style={[styles.pillText, range === option && styles.pillTextSelected]}>{option}</Text>
+              <AppText style={[styles.pillText, range === option && styles.pillTextSelected]}>{option}</AppText>
             </Pressable>
           ))}
         </View>
@@ -150,27 +151,27 @@ export default function ReportsScreen() {
         {range === 'custom' && (
           <View style={styles.customRow}>
             <View style={styles.customField}>
-              <Text style={styles.label}>Start date</Text>
+              <AppText style={styles.label}>Start date</AppText>
               <DateField label="Start date" value={customStart} onChange={(value) => onCustomChange('start', value)} />
             </View>
             <View style={styles.customField}>
-              <Text style={styles.label}>End date</Text>
+              <AppText style={styles.label}>End date</AppText>
               <DateField label="End date" value={customEnd} onChange={(value) => onCustomChange('end', value)} />
             </View>
           </View>
         )}
 
-        <Text style={styles.currencyNote}>All amounts in ETB · transfers are not counted as income or spending</Text>
+        <AppText style={styles.currencyNote}>All amounts in ETB · transfers are not counted as income or spending</AppText>
 
         <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, { backgroundColor: colors.oliveLight }]}>
             <View style={styles.summaryHeaderRow}>
-              <Text style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+              <AppText style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
                 Income
-              </Text>
+              </AppText>
               <Ionicons name="trending-up" size={14} color={colors.statusIncome} />
             </View>
-            <Text
+            <AppText
               style={[styles.summaryValue, { color: colors.statusIncome }]}
               numberOfLines={1}
               adjustsFontSizeToFit
@@ -178,16 +179,16 @@ export default function ReportsScreen() {
               maxFontSizeMultiplier={1.3}
             >
               {formatNumber(totals.income)}
-            </Text>
+            </AppText>
           </View>
           <View style={[styles.summaryCard, { backgroundColor: colors.redLight }]}>
             <View style={styles.summaryHeaderRow}>
-              <Text style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+              <AppText style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
                 Expenses
-              </Text>
+              </AppText>
               <Ionicons name="trending-down" size={14} color={colors.statusExpense} />
             </View>
-            <Text
+            <AppText
               style={[styles.summaryValue, { color: colors.statusExpense }]}
               numberOfLines={1}
               adjustsFontSizeToFit
@@ -195,16 +196,16 @@ export default function ReportsScreen() {
               maxFontSizeMultiplier={1.3}
             >
               {formatNumber(totals.expenses)}
-            </Text>
+            </AppText>
           </View>
           <View style={[styles.summaryCard, { backgroundColor: colors.surface }]}>
             <View style={styles.summaryHeaderRow}>
-              <Text style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+              <AppText style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
                 Net
-              </Text>
+              </AppText>
               <Ionicons name="swap-vertical" size={14} color={netColor} />
             </View>
-            <Text
+            <AppText
               style={[styles.summaryValue, { color: netColor }]}
               numberOfLines={1}
               adjustsFontSizeToFit
@@ -213,14 +214,14 @@ export default function ReportsScreen() {
             >
               {totals.net > 0 ? '+' : ''}
               {formatNumber(totals.net)}
-            </Text>
+            </AppText>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Spending by category</Text>
+          <AppText style={styles.sectionTitle}>Spending by category</AppText>
           {categoryBreakdown.length === 0 ? (
-            <Text style={styles.emptyState}>No expense data for this period.</Text>
+            <AppText style={styles.emptyState}>No expense data for this period.</AppText>
           ) : (
             <DonutChart
               data={categoryBreakdown}
@@ -231,31 +232,31 @@ export default function ReportsScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Income by source</Text>
+          <AppText style={styles.sectionTitle}>Income by source</AppText>
           {sourceBreakdown.length === 0 ? (
-            <Text style={styles.emptyState}>No income sources for this period.</Text>
+            <AppText style={styles.emptyState}>No income sources for this period.</AppText>
           ) : (
             <HorizontalBarChart data={sourceBreakdown} />
           )}
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>{TREND_TITLES[range]}</Text>
+          <AppText style={styles.sectionTitle}>{TREND_TITLES[range]}</AppText>
           {filtered.every((item) => item.type === 'transfer') ? (
-            <Text style={styles.emptyState}>No activity for this period.</Text>
+            <AppText style={styles.emptyState}>No activity for this period.</AppText>
           ) : (
             <TrendLineChart data={trend} />
           )}
         </View>
 
         <View style={[styles.card, styles.highlightCard]}>
-          <Text style={styles.sectionTitle}>Biggest spending category</Text>
+          <AppText style={styles.sectionTitle}>Biggest spending category</AppText>
           {biggestCategory ? (
-            <Text style={styles.highlightText}>
+            <AppText style={styles.highlightText}>
               {biggestCategory.label}: {formatETB(biggestCategory.amount)}
-            </Text>
+            </AppText>
           ) : (
-            <Text style={styles.emptyState}>No spending categories yet.</Text>
+            <AppText style={styles.emptyState}>No spending categories yet.</AppText>
           )}
         </View>
       </ScrollView>

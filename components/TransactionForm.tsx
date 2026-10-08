@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
@@ -17,6 +17,8 @@ import { getBalances, LedgerError } from '../utils/balances';
 import { getRateToETB } from '../utils/currency';
 import { todayKey } from '../utils/dates';
 import { formatETB } from '../utils/format';
+import AppText from './AppText';
+import AppTextInput from './AppTextInput';
 
 const TYPE_LABELS: Record<TransactionType, string> = {
   expense: 'Expense',
@@ -221,17 +223,17 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
               style={[styles.typeSegment, type === option && styles.typeSegmentSelected]}
               onPress={() => setType(option)}
             >
-              <Text style={[styles.typeSegmentText, type === option && styles.typeSegmentTextSelected]}>
+              <AppText style={[styles.typeSegmentText, type === option && styles.typeSegmentTextSelected]}>
                 {TYPE_LABELS[option]}
-              </Text>
+              </AppText>
             </Pressable>
           ))}
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Amount</Text>
+          <AppText style={styles.label}>Amount</AppText>
           <View style={styles.amountRow}>
-            <TextInput
+            <AppTextInput
               style={styles.amountInput}
               value={amount}
               onChangeText={setAmount}
@@ -244,21 +246,21 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
 
         {type === 'transfer' ? (
           <View style={styles.card}>
-            <Text style={styles.label}>From</Text>
+            <AppText style={styles.label}>From</AppText>
             <OptionPicker value={from} options={endpointOptions} onChange={setFrom} />
             <View style={styles.arrowRow}>
               <Ionicons name="arrow-down" size={18} color={colors.textSecondary} />
             </View>
-            <Text style={styles.label}>To</Text>
+            <AppText style={styles.label}>To</AppText>
             <OptionPicker value={to} options={endpointOptions} onChange={setTo} />
-            <Text style={styles.helperText}>
+            <AppText style={styles.helperText}>
               A transfer moves money you already have. Total Balance does not change.
-            </Text>
+            </AppText>
           </View>
         ) : (
           <>
             <View style={styles.card}>
-              <Text style={styles.label}>{type === 'income' ? 'Into' : 'Pay from'}</Text>
+              <AppText style={styles.label}>{type === 'income' ? 'Into' : 'Pay from'}</AppText>
               {/* Goal is deliberately not offered here: a goal can never pay for an expense (V2 Part B.6). */}
               <View style={styles.segmented}>
                 {(['available', 'saved'] as const).map((option) => (
@@ -271,16 +273,16 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
                   />
                 ))}
               </View>
-              <Text style={styles.helperText}>
+              <AppText style={styles.helperText}>
                 {ACCOUNT_LABELS[account]} balance: {formatETB(balances[account])}
-              </Text>
+              </AppText>
               {type === 'expense' && (
-                <Text style={styles.helperText}>To spend goal money, transfer it out of the goal first.</Text>
+                <AppText style={styles.helperText}>To spend goal money, transfer it out of the goal first.</AppText>
               )}
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.label}>Category</Text>
+              <AppText style={styles.label}>Category</AppText>
               <CategoryPicker
                 value={selectedCategory?.id ?? category}
                 options={categoryOptions}
@@ -292,14 +294,14 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
         )}
 
         <View style={styles.card}>
-          <Text style={styles.label}>Date</Text>
+          <AppText style={styles.label}>Date</AppText>
           <DateField label="Date" value={date} onChange={setDate} />
         </View>
 
         {type !== 'transfer' && (
           <View style={styles.card}>
-            <Text style={styles.label}>{type === 'income' ? 'Source' : 'Where / Merchant'}</Text>
-            <TextInput
+            <AppText style={styles.label}>{type === 'income' ? 'Source' : 'Where / Merchant'}</AppText>
+            <AppTextInput
               style={styles.input}
               value={source}
               onChangeText={setSource}
@@ -309,23 +311,23 @@ export default function TransactionForm({ initial, submitLabel, onSubmit, resetO
         )}
 
         <View style={styles.card}>
-          <Text style={styles.label}>Note (optional)</Text>
-          <TextInput style={styles.input} value={note} onChangeText={setNote} placeholder="Add a note..." />
+          <AppText style={styles.label}>Note (optional)</AppText>
+          <AppTextInput style={styles.input} value={note} onChangeText={setNote} placeholder="Add a note..." />
         </View>
 
         {currency !== 'ETB' && (
           <View style={styles.card}>
             <Pressable style={styles.collapsibleHeader} onPress={() => setShowRateSection((prev) => !prev)}>
-              <Text style={styles.label}>Exchange rate</Text>
+              <AppText style={styles.label}>Exchange rate</AppText>
               <Ionicons name={showRateSection ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
             </Pressable>
             {showRateSection && (
               <View style={styles.rateSection}>
-                <Text style={styles.helperText}>
+                <AppText style={styles.helperText}>
                   1 {currency} = ? ETB — leave empty to use {defaultRate ? `the rate ${defaultRate}` : 'the saved rate'}. A rate entered
                   here applies to this transaction only.
-                </Text>
-                <TextInput
+                </AppText>
+                <AppTextInput
                   style={styles.input}
                   value={rateInput}
                   onChangeText={setRateInput}

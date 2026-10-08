@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing } from '../constants/theme';
+import AppText from './AppText';
 
 export interface PickerOption {
   value: string;
@@ -29,13 +30,13 @@ export default function OptionPicker({ value, options, onChange, placeholder = '
     <>
       <Pressable style={styles.trigger} onPress={() => setIsOpen(true)}>
         <View style={styles.triggerBody}>
-          <Text style={styles.triggerText} numberOfLines={1}>
+          <AppText style={styles.triggerText} numberOfLines={1}>
             {selected ? selected.label : placeholder}
-          </Text>
+          </AppText>
           {selected?.hint ? (
-            <Text style={styles.hint} numberOfLines={1}>
+            <AppText style={styles.hint} numberOfLines={1}>
               {selected.hint}
-            </Text>
+            </AppText>
           ) : null}
         </View>
         <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
@@ -55,10 +56,10 @@ export default function OptionPicker({ value, options, onChange, placeholder = '
                   }}
                 >
                   <View style={styles.optionBody}>
-                    <Text style={[styles.optionText, item.value === value && styles.optionTextSelected]} numberOfLines={1}>
+                    <AppText style={[styles.optionText, item.value === value && styles.optionTextSelected]} numberOfLines={1}>
                       {item.label}
-                    </Text>
-                    {item.hint ? <Text style={styles.hint}>{item.hint}</Text> : null}
+                    </AppText>
+                    {item.hint ? <AppText style={styles.hint}>{item.hint}</AppText> : null}
                   </View>
                   {item.value === value && <Ionicons name="checkmark" size={18} color={colors.orange} />}
                 </Pressable>

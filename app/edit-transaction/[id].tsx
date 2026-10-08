@@ -1,4 +1,4 @@
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import AppButton from '../../components/AppButton';
@@ -8,6 +8,7 @@ import { colors, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
 import { TransactionInput } from '../../types';
 import { alertLedgerError } from '../../utils/alerts';
+import AppText from '../../components/AppText';
 
 export default function EditTransactionScreen() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function EditTransactionScreen() {
     return (
       <View style={styles.screen}>
         <AppHeader title="Edit transaction" />
-        <Text style={styles.title}>Transaction not found</Text>
+        <AppText style={styles.title}>Transaction not found</AppText>
       </View>
     );
   }
