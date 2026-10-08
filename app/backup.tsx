@@ -4,6 +4,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../components/AppHeader';
+import DevThemeRow from '../components/DevThemeRow';
 import SettingsRow from '../components/SettingsRow';
 import { colors, radius, spacing } from '../constants/theme';
 import { useUiStore } from '../store/ui';
@@ -87,6 +88,9 @@ export default function SettingsScreen() {
             isLast
           />
         </View>
+
+        {/* Development builds only (Expo Go / dev client): never present in preview or production builds. */}
+        {__DEV__ ? <DevThemeRow /> : null}
       </ScrollView>
     </View>
   );
