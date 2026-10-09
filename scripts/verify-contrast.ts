@@ -142,6 +142,23 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
 }
 check('light palette has no hero border', palettes.light.heroBorder === 'transparent');
 
+// Welcome screen (Phase 2). Text pairs it uses are all in the table above: headline "Welcome to" = text on bg, accent word =
+// welcomeAccent on bg (large bold, 3:1), supporting copy / privacy note / placeholder = textMuted on bg and surface, the
+// Skip button = primaryText on bg, Continue = onPrimary on primary. The name field's focus border is a UI component edge,
+// which needs 3:1 (WCAG 1.4.11) against both the screen and the field fill.
+console.log('\nWelcome screen: input focus border (needs 3:1) and the resting border (informational)');
+const focusBorder: Record<ThemeScheme, keyof ThemeColors> = { light: 'text', dark: 'primary' };
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const palette = palettes[scheme];
+  const border = palette[focusBorder[scheme]];
+  for (const against of ['bg', 'surface'] as const) {
+    const ratio = contrast(border, palette[against]);
+    console.log(`  ${scheme.padEnd(5)} focus border (${focusBorder[scheme]}) on ${against.padEnd(8)} ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: welcome input focus border on ${against}`, ratio >= 3, ratio.toFixed(2));
+  }
+  console.log(`  ${scheme.padEnd(5)} resting border token on surface   ${contrast(palette.border, palette.surface).toFixed(2).padStart(6)}  (informational: the token is a quiet divider colour)`);
+}
+
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------
 const OLD_COLORS: Record<keyof typeof colors, string> = {
   background: '#F7F7F3',
