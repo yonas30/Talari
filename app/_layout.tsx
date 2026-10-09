@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AuthGate from '../components/AuthGate';
 import SideDrawer from '../components/SideDrawer';
 import SplashOverlay from '../components/SplashOverlay';
+import WelcomeScreen from '../components/WelcomeScreen';
 import { useAppFonts } from '../theme/fonts';
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 import { useFinanceStore } from '../store/finance';
@@ -34,6 +35,7 @@ function RootLayoutContent() {
   const loadData = useFinanceStore((state) => state.loadData);
   const isReady = useFinanceStore((state) => state.isReady);
   const onboardingResolved = useProfileStore((state) => state.resolved);
+  const firstScreen = useProfileStore((state) => state.screen);
   const resolveOnboarding = useProfileStore((state) => state.resolve);
   const setSplashDone = useUiStore((state) => state.setSplashDone);
   const insets = useSafeAreaInsets();
@@ -76,22 +78,34 @@ function RootLayoutContent() {
       {/* Icons always visible: dark icons on a light app background, light icons on a dark one. */}
       <StatusBar style={statusBarStyleForBackground(splashActive ? SPLASH_BACKGROUND : colors.bg)} />
       <AuthGate onLockResolved={onLockResolved} promptAllowed={!splashActive || splashFading}>
-      {/*
-        The five main sections live in the (tabs) group. Every other screen is a real stack entry above
-        it, so Android Back pops one level at a time (edit screen -> list, Settings -> Home, ...) instead
-        of jumping to the first tab.
-      */}
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          // Stack screens have no tab bar, so keep their bottom content out of the gesture/nav bar area.
-          contentStyle: { backgroundColor: colors.bg, paddingBottom: insets.bottom },
-        }}
-      >
-        {/* The tab bar already accounts for the bottom inset itself. */}
-        <Stack.Screen name="(tabs)" options={{ contentStyle: { backgroundColor: colors.bg } }} />
-      </Stack>
-        <SideDrawer />
+        {/*
+          Order of events: splash, then the lock screen (AuthGate), then Welcome or the app. Welcome is rendered INSTEAD of the
+          navigator (not as a route above it), so there is nothing to go back to: after Continue / Skip the navigator mounts
+          with Home as its only entry, and Android Back leaves the app instead of returning to Welcome. Nothing is rendered
+          before the decision is known (the splash waits for it), so Home can never flash before Welcome.
+        */}
+        {!onboardingResolved ? null : firstScreen === 'welcome' ? (
+          <WelcomeScreen />
+        ) : (
+          <>
+            {/*
+              The five main sections live in the (tabs) group. Every other screen is a real stack entry above
+              it, so Android Back pops one level at a time (edit screen -> list, Settings -> Home, ...) instead
+              of jumping to the first tab.
+            */}
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                // Stack screens have no tab bar, so keep their bottom content out of the gesture/nav bar area.
+                contentStyle: { backgroundColor: colors.bg, paddingBottom: insets.bottom },
+              }}
+            >
+              {/* The tab bar already accounts for the bottom inset itself. */}
+              <Stack.Screen name="(tabs)" options={{ contentStyle: { backgroundColor: colors.bg } }} />
+            </Stack>
+            <SideDrawer />
+          </>
+        )}
       </AuthGate>
       {splashActive && (
         <SplashOverlay
