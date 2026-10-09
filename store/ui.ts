@@ -14,6 +14,9 @@ export interface AppNotification {
 
 interface UiState {
   isDrawerOpen: boolean;
+  // The splash overlay has left. Anything that opens a native Modal (which draws above the splash) waits for this.
+  isSplashDone: boolean;
+  setSplashDone: () => void;
   isBalanceHidden: boolean;
   notifications: AppNotification[];
   // Ids the user has already seen, loaded from storage at start-up and kept in step with it. A notification whose id
@@ -31,6 +34,8 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set, get) => ({
   isDrawerOpen: false,
+  isSplashDone: false,
+  setSplashDone: () => set({ isSplashDone: true }),
   // Balances start hidden every launch; the eye button reveals them (V2 Part I).
   isBalanceHidden: true,
   notifications: [],
