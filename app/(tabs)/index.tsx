@@ -1,12 +1,14 @@
-import { useEffect, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AppState, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppHeader from '../../components/AppHeader';
 import DonutChart from '../../components/DonutChart';
-import { APP_USER_NAME, colors, radius, spacing, typography } from '../../constants/theme';
+import NameSheet from '../../components/NameSheet';
+import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
+import { useProfileStore } from '../../store/profile';
 import { useUiStore } from '../../store/ui';
 import { getBalances } from '../../utils/balances';
 import { calculateBuilderStreak, getCurrentPeriodSummary } from '../../utils/currency';
@@ -14,6 +16,7 @@ import { formatDateKey, formatETB, formatNumber, HIDDEN_AMOUNT, transactionTitle
 import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 import { getBudgetAlerts } from '../../utils/notifications';
 import { getDashboardMessage } from '../../utils/motivation';
+import { formatGreeting } from '../../utils/profile';
 import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../../utils/reports';
 import AppText from '../../components/AppText';
 
@@ -21,18 +24,43 @@ import AppText from '../../components/AppText';
 // font sizes can't push them out of the card; other text keeps scaling normally.
 const MONEY_MAX_FONT_SCALE = 1.3;
 
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
 export default function HomeScreen() {
   const router = useRouter();
   const { transactions, exchangeRates, goals, homeCurrency, origin, isReady, budgets } = useFinanceStore();
   const notifications = useUiStore((state) => state.notifications);
   const isBalanceHidden = useUiStore((state) => state.isBalanceHidden);
+  const isSplashDone = useUiStore((state) => state.isSplashDone);
+  const isDrawerOpen = useUiStore((state) => state.isDrawerOpen);
+  const name = useProfileStore((state) => state.profile.name);
+  const promptOffered = useProfileStore((state) => state.promptOfferedThisSession);
+  const isPromptDueNow = useProfileStore((state) => state.isPromptDueNow);
+  const markPromptOffered = useProfileStore((state) => state.markPromptOffered);
+  const saveName = useProfileStore((state) => state.saveName);
+  const notNow = useProfileStore((state) => state.notNow);
+  const [nameSheetOpen, setNameSheetOpen] = useState(false);
+
+  // The greeting is by local time, so it is recomputed whenever the app comes back to the foreground.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setNow(new Date());
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // One-time "What should we call you?" sheet for people who already had data. A native Modal draws above everything, so it
+  // waits for the splash to leave and for the side drawer to be closed, and it is offered at most once per app session
+  // (and only on a Home visit). The lock screen never sees it: Home is not rendered until the app is unlocked.
+  useFocusEffect(
+    useCallback(() => {
+      if (isSplashDone && !isDrawerOpen && !promptOffered && isPromptDueNow()) {
+        markPromptOffered();
+        setNameSheetOpen(true);
+      }
+    }, [isSplashDone, isDrawerOpen, promptOffered, isPromptDueNow, markPromptOffered]),
+  );
   const toggleBalanceVisibility = useUiStore((state) => state.toggleBalanceVisibility);
   const upsertNotifications = useUiStore((state) => state.upsertNotifications);
   const removeNotificationsWhere = useUiStore((state) => state.removeNotificationsWhere);
@@ -95,7 +123,7 @@ export default function HomeScreen() {
       <AppHeader title="Home" notificationCount={unreadCount} onNotificationPress={onNotificationPress} />
       <ScrollView contentContainerStyle={styles.container}>
         <View>
-          <AppText style={styles.greeting}>{getGreeting()}, {APP_USER_NAME} 👋</AppText>
+          <AppText style={styles.greeting}>{formatGreeting(now, name)}</AppText>
           <AppText style={styles.motivation}>{motivationalMessage}</AppText>
         </View>
 
@@ -293,6 +321,27 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      <NameSheet
+        visible={nameSheetOpen}
+        title="What should we call you?"
+        body="Add your name for a personal greeting on Home. You can change it any time in Settings."
+        emptyMessage="Add a name, or tap Not now."
+        secondaryLabel="Not now"
+        onSave={(value) => {
+          saveName(value);
+          setNameSheetOpen(false);
+        }}
+        onSecondary={() => {
+          notNow();
+          setNameSheetOpen(false);
+        }}
+        // Android Back or a tap outside counts as "Not now".
+        onClose={() => {
+          notNow();
+          setNameSheetOpen(false);
+        }}
+      />
     </View>
   );
 }

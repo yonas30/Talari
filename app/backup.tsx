@@ -4,9 +4,12 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../components/AppHeader';
+import DevOnboardingRow from '../components/DevOnboardingRow';
 import DevThemeRow from '../components/DevThemeRow';
+import NameSheet from '../components/NameSheet';
 import SettingsRow from '../components/SettingsRow';
 import { colors, radius, spacing } from '../constants/theme';
+import { useProfileStore } from '../store/profile';
 import { useUiStore } from '../store/ui';
 import { isAppLockEnabled, setAppLockEnabled } from '../utils/appLock';
 
@@ -14,6 +17,10 @@ export default function SettingsScreen() {
   const router = useRouter();
   const notifications = useUiStore((state) => state.notifications);
   const [lockEnabled, setLockEnabled] = useState(false);
+  const name = useProfileStore((state) => state.profile.name);
+  const saveName = useProfileStore((state) => state.saveName);
+  const clearName = useProfileStore((state) => state.clearName);
+  const [nameSheetOpen, setNameSheetOpen] = useState(false);
 
   useEffect(() => {
     void isAppLockEnabled().then(setLockEnabled);
@@ -68,6 +75,16 @@ export default function SettingsScreen() {
 
         <View style={styles.card}>
           <SettingsRow
+            icon="person-outline"
+            title="Your name"
+            subtitle={name ?? 'Not set'}
+            onPress={() => setNameSheetOpen(true)}
+            isLast
+          />
+        </View>
+
+        <View style={styles.card}>
+          <SettingsRow
             icon="lock-closed-outline"
             title="App lock"
             subtitle="Secure your data with biometrics or passcode"
@@ -91,7 +108,26 @@ export default function SettingsScreen() {
 
         {/* Development builds only (Expo Go / dev client): never present in preview or production builds. */}
         {__DEV__ ? <DevThemeRow /> : null}
+        {__DEV__ ? <DevOnboardingRow /> : null}
       </ScrollView>
+
+      <NameSheet
+        visible={nameSheetOpen}
+        title="Your name"
+        body="Shown in your greeting on Home. Stays on this phone."
+        initialName={name ?? ''}
+        emptyMessage={name ? 'Add a name, or tap Remove name.' : 'Add a name to save it.'}
+        secondaryLabel={name ? 'Remove name' : undefined}
+        onSave={(value) => {
+          saveName(value);
+          setNameSheetOpen(false);
+        }}
+        onSecondary={() => {
+          clearName();
+          setNameSheetOpen(false);
+        }}
+        onClose={() => setNameSheetOpen(false)}
+      />
     </View>
   );
 }

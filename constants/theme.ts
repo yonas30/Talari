@@ -46,5 +46,3 @@ export const radius = {
   pill: 999,
 };
 
-// Single-user app — this is a personal, non-generic finance tool.
-export const APP_USER_NAME = 'Yonas';
