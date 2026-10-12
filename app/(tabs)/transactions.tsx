@@ -4,15 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../../components/AppHeader';
-import SegmentedTabs, { TabOption } from '../../components/SegmentedTabs';
-import { colors, radius, spacing, typography } from '../../constants/theme';
-import { useFinanceStore } from '../../store/finance';
-import { formatDateKey, formatETB, formatNumber, transactionTitle } from '../../utils/format';
-import { filterByType, filterTransactions, TypeFilter } from '../../utils/search';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
+import SegmentedControl, { SegmentOption } from '../../components/SegmentedControl';
+import { useFinanceStore } from '../../store/finance';
+import { useTheme } from '../../theme/ThemeProvider';
+import { formatDateKey, formatNumber, transactionTitle } from '../../utils/format';
+import { formatTransactionAmount, transactionAmountRole } from '../../utils/homeModel';
+import { filterByType, filterTransactions, TypeFilter } from '../../utils/search';
 
-const TYPE_TABS: TabOption<TypeFilter>[] = [
+const TYPE_TABS: SegmentOption<TypeFilter>[] = [
   { key: 'all', label: 'All' },
   { key: 'income', label: 'Income' },
   { key: 'expense', label: 'Expense' },
@@ -35,9 +36,11 @@ function detailLine(source: string, note: string | null): string {
 
 export default function TransactionsScreen() {
   const router = useRouter();
-  const { transactions, goals, isReady } = useFinanceStore();
+  const { colors } = useTheme();
+  const { transactions, goals, categories, isReady } = useFinanceStore();
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [searchFocused, setSearchFocused] = useState(false);
 
   // The tab narrows by type first; the search then looks only inside that tab ("food" on Expense searches expenses).
   // Filters live as you type: merchant/source, category, note, a transfer's From -> To, and amounts.
@@ -45,6 +48,8 @@ export default function TransactionsScreen() {
   const visible = useMemo(() => filterTransactions(inTab, query, goals), [inTab, query, goals]);
   const isSearching = query.trim().length > 0;
   const noun = TAB_NOUNS[typeFilter];
+  // The emoji a category stores, by category name (what transactions store).
+  const categoryIcons = useMemo(() => Object.fromEntries(categories.map((category) => [category.name, category.icon])), [categories]);
 
   useEffect(() => {
     if (!isReady) {
@@ -53,25 +58,34 @@ export default function TransactionsScreen() {
   }, [isReady]);
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Transactions" />
       {transactions.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <AppText style={styles.emptyState}>No transactions yet — add your first one.</AppText>
+          <AppText style={[styles.emptyState, { color: colors.textMuted }]}>No transactions yet — add your first one.</AppText>
         </View>
       ) : (
         <>
           <View style={styles.tabsWrap}>
-            <SegmentedTabs tabs={TYPE_TABS} value={typeFilter} onChange={setTypeFilter} />
+            <SegmentedControl options={TYPE_TABS} value={typeFilter} onChange={setTypeFilter} />
           </View>
-          <View style={styles.searchBox}>
-            <Ionicons name="search" size={18} color={colors.textSecondary} />
+          <View
+            style={[
+              styles.searchBox,
+              { backgroundColor: colors.surface, borderColor: searchFocused ? colors.text : colors.inputBorder },
+            ]}
+          >
+            <Ionicons name="search" size={18} color={colors.textMuted} />
             <AppTextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.text }]}
               value={query}
               onChangeText={setQuery}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
               placeholder="Search merchant, category, note or amount"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={colors.textMuted}
+              cursorColor={colors.primary}
+              selectionColor={colors.primary}
               returnKeyType="search"
               autoCorrect={false}
               autoCapitalize="none"
@@ -80,11 +94,11 @@ export default function TransactionsScreen() {
             />
             {isSearching && (
               <Pressable onPress={() => setQuery('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
-                <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
               </Pressable>
             )}
           </View>
-          <AppText style={styles.hint}>
+          <AppText style={[styles.hint, { color: colors.textMuted }]}>
             {isSearching
               ? `${visible.length} of ${inTab.length} ${noun.plural}`
               : 'Tap any entry to edit or delete it.'}
@@ -97,51 +111,93 @@ export default function TransactionsScreen() {
             keyboardDismissMode="on-drag"
             ListEmptyComponent={
               <View style={styles.noMatch}>
-                <AppText style={styles.emptyState}>
+                <AppText style={[styles.emptyState, { color: colors.textMuted }]}>
                   {isSearching ? `No ${noun.plural} match “${query.trim()}”.` : `No ${noun.plural} yet.`}
                 </AppText>
                 {isSearching ? (
-                  <Pressable onPress={() => setQuery('')} accessibilityRole="button">
-                    <AppText style={styles.clearLink}>Clear search</AppText>
+                  <Pressable onPress={() => setQuery('')} accessibilityRole="button" hitSlop={10}>
+                    <AppText style={[styles.clearLink, { color: colors.primaryText }]}>Clear search</AppText>
                   </Pressable>
                 ) : (
-                  <Pressable onPress={() => setTypeFilter('all')} accessibilityRole="button">
-                    <AppText style={styles.clearLink}>Show all</AppText>
+                  <Pressable onPress={() => setTypeFilter('all')} accessibilityRole="button" hitSlop={10}>
+                    <AppText style={[styles.clearLink, { color: colors.primaryText }]}>Show all</AppText>
                   </Pressable>
                 )}
               </View>
             }
-            renderItem={({ item }) => {
+            renderItem={({ item, index }) => {
+              const role = transactionAmountRole(item.type);
+              const isTransfer = item.type === 'transfer';
               const isForeign = item.currency !== 'ETB';
               const title = transactionTitle(item, goals);
+              const discColor = role === 'expense' ? colors.expenseDisc : role === 'income' ? colors.incomeDisc : colors.transferDisc;
+              const glyphColor = role === 'expense' ? colors.expenseGlyph : role === 'income' ? colors.incomeGlyph : colors.transferGlyph;
+              const amountColor = role === 'expense' ? colors.expense : role === 'income' ? colors.income : colors.text;
+              const emoji = isTransfer ? '' : (categoryIcons[item.category] ?? '').trim();
+              const signed = formatTransactionAmount(item.type, item.amountETB);
+              const sub = `${formatDateKey(item.date)}${item.account ? ` · ${item.type === 'income' ? 'into' : 'from'} ${item.account === 'saved' ? 'Saved' : 'Available'}` : ''}`;
+              const detail = detailLine(item.source, item.note);
+              // One flat card made of rows: the first row rounds the top corners, the last the bottom ones, hairlines between.
+              const first = index === 0;
+              const last = index === visible.length - 1;
 
               return (
                 <Pressable
-                  style={styles.item}
                   onPress={() => router.push(`/edit-transaction/${item.id}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${title}, ${signed}, ${sub}. Opens the transaction.`}
+                  style={({ pressed }) => [
+                    styles.item,
+                    { backgroundColor: pressed ? colors.bg : colors.surface, borderColor: colors.border },
+                    first && styles.itemFirst,
+                    last && styles.itemLast,
+                    !first && { borderTopWidth: 0 },
+                  ]}
                 >
+                  {!first && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
+                  <View style={[styles.disc, { backgroundColor: discColor }]}>
+                    {isTransfer ? (
+                      <Ionicons name="swap-horizontal" size={20} color={glyphColor} />
+                    ) : emoji ? (
+                      <AppText style={styles.emoji} maxFontSizeMultiplier={1.2}>
+                        {emoji}
+                      </AppText>
+                    ) : (
+                      <Ionicons name="receipt-outline" size={20} color={glyphColor} />
+                    )}
+                  </View>
+                  {/* The text side takes whatever width the amount leaves and truncates, instead of pushing the amount out of the
+                      card (same approach as the Home recent list and the Recurring rows). */}
                   <View style={styles.itemContent}>
-                    <AppText style={styles.category} numberOfLines={2}>
+                    <AppText style={[styles.title, { color: colors.text }]} numberOfLines={2}>
                       {title}
                     </AppText>
-                    <AppText style={styles.meta} numberOfLines={2}>
-                      {formatDateKey(item.date)}
-                      {item.account ? ` · ${item.type === 'income' ? 'into' : 'from'} ${item.account === 'saved' ? 'Saved' : 'Available'}` : ''}
+                    <AppText style={[styles.meta, { color: colors.textMuted }]} numberOfLines={2}>
+                      {sub}
                     </AppText>
-                    {detailLine(item.source, item.note) !== '' && (
-                      <AppText style={styles.detail} numberOfLines={1}>
-                        {detailLine(item.source, item.note)}
+                    {detail !== '' && (
+                      <AppText style={[styles.meta, { color: colors.textMuted }]} numberOfLines={1}>
+                        {detail}
                       </AppText>
                     )}
                   </View>
+                  {/* Bounded width so the amount's shrink-to-fit has something to fit into at large system font sizes. */}
                   <View style={styles.amountWrap}>
-                    <AppText style={styles.amount} maxFontSizeMultiplier={1.3} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                      {formatETB(item.amountETB)}
+                    <AppText
+                      variant="number"
+                      style={[styles.amount, { color: amountColor }]}
+                      maxFontSizeMultiplier={1.3}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.5}
+                    >
+                      {signed}
                     </AppText>
-                    {isForeign && <AppText style={styles.converted} maxFontSizeMultiplier={1.3} numberOfLines={1}>(originally {formatNumber(item.amount)} {item.currency})</AppText>}
-                    <AppText style={[styles.type, { color: item.type === 'income' ? colors.statusIncome : item.type === 'transfer' ? colors.olive : colors.statusExpense }]}>
-                      {item.type}
-                    </AppText>
+                    {isForeign && (
+                      <AppText style={[styles.converted, { color: colors.textMuted }]} maxFontSizeMultiplier={1.3} numberOfLines={1}>
+                        (originally {formatNumber(item.amount)} {item.currency})
+                      </AppText>
+                    )}
                   </View>
                 </Pressable>
               );
@@ -156,121 +212,117 @@ export default function TransactionsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: 20,
   },
   emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    fontSize: 16,
+    fontSize: 15,
     textAlign: 'center',
   },
   tabsWrap: {
-    marginHorizontal: spacing.xl,
-    marginTop: spacing.md,
+    marginHorizontal: 20,
+    marginTop: 8,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.button,
-    marginHorizontal: spacing.xl,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 14,
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingHorizontal: 12,
   },
   searchInput: {
     flex: 1,
     minWidth: 0,
-    paddingVertical: spacing.md,
+    paddingVertical: 11,
     fontSize: 15,
-    color: colors.navy,
   },
   noMatch: {
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xl,
+    gap: 8,
+    paddingVertical: 24,
   },
   clearLink: {
-    ...typography.helper,
-    color: colors.blue,
+    fontSize: 14,
     fontWeight: '700',
   },
-  detail: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-  },
   hint: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    marginHorizontal: spacing.xl,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
+    fontSize: 13,
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 10,
   },
   listContent: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
   },
   item: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    gap: 12,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderTopWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  // The text side takes whatever width the amount leaves and truncates, instead of pushing the amount out of
-  // the card (same approach as the Home recent-transactions and Recurring rows).
+  itemFirst: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  itemLast: {
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    borderBottomWidth: 1,
+  },
+  divider: {
+    position: 'absolute',
+    top: 0,
+    left: 14,
+    right: 14,
+    height: StyleSheet.hairlineWidth,
+  },
+  disc: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emoji: {
+    fontSize: 19,
+  },
   itemContent: {
     flex: 1,
     minWidth: 0,
-    gap: spacing.sm,
+    gap: 2,
   },
-  category: {
-    ...typography.body,
-    color: colors.navy,
-    fontWeight: '700',
+  title: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   meta: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 12,
   },
-  // Bounded width so the amount's shrink-to-fit has something to fit into at large system font sizes.
   amountWrap: {
-    maxWidth: '48%',
+    maxWidth: '45%',
     flexShrink: 0,
     alignItems: 'flex-end',
     gap: 2,
   },
   amount: {
-    ...typography.helper,
-    color: colors.navy,
+    fontSize: 16,
     fontWeight: '700',
+    textAlign: 'right',
   },
   converted: {
-    ...typography.helper,
-    color: colors.blue,
-    fontSize: 12,
-  },
-  type: {
-    ...typography.helper,
-    fontSize: 12,
-    textTransform: 'capitalize',
+    fontSize: 11,
+    textAlign: 'right',
   },
 });
