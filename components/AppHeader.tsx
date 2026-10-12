@@ -3,22 +3,25 @@ import { useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { colors as legacyColors, typography } from '../constants/theme';
+import { typography } from '../constants/theme';
 import { useThemeColors } from '../theme/ThemeProvider';
 import { useUiStore } from '../store/ui';
 import AppText from './AppText';
 
 interface AppHeaderProps {
   title: string;
-  notificationCount?: number;
-  onNotificationPress?: () => void;
   /** Home has no title: the menu button and the bell sit at the two ends. */
   hideTitle?: boolean;
+  /** The Notifications screen itself has no bell. */
+  hideBell?: boolean;
 }
 
-export default function AppHeader({ title, notificationCount = 0, onNotificationPress, hideTitle = false }: AppHeaderProps) {
+// The one header of the app: menu (or back arrow) on the left, the title, and the bell with its unread badge on the right. The
+// unread count comes from the store, so every screen shows the same badge without being handed it.
+export default function AppHeader({ title, hideTitle = false, hideBell = false }: AppHeaderProps) {
   const colors = useThemeColors();
   const openDrawer = useUiStore((state) => state.openDrawer);
+  const notificationCount = useUiStore((state) => state.notifications.filter((notification) => !notification.isRead).length);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const segments = useSegments();
@@ -49,9 +52,9 @@ export default function AppHeader({ title, notificationCount = 0, onNotification
       )}
       {hideTitle ? <View style={styles.titleSpace} /> : <AppText style={[styles.title, { color: colors.text }]}>{title}</AppText>}
       <View style={styles.rightArea}>
-        {onNotificationPress ? (
+        {!hideBell ? (
           <Pressable
-            onPress={onNotificationPress}
+            onPress={() => router.push('/notifications')}
             hitSlop={10}
             style={styles.notificationButton}
             accessibilityRole="button"
@@ -59,8 +62,8 @@ export default function AppHeader({ title, notificationCount = 0, onNotification
           >
             <Ionicons name="notifications-outline" size={22} color={colors.text} />
             {notificationCount > 0 && (
-              <View style={[styles.badge, { borderColor: colors.bg }]} testID="notification-badge">
-                <AppText style={[styles.badgeText, { color: colors.heroText }]} maxFontSizeMultiplier={1}>
+              <View style={[styles.badge, { backgroundColor: colors.danger, borderColor: colors.bg }]} testID="notification-badge">
+                <AppText style={[styles.badgeText, { color: colors.onDanger }]} maxFontSizeMultiplier={1}>
                   {notificationCount > 9 ? '9+' : notificationCount}
                 </AppText>
               </View>
@@ -107,7 +110,6 @@ const styles = StyleSheet.create({
     height: 16,
     paddingHorizontal: 3,
     borderRadius: 8,
-    backgroundColor: legacyColors.red,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',

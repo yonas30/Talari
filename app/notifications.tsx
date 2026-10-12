@@ -20,7 +20,7 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.screen}>
-      <AppHeader title="Notifications" />
+      <AppHeader title="Notifications" hideBell />
       <ScrollView contentContainerStyle={styles.container}>
         {notifications.length === 0 ? (
           <View style={styles.emptyStateCard}>

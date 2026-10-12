@@ -28,7 +28,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { transactions, exchangeRates, goals, categories, origin, isReady, budgets } = useFinanceStore();
-  const notifications = useUiStore((state) => state.notifications);
   const isBalanceHidden = useUiStore((state) => state.isBalanceHidden);
   const isSplashDone = useUiStore((state) => state.isSplashDone);
   const isDrawerOpen = useUiStore((state) => state.isDrawerOpen);
@@ -120,11 +119,9 @@ export default function HomeScreen() {
   const shownSpending = devPreview.noSpending ? { slices: [], total: 0 } : spending;
   const monthName = new Date().toLocaleString('default', { month: 'long' });
 
-  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
-
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg }]}>
-      <AppHeader title="Home" hideTitle notificationCount={unreadCount} onNotificationPress={() => router.push('/notifications')} />
+      <AppHeader title="Home" hideTitle />
       <ScrollView contentContainerStyle={styles.container}>
         <View>
           <AppText variant="heading" style={[styles.greeting, { color: colors.text }]} accessibilityRole="header">
