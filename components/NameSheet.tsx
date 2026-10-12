@@ -29,9 +29,19 @@ interface NameSheetProps {
 // "Your name" row in Settings. Same sanitising and the same empty-input handling as the Welcome screen.
 export default function NameSheet(props: NameSheetProps) {
   return (
-    <SheetModal visible={props.visible} onClose={props.onClose}>
+    <NameSheetFrame visible={props.visible} onClose={props.onClose}>
       {/* A closed Modal renders nothing, so this form mounts fresh every time the sheet opens: current name, no old message. */}
       <NameForm {...props} />
+    </NameSheetFrame>
+  );
+}
+
+// The sheet itself follows the theme (fill and edge), so its title and text are readable in Dark.
+function NameSheetFrame({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }) {
+  const colors = useThemeColors();
+  return (
+    <SheetModal visible={visible} onClose={onClose} surfaceColor={colors.surface} borderColor={colors.border}>
+      {children}
     </SheetModal>
   );
 }
@@ -80,6 +90,8 @@ function NameForm({
         onSubmitEditing={save}
         placeholder="Your name"
         placeholderTextColor={colors.textMuted}
+        cursorColor={colors.primary}
+        selectionColor={colors.primary}
         autoCapitalize="words"
         autoCorrect={false}
         returnKeyType="done"
@@ -88,7 +100,8 @@ function NameForm({
         accessibilityLabel="Your name"
         style={[
           styles.input,
-          { color: colors.text, backgroundColor: colors.surface, borderColor: focused ? colors.text : colors.border },
+          // Field fill is the screen colour (a step away from the sheet surface); the edge is the 3:1 inputBorder.
+          { color: colors.text, backgroundColor: colors.bg, borderColor: focused ? colors.text : colors.inputBorder },
         ]}
       />
       {error ? (

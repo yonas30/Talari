@@ -14,6 +14,8 @@ export interface ThemeColors {
   /** Wells, chips and the unselected segment track. */
   surfaceMuted: string;
   border: string;
+  /** Resting edge of text fields: a UI component edge, so 3:1 against both the field fill and the screen (WCAG 1.4.11). */
+  inputBorder: string;
   text: string;
   textMuted: string;
   /** Fill of primary actions (orange). Never used for text. */
@@ -49,6 +51,8 @@ export const lightColors: ThemeColors = {
   surface: '#FFFFFF',
   surfaceMuted: '#F1EEE7',
   border: '#E7E2D8',
+  // 3.68:1 on the white field, 3.41:1 on the cream screen.
+  inputBorder: '#8A8578',
   text: '#17233C',
   textMuted: '#5B6679',
   primary: '#F47C20',
@@ -79,6 +83,8 @@ export const darkColors: ThemeColors = {
   surface: '#182033',
   surfaceMuted: '#222C44',
   border: 'rgba(255,255,255,0.08)',
+  // 3.67:1 on the dark surface field, 4.12:1 on the dark screen.
+  inputBorder: '#6C7894',
   text: '#F5F5F2',
   textMuted: '#AEB5C2',
   primary: '#F47C20',

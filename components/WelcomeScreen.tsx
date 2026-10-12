@@ -3,6 +3,7 @@ import {
   AccessibilityInfo,
   Keyboard,
   KeyboardAvoidingView,
+  LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -31,6 +32,10 @@ export default function WelcomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  // Top of the form block (label ... Skip) inside the scroll content, and whether the keyboard is up.
+  const formTop = useRef(0);
+  const keyboardUp = useRef(false);
 
   // Focus the field once the splash has left (a keyboard rising under the splash would be odd).
   useEffect(() => {
@@ -38,6 +43,39 @@ export default function WelcomeScreen() {
       inputRef.current?.focus();
     }
   }, [isSplashDone]);
+
+  // With the keyboard open the visible area is small, so the heading is scrolled out of the way and the form block
+  // (label, field, note, Continue AND Skip) is brought to the top. If the whole form is shorter than the visible area the
+  // ScrollView simply clamps to its end, which shows all of it anyway. This runs when the keyboard appears AND when the
+  // ScrollView is resized by it (the resize is what actually changes what fits), always to the same target, so it cannot
+  // fight itself.
+  const showForm = (animated: boolean) => {
+    scrollRef.current?.scrollTo({ y: Math.max(0, formTop.current - 8), animated });
+  };
+
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => {
+      keyboardUp.current = true;
+      showForm(true);
+    });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardUp.current = false;
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+
+  const onScrollViewLayout = () => {
+    if (keyboardUp.current) {
+      showForm(false);
+    }
+  };
+
+  const onFormLayout = (event: LayoutChangeEvent) => {
+    formTop.current = event.nativeEvent.layout.y;
+  };
 
   const submit = () => {
     const clean = sanitiseName(name);
@@ -61,12 +99,18 @@ export default function WelcomeScreen() {
   return (
     <KeyboardAvoidingView style={[styles.flex, { backgroundColor: colors.bg }]} behavior="padding">
       <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 24 }]}
+        ref={scrollRef}
+        onLayout={onScrollViewLayout}
+        contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
         {/* Tapping anywhere that is not a control closes the keyboard. */}
-        <Pressable accessible={false} onPress={Keyboard.dismiss} style={styles.content}>
+        <Pressable
+          accessible={false}
+          onPress={Keyboard.dismiss}
+          style={[styles.content, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 24 }]}
+        >
           <TalariSymbol width={72} />
 
           <AppText variant="heading" style={styles.headline} accessibilityRole="header">
@@ -82,68 +126,71 @@ export default function WelcomeScreen() {
             <AppText style={[styles.copyLine, { color: colors.textMuted }]}>Watch it grow.</AppText>
           </View>
 
-          <AppText style={[styles.label, { color: colors.text }]}>What should we call you?</AppText>
-          <AppTextInput
-            ref={inputRef}
-            value={name}
-            onChangeText={(value) => {
-              setName(value);
-              if (error) {
-                setError(null);
-              }
-            }}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onSubmitEditing={submit}
-            placeholder="Your name"
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="words"
-            autoCorrect={false}
-            returnKeyType="done"
-            maxLength={NAME_MAX_LENGTH}
-            maxFontSizeMultiplier={1.3}
-            accessibilityLabel="Your name"
-            style={[
-              styles.input,
-              { color: colors.text, backgroundColor: colors.surface, borderColor: focused ? focusBorder : colors.border },
-            ]}
-          />
-          {error ? (
-            <AppText
-              accessibilityRole="alert"
-              accessibilityLiveRegion="polite"
-              style={[styles.error, { color: colors.expense }]}
+          {/* Label, field, note, Continue and Skip form one block directly under the copy; it is what stays on screen. */}
+          <View onLayout={onFormLayout} style={styles.form}>
+            <AppText style={[styles.label, { color: colors.text }]}>What should we call you?</AppText>
+            <AppTextInput
+              ref={inputRef}
+              value={name}
+              onChangeText={(value) => {
+                setName(value);
+                if (error) {
+                  setError(null);
+                }
+              }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              onSubmitEditing={submit}
+              placeholder="Your name"
+              placeholderTextColor={colors.textMuted}
+              cursorColor={colors.primary}
+              selectionColor={colors.primary}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="done"
+              maxLength={NAME_MAX_LENGTH}
+              maxFontSizeMultiplier={1.3}
+              accessibilityLabel="Your name"
+              style={[
+                styles.input,
+                { color: colors.text, backgroundColor: colors.surface, borderColor: focused ? focusBorder : colors.inputBorder },
+              ]}
+            />
+            {error ? (
+              <AppText
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+                style={[styles.error, { color: colors.expense }]}
+              >
+                {error}
+              </AppText>
+            ) : null}
+
+            <View style={styles.privacy}>
+              <Ionicons name="lock-closed-outline" size={14} color={colors.textMuted} />
+              <AppText style={[styles.privacyText, { color: colors.textMuted }]}>
+                Stays on this phone. We use it for your greeting.
+              </AppText>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Continue"
+              onPress={submit}
+              style={({ pressed }) => [styles.continue, { backgroundColor: colors.primary }, pressed && styles.pressed]}
             >
-              {error}
-            </AppText>
-          ) : null}
+              <AppText style={[styles.continueLabel, { color: colors.onPrimary }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                Continue
+              </AppText>
+              <Ionicons name="arrow-forward" size={22} color={colors.onPrimary} style={styles.continueIcon} />
+            </Pressable>
 
-          <View style={styles.privacy}>
-            <Ionicons name="lock-closed-outline" size={14} color={colors.textMuted} />
-            <AppText style={[styles.privacyText, { color: colors.textMuted }]}>
-              Stays on this phone. We use it for your greeting.
-            </AppText>
+            <Pressable accessibilityRole="button" accessibilityLabel="Skip for now" onPress={skip} style={styles.skip} hitSlop={8}>
+              <AppText style={[styles.skipLabel, { color: colors.primaryText }]} maxFontSizeMultiplier={1.3}>
+                Skip for now
+              </AppText>
+            </Pressable>
           </View>
-
-          <View style={styles.spacer} />
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Continue"
-            onPress={submit}
-            style={({ pressed }) => [styles.continue, { backgroundColor: colors.primary }, pressed && styles.pressed]}
-          >
-            <AppText style={[styles.continueLabel, { color: colors.onPrimary }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-              Continue
-            </AppText>
-            <Ionicons name="arrow-forward" size={22} color={colors.onPrimary} style={styles.continueIcon} />
-          </Pressable>
-
-          <Pressable accessibilityRole="button" accessibilityLabel="Skip for now" onPress={skip} style={styles.skip} hitSlop={8}>
-            <AppText style={[styles.skipLabel, { color: colors.primaryText }]} maxFontSizeMultiplier={1.3}>
-              Skip for now
-            </AppText>
-          </Pressable>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -156,10 +203,10 @@ const styles = StyleSheet.create({
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: 24,
   },
   content: {
     flexGrow: 1,
+    paddingHorizontal: 24,
   },
   headline: {
     fontSize: 34,
@@ -174,10 +221,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 26,
   },
+  form: {
+    marginTop: 36,
+  },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    marginTop: 36,
     marginBottom: 10,
   },
   input: {
@@ -201,13 +250,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
   },
-  spacer: {
-    flexGrow: 1,
-    minHeight: 24,
-  },
   continue: {
     minHeight: 56,
     borderRadius: 16,
+    marginTop: 24,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 52,

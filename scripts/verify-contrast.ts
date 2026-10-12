@@ -146,7 +146,7 @@ check('light palette has no hero border', palettes.light.heroBorder === 'transpa
 // welcomeAccent on bg (large bold, 3:1), supporting copy / privacy note / placeholder = textMuted on bg and surface, the
 // Skip button = primaryText on bg, Continue = onPrimary on primary. The name field's focus border is a UI component edge,
 // which needs 3:1 (WCAG 1.4.11) against both the screen and the field fill.
-console.log('\nWelcome screen: input focus border (needs 3:1) and the resting border (informational)');
+console.log('\nText fields: focus border and resting border (inputBorder) - both need 3:1 against the field fill and the screen');
 const focusBorder: Record<ThemeScheme, keyof ThemeColors> = { light: 'text', dark: 'primary' };
 for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   const palette = palettes[scheme];
@@ -156,7 +156,11 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
     console.log(`  ${scheme.padEnd(5)} focus border (${focusBorder[scheme]}) on ${against.padEnd(8)} ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
     check(`${scheme}: welcome input focus border on ${against}`, ratio >= 3, ratio.toFixed(2));
   }
-  console.log(`  ${scheme.padEnd(5)} resting border token on surface   ${contrast(palette.border, palette.surface).toFixed(2).padStart(6)}  (informational: the token is a quiet divider colour)`);
+  for (const against of ['bg', 'surface'] as const) {
+    const ratio = contrast(palette.inputBorder, palette[against]);
+    console.log(`  ${scheme.padEnd(5)} resting border (inputBorder) on ${against.padEnd(8)} ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: inputBorder on ${against}`, ratio >= 3, ratio.toFixed(2));
+  }
 }
 
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------
