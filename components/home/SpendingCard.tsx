@@ -18,15 +18,13 @@ interface SpendingCardProps {
   onSeeDetails: () => void;
 }
 
-// The ring is large, like the old one: about 150 dp across with a thick stroke (21% of the diameter), scaled down on narrow cards
-// (half of the card width, never below MIN_DONUT) so the legend keeps room for "Name · 39%".
-const DONUT_SHARE = 0.5;
-const MIN_DONUT = 112;
-const MAX_DONUT = 152;
-const STROKE_SHARE = 0.21;
-// Dot 10 + "Name · 39%" (about 120) + amount 64 + two 8 dp gaps: below this legend width the amount column is dropped, so names
-// are never truncated to make room for it.
-const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 210;
+// The ring takes about a third of the card and never less than MIN_DONUT, so the legend keeps room for names.
+const DONUT_SHARE = 0.33;
+const MIN_DONUT = 96;
+const MAX_DONUT = 168;
+const STROKE_SHARE = 0.14;
+// Below this legend width the amount column is dropped, so names are not truncated to make room for it.
+const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 194;
 
 export default function SpendingCard({ slices, total, hidden, onSeeDetails }: SpendingCardProps) {
   const { colors } = useTheme();
@@ -195,7 +193,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
   },
   centerValue: {
     fontSize: 18,
@@ -229,11 +227,11 @@ const styles = StyleSheet.create({
   legendName: {
     flex: 1,
     minWidth: 0,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '500',
   },
   legendAmount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     flexShrink: 1,
     minWidth: 56,
