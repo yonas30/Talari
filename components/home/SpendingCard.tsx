@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 
-import { categoryColor, OTHERS_COLOR } from '../../theme/chartPalette';
+import { assignSliceColors, OTHERS_COLOR } from '../../theme/chartPalette';
 import { useTheme } from '../../theme/ThemeProvider';
 import { formatETB, formatNumber } from '../../utils/format';
 import { SpendingSlice, spendingAccessibilityLabel } from '../../utils/homeModel';
@@ -29,16 +29,40 @@ const MAX_DONUT = 168;
 const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 194;
 
 export default function SpendingCard({ slices, total, categoryIds, hidden, onSeeDetails }: SpendingCardProps) {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const [innerWidth, setInnerWidth] = useState(0);
   const [legendWidth, setLegendWidth] = useState(0);
 
   const donutSize = innerWidth > 0 ? Math.max(MIN_DONUT, Math.min(MAX_DONUT, Math.round(innerWidth * DONUT_SHARE))) : MIN_DONUT;
   const showAmounts = legendWidth === 0 || legendWidth >= AMOUNT_COLUMN_MIN_LEGEND_WIDTH;
+  // Real categories get their colours together (so neighbours differ); "Others" is always the neutral grey.
+  const categorySlices = slices.filter((slice) => !slice.isOthers);
+  const sliceColors = assignSliceColors(categorySlices.map((slice) => categoryIds[slice.label] ?? slice.label), scheme);
   const colored = slices.map((slice) => ({
     ...slice,
-    color: slice.isOthers ? OTHERS_COLOR : categoryColor(categoryIds[slice.label] ?? slice.label),
+    color: slice.isOthers ? OTHERS_COLOR : (sliceColors[categorySlices.indexOf(slice)] ?? OTHERS_COLOR),
   }));
+
+  if (slices.length === 0) {
+    // No spending: no ring, no legend, no placeholder circle - just the title row and a centred message.
+    return (
+      <Card>
+        <View style={styles.header}>
+          <AppText variant="title" style={styles.title} accessibilityRole="header" numberOfLines={1}>
+            Spending this month
+          </AppText>
+        </View>
+        <View
+          style={styles.empty}
+          accessible
+          accessibilityLabel={`${spendingAccessibilityLabel([], 0, hidden)} Your spending will appear here.`}
+        >
+          <AppText style={[styles.emptyTitle, { color: colors.text }]}>No spending yet this month</AppText>
+          <AppText style={[styles.emptyHint, { color: colors.textMuted }]}>Your spending will appear here.</AppText>
+        </View>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -69,20 +93,9 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
           accessibilityLabel={spendingAccessibilityLabel(slices, total, hidden)}
           style={{ width: donutSize, height: donutSize }}
         >
-          <Ring size={donutSize} slices={colored} empty={slices.length === 0} />
+          <Ring size={donutSize} slices={colored} />
           <View style={styles.center} pointerEvents="none">
-            {slices.length === 0 ? (
-              <AppText
-                style={[styles.emptyText, { color: colors.textMuted }]}
-                numberOfLines={3}
-                adjustsFontSizeToFit
-                minimumFontScale={0.7}
-                maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}
-              >
-                No spending yet this month
-              </AppText>
-            ) : (
-              <>
+            <>
                 <AppText
                   variant="number"
                   style={[styles.centerValue, { color: colors.text }]}
@@ -95,13 +108,11 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
                 <AppText style={[styles.centerLabel, { color: colors.textMuted }]} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
                   Total
                 </AppText>
-              </>
-            )}
+            </>
           </View>
         </View>
 
-        {slices.length > 0 ? (
-          <View style={styles.legend} onLayout={(event) => setLegendWidth(event.nativeEvent.layout.width)}>
+        <View style={styles.legend} onLayout={(event) => setLegendWidth(event.nativeEvent.layout.width)}>
             {colored.map((slice) => (
               <View key={slice.key} style={styles.legendRow} accessible accessibilityLabel={`${slice.label}, ${slice.percent} percent, ${formatETB(slice.amount)}`}>
                 <View style={[styles.dot, { backgroundColor: slice.color }]} />
@@ -124,47 +135,50 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
                 ) : null}
               </View>
             ))}
-          </View>
-        ) : null}
+        </View>
       </View>
     </Card>
   );
 }
 
-function Ring({ size, slices, empty }: { size: number; slices: (SpendingSlice & { color: string })[]; empty: boolean }) {
-  const { colors } = useTheme();
+// A 2 px gap in the card's surface colour separates neighbouring slices (the gaps are simply not painted). One slice is a full ring.
+const SLICE_GAP = 2;
+
+function Ring({ size, slices }: { size: number; slices: (SpendingSlice & { color: string })[] }) {
   const strokeWidth = Math.round(size * 0.14);
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
   const total = slices.reduce((sum, slice) => sum + slice.amount, 0);
-  let offset = 0;
+  const gap = slices.length > 1 ? SLICE_GAP : 0;
+  // Where each arc starts along the circle (cumulative length of the slices before it).
+  const starts: number[] = [];
+  let running = 0;
+  for (const slice of slices) {
+    starts.push(running);
+    running += (slice.amount / total) * circumference;
+  }
 
   return (
     <Svg width={size} height={size}>
       <G rotation={-90} origin={`${center}, ${center}`}>
-        {empty || total === 0 ? (
-          <Circle cx={center} cy={center} r={radius} stroke={colors.border} strokeWidth={strokeWidth} fill="none" />
-        ) : (
-          slices.map((slice) => {
-            const length = (slice.amount / total) * circumference;
-            const circle = (
-              <Circle
-                key={slice.key}
-                cx={center}
-                cy={center}
-                r={radius}
-                stroke={slice.color}
-                strokeWidth={strokeWidth}
-                strokeDasharray={`${length} ${circumference - length}`}
-                strokeDashoffset={-offset}
-                fill="none"
-              />
-            );
-            offset += length;
-            return circle;
-          })
-        )}
+        {slices.map((slice, index) => {
+          const length = (slice.amount / total) * circumference;
+          const drawn = Math.max(length - gap, 0.5);
+          return (
+            <Circle
+              key={slice.key}
+              cx={center}
+              cy={center}
+              r={radius}
+              stroke={slice.color}
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${drawn} ${circumference - drawn}`}
+              strokeDashoffset={-(starts[index] + gap / 2)}
+              fill="none"
+            />
+          );
+        })}
       </G>
     </Svg>
   );
@@ -211,8 +225,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
-  emptyText: {
-    fontSize: 12,
+  empty: {
+    alignItems: 'center',
+    paddingTop: 14,
+    paddingBottom: 6,
+    gap: 2,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  emptyHint: {
+    fontSize: 13,
     textAlign: 'center',
   },
   legend: {
