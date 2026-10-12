@@ -1,6 +1,5 @@
 import { StyleSheet, View, ViewProps } from 'react-native';
 
-import { radius } from '../constants/theme';
 import { useTheme } from '../theme/ThemeProvider';
 
 interface CardProps extends ViewProps {
@@ -33,7 +32,7 @@ export default function Card({ variant = 'surface', style, ...rest }: CardProps)
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: radius.card,
+    borderRadius: 20,
     padding: 16,
   },
   // Barely there: the border does the work. No elevation, which on Android draws a heavy shadow.
