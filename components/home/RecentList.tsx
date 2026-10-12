@@ -80,7 +80,8 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
                     style={[styles.amount, { color: textColor }]}
                     numberOfLines={1}
                     adjustsFontSizeToFit
-                    minimumFontScale={0.7}
+                    // 0.5: "−ETB 1,234,567.89" needs 0.77 of 15 sp in a 108 dp column at 320 dp, more at the 1.3x cap.
+                    minimumFontScale={0.5}
                     maxFontSizeMultiplier={MONEY_MAX_FONT_SCALE}
                   >
                     {formatTransactionAmount(transaction.type, transaction.amountETB)}

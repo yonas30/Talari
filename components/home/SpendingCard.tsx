@@ -20,17 +20,20 @@ interface SpendingCardProps {
   onSeeDetails: () => void;
 }
 
-const MIN_DONUT = 110;
+// The ring takes about a third of the card and never less than MIN_DONUT, so the legend keeps room for names.
+const DONUT_SHARE = 0.33;
+const MIN_DONUT = 96;
 const MAX_DONUT = 168;
-// Below this legend width the amount column is dropped, so names are not truncated to make room for it.
-const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 190;
+// Dot 10 + name 70 + percent 34 + amount 56 + three 8 dp gaps: below this legend width the amount column is dropped, so names
+// are never truncated to make room for it.
+const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 194;
 
 export default function SpendingCard({ slices, total, categoryIds, hidden, onSeeDetails }: SpendingCardProps) {
   const { colors } = useTheme();
   const [innerWidth, setInnerWidth] = useState(0);
   const [legendWidth, setLegendWidth] = useState(0);
 
-  const donutSize = innerWidth > 0 ? Math.max(MIN_DONUT, Math.min(MAX_DONUT, Math.round(innerWidth * 0.4))) : MIN_DONUT;
+  const donutSize = innerWidth > 0 ? Math.max(MIN_DONUT, Math.min(MAX_DONUT, Math.round(innerWidth * DONUT_SHARE))) : MIN_DONUT;
   const showAmounts = legendWidth === 0 || legendWidth >= AMOUNT_COLUMN_MIN_LEGEND_WIDTH;
   const colored = slices.map((slice) => ({
     ...slice,

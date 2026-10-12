@@ -42,7 +42,8 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
         style={[styles.total, { color: colors.heroText }]}
         numberOfLines={1}
         adjustsFontSizeToFit
-        minimumFontScale={0.7}
+        // 0.5, not 0.7: at 320 dp "ETB 1,234,567.89" needs 0.69 of 40 sp, and at the 1.3x font cap the 0.7 floor would still clip it.
+        minimumFontScale={0.5}
       >
         {mask(total)}
       </AppText>
@@ -57,7 +58,7 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
             style={[styles.columnValue, { color: colors.heroText }]}
             numberOfLines={1}
             adjustsFontSizeToFit
-            minimumFontScale={0.6}
+            minimumFontScale={0.5}
           >
             {mask(available)}
           </AppText>
@@ -69,7 +70,7 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
             style={[styles.columnValue, { color: colors.heroText }]}
             numberOfLines={1}
             adjustsFontSizeToFit
-            minimumFontScale={0.6}
+            minimumFontScale={0.5}
           >
             {mask(saved)}
           </AppText>
