@@ -4,7 +4,7 @@
 //  3. The categorical chart palette: no red/green, stable id -> colour mapping.
 // Run: npx tsx scripts/verify-contrast.ts
 import { colors } from '../constants/theme';
-import { CHART_PALETTE, categoryColor } from '../theme/chartPalette';
+import { CATEGORY_PALETTE, CHART_PALETTE, categoryColor, OTHERS_COLOR } from '../theme/chartPalette';
 import { palettes, ThemeColors, ThemeScheme } from '../theme/tokens';
 
 let passed = 0;
@@ -163,6 +163,53 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   }
 }
 
+// ---- 1b. Home tokens (Phase 3) ---------------------------------------------------------------------------------------
+// A colour with transparency, resolved against what is behind it, as a solid hex.
+function solid(color: string, base: string): string {
+  const [r, g, b] = over(color, base);
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+console.log('\nHome: icons on their tinted discs (graphics need 3:1), streak card text, hero');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  const discs: [string, keyof ThemeColors, keyof ThemeColors][] = [
+    ['income icon', 'income', 'incomeTint'],
+    ['expense icon', 'expense', 'expenseTint'],
+    ['net icon', 'net', 'netTint'],
+    ['transfer icon', 'transfer', 'transferTint'],
+  ];
+  for (const [label, icon, tint] of discs) {
+    const disc = solid(c[tint], c.surface);
+    const ratio = contrast(c[icon], disc);
+    console.log(`  ${scheme.padEnd(5)} ${label.padEnd(14)} on its disc over surface ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: ${label} on tint`, ratio >= 3, ratio.toFixed(2));
+  }
+  // The same icons with their amounts: the amount text is checked on the card surface in the table above (income/expense on surface).
+  const streakBg = solid(c.streakFill, c.bg);
+  for (const [label, fg, min] of [
+    ['streak title (text)', c.text, BODY],
+    ['streak subtitle (textMuted)', c.textMuted, BODY],
+    ['streak flame (graphic)', c.streakAccent, LARGE],
+  ] as [string, string, number][]) {
+    const ratio = contrast(fg, streakBg);
+    console.log(`  ${scheme.padEnd(5)} ${label.padEnd(28)} on streak card ${ratio.toFixed(2).padStart(6)}  (>= ${min})${ratio >= min ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: ${label} on streak card`, ratio >= min, ratio.toFixed(2));
+  }
+  const heroDivider = contrast(solid(c.heroDivider, c.heroBg), c.heroBg);
+  console.log(`  ${scheme.padEnd(5)} hero divider on hero (decorative line, informational) ${heroDivider.toFixed(2)}`);
+  // Section headings and links on the screen background
+  for (const fg of ['text', 'primaryText'] as const) {
+    const ratio = contrast(c[fg], c.bg);
+    check(`${scheme}: ${fg} on bg (headings, See all links)`, ratio >= BODY, ratio.toFixed(2));
+  }
+  // The raised + button: navy plus on the brand orange, and its separating ring in Dark
+  check(`${scheme}: plus icon (onPrimary) on the primary fill`, contrast(c.onPrimary, c.primary) >= 3, contrast(c.onPrimary, c.primary).toFixed(2));
+  // Tab bar: active label (primaryText) and inactive label (textMuted) on the bar surface
+  check(`${scheme}: active tab label on the bar`, contrast(c.primaryText, c.surface) >= BODY, contrast(c.primaryText, c.surface).toFixed(2));
+  check(`${scheme}: inactive tab label on the bar`, contrast(c.textMuted, c.surface) >= BODY, contrast(c.textMuted, c.surface).toFixed(2));
+}
+
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------
 const OLD_COLORS: Record<keyof typeof colors, string> = {
   background: '#F7F7F3',
@@ -203,10 +250,12 @@ function isRedOrGreen(hex: string): boolean {
   return hueValue < 15 || hueValue > 345 || (hueValue > 75 && hueValue < 165);
 }
 check('chart palette has 7 distinct colours', new Set(CHART_PALETTE).size === 7);
+check('category palette is the chart palette without the Others grey (6 colours)', CATEGORY_PALETTE.length === 6 && !CATEGORY_PALETTE.includes(OTHERS_COLOR as never));
 check('chart palette contains no red or green', CHART_PALETTE.every((hex) => !isRedOrGreen(hex)));
 check('category id -> colour is deterministic', categoryColor('cat-food') === categoryColor('cat-food'));
 const sample = Array.from({ length: 70 }, (_, i) => categoryColor(`category-${i}`));
-check('ids spread over the palette (every colour used)', new Set(sample).size === CHART_PALETTE.length);
+check('ids spread over the category palette (every colour used)', new Set(sample).size === CATEGORY_PALETTE.length);
+check('no category ever gets the Others grey', sample.every((hex) => hex !== OTHERS_COLOR));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

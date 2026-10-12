@@ -21,6 +21,11 @@ function hashId(id: string): number {
   return hash >>> 0;
 }
 
+// "Others" (the aggregate of small categories) is ALWAYS this neutral grey, so no real category may use it: category colours
+// come from the palette without the grey.
+export const OTHERS_COLOR = '#8B93A3';
+export const CATEGORY_PALETTE = CHART_PALETTE.filter((hex) => hex !== OTHERS_COLOR);
+
 export function categoryColor(categoryId: string): string {
-  return CHART_PALETTE[hashId(categoryId) % CHART_PALETTE.length];
+  return CATEGORY_PALETTE[hashId(categoryId) % CATEGORY_PALETTE.length];
 }

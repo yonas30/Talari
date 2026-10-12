@@ -44,6 +44,37 @@ export interface ThemeColors {
   segmentSelectedBg: string;
   segmentSelectedText: string;
   segmentText: string;
+  /** Tinted fills behind icons (about 14% of the brand fill), so the icon in the text-safe colour sits on a soft disc. */
+  incomeTint: string;
+  expenseTint: string;
+  netTint: string;
+  transferTint: string;
+  /** The thin line between the balance and the Available / Saved columns on the hero card. */
+  heroDivider: string;
+  /** Streak card: soft orange wash in Light, the plain surface in Dark. */
+  streakFill: string;
+  streakBorder: string;
+  /** The flame: the text-safe orange in Light, the brand orange in Dark. */
+  streakAccent: string;
+}
+
+// Brand fills: icon circles, chart slices, dots. Same in both schemes (they are never text).
+export const brandFills = {
+  income: '#2E9B62',
+  expense: '#D9534F',
+  net: '#4D7FBF',
+  saved: '#4D7FBF',
+  transfer: '#7A6AA8',
+  goals: '#71805A',
+} as const;
+
+// Icon circles use the brand colour at about 14% alpha.
+export const FILL_TINT_ALPHA = 0.14;
+
+export function withAlpha(hex: string, alpha: number): string {
+  const value = hex.replace('#', '');
+  const channel = (offset: number) => parseInt(value.slice(offset, offset + 2), 16);
+  return `rgba(${channel(0)},${channel(2)},${channel(4)},${alpha})`;
 }
 
 export const lightColors: ThemeColors = {
@@ -76,6 +107,14 @@ export const lightColors: ThemeColors = {
   segmentSelectedBg: '#17233C',
   segmentSelectedText: '#FFFFFF',
   segmentText: '#5B6679',
+  incomeTint: withAlpha(brandFills.income, FILL_TINT_ALPHA),
+  expenseTint: withAlpha(brandFills.expense, FILL_TINT_ALPHA),
+  netTint: withAlpha(brandFills.net, FILL_TINT_ALPHA),
+  transferTint: withAlpha(brandFills.transfer, FILL_TINT_ALPHA),
+  heroDivider: 'rgba(255,255,255,0.14)',
+  streakFill: withAlpha('#F47C20', FILL_TINT_ALPHA),
+  streakBorder: '#E7E2D8',
+  streakAccent: '#BF3F12',
 };
 
 export const darkColors: ThemeColors = {
@@ -108,25 +147,14 @@ export const darkColors: ThemeColors = {
   segmentSelectedBg: '#F5F5F2',
   segmentSelectedText: '#17233C',
   segmentText: '#AEB5C2',
+  incomeTint: withAlpha(brandFills.income, FILL_TINT_ALPHA),
+  expenseTint: withAlpha(brandFills.expense, FILL_TINT_ALPHA),
+  netTint: withAlpha(brandFills.net, FILL_TINT_ALPHA),
+  transferTint: withAlpha(brandFills.transfer, FILL_TINT_ALPHA),
+  heroDivider: 'rgba(255,255,255,0.14)',
+  streakFill: '#182033',
+  streakBorder: 'rgba(255,255,255,0.08)',
+  streakAccent: '#F47C20',
 };
 
 export const palettes: Record<ThemeScheme, ThemeColors> = { light: lightColors, dark: darkColors };
-
-// Brand fills: icon circles, chart slices, dots. Same in both schemes (they are never text).
-export const brandFills = {
-  income: '#2E9B62',
-  expense: '#D9534F',
-  net: '#4D7FBF',
-  saved: '#4D7FBF',
-  transfer: '#7A6AA8',
-  goals: '#71805A',
-} as const;
-
-// Icon circles use the brand colour at about 14% alpha.
-export const FILL_TINT_ALPHA = 0.14;
-
-export function withAlpha(hex: string, alpha: number): string {
-  const value = hex.replace('#', '');
-  const channel = (offset: number) => parseInt(value.slice(offset, offset + 2), 16);
-  return `rgba(${channel(0)},${channel(2)},${channel(4)},${alpha})`;
-}
