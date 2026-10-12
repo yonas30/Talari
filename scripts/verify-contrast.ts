@@ -4,16 +4,8 @@
 //  3. The categorical chart palette: no red/green, stable id -> colour mapping.
 // Run: npx tsx scripts/verify-contrast.ts
 import { colors } from '../constants/theme';
-import {
-  assignSliceColors,
-  CATEGORY_PALETTE,
-  CHART_PALETTE,
-  categoryColor,
-  MIN_NEIGHBOUR_LUMINANCE_GAP,
-  OTHERS_COLOR,
-  relativeLuminance,
-  WARM_PALETTE,
-} from '../theme/chartPalette';
+import { CATEGORY_PALETTE, CHART_PALETTE, categoryColor, OTHERS_COLOR } from '../theme/chartPalette';
+import { BREAKDOWN_PALETTE } from '../utils/reports';
 import { palettes, ThemeColors, ThemeScheme } from '../theme/tokens';
 
 let passed = 0;
@@ -179,7 +171,7 @@ function solid(color: string, base: string): string {
   return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
-console.log('\nHome: glyphs on their icon discs (graphics need 3:1), large figures, streak card, + button, tab bar');
+console.log('\nHome: glyphs on their PALE icon discs (graphics need 3:1), large figures, streak card, + button, tab bar');
 for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   const c = palettes[scheme];
   const discs: [string, keyof ThemeColors, keyof ThemeColors][] = [
@@ -194,6 +186,7 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
     console.log(`  ${scheme.padEnd(5)} ${label.padEnd(15)} on its disc over surface ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
     check(`${scheme}: ${label} on disc`, ratio >= 3, ratio.toFixed(2));
   }
+  // The pale discs: glyph colour on a 16% tint over the card surface (graphics need 3:1).
   // Net is drawn at 20 sp bold = large text (3:1) in netLarge; income / expense amounts are small text (4.5:1, checked above).
   for (const against of ['surface'] as const) {
     const ratio = contrast(c.netLarge, c[against]);
@@ -231,9 +224,9 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
 }
 
 // Donut slices and legend dots against the card surface. They carry no meaning alone (the legend text says it all), so this is informational.
-console.log('\nChart colours on the card surface (informational: legend text carries the meaning)');
+console.log('\nHome donut colours (the breakdown colours Insights also uses) on the card surface (informational: legend text carries the meaning)');
 for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
-  for (const hex of [...(scheme === 'light' ? WARM_PALETTE : CATEGORY_PALETTE), OTHERS_COLOR]) {
+  for (const hex of [...BREAKDOWN_PALETTE, OTHERS_COLOR]) {
     const ratio = contrast(hex, palettes[scheme].surface);
     console.log(`  ${scheme.padEnd(5)} ${hex} on surface ${ratio.toFixed(2).padStart(6)}${ratio >= 3 ? '' : '   (below 3:1)'}`);
   }
@@ -286,40 +279,6 @@ const sample = Array.from({ length: 70 }, (_, i) => categoryColor(`category-${i}
 check('ids spread over the category palette (every colour used)', new Set(sample).size === CATEGORY_PALETTE.length);
 check('no category ever gets the Others grey', sample.every((hex) => hex !== OTHERS_COLOR));
 
-// The Home donut (Light: warm family; Dark: the multi-hue set). Colours are chosen together for the visible slices.
-check('warm palette has 6 distinct colours, none of them the Others grey', new Set(WARM_PALETTE).size === 6 && !WARM_PALETTE.some((hex) => (hex as string) === OTHERS_COLOR));
-check('warm palette has no green or blue-green; the only cool hues are navy and the brand blue', WARM_PALETTE.every((hex) => !isRedOrGreen(hex) || hex === '#C2410C'));
-let sliceChecksOk = true;
-let neighbourOk = true;
-let stableOk = true;
-let darkOk = true;
-for (let seed = 0; seed < 400; seed += 1) {
-  for (const count of [1, 2, 3, 4, 5, 6]) {
-    const ids = Array.from({ length: count }, (_, i) => `cat-${seed}-${i}`);
-    for (const scheme of ['light', 'dark'] as const) {
-      const colors = assignSliceColors(ids, scheme);
-      sliceChecksOk = sliceChecksOk && colors.length === count && new Set(colors).size === count;
-      if (scheme === 'light') {
-        for (let i = 1; i < count; i += 1) {
-          neighbourOk = neighbourOk && Math.abs(relativeLuminance(colors[i]) - relativeLuminance(colors[i - 1])) >= MIN_NEIGHBOUR_LUMINANCE_GAP - 1e-9;
-        }
-      } else {
-        darkOk = darkOk && colors.every((hex) => CATEGORY_PALETTE.includes(hex as never));
-      }
-    }
-    stableOk = stableOk && JSON.stringify(assignSliceColors(ids, 'light')) === JSON.stringify(assignSliceColors(ids, 'light'));
-  }
-}
-check('Light donut: every visible slice has its own colour (1-6 slices, 400 random id sets)', sliceChecksOk);
-check('Light donut: neighbouring slices differ in lightness by at least ' + MIN_NEIGHBOUR_LUMINANCE_GAP, neighbourOk);
-check('slice colours are deterministic for the same categories', stableOk);
-check('Dark donut keeps the multi-hue category palette', darkOk);
-const first = assignSliceColors(['food'], 'light')[0];
-check('a lone category keeps its preferred colour whatever else exists later', assignSliceColors(['food', 'rent', 'fun'], 'light')[0] === first);
-check('the three biggest warm slices are clearly different in lightness (probe: food / rent / transport)', (() => {
-  const colors = assignSliceColors(['food', 'rent', 'transport'], 'light').map(relativeLuminance);
-  return Math.abs(colors[0] - colors[1]) >= MIN_NEIGHBOUR_LUMINANCE_GAP && Math.abs(colors[1] - colors[2]) >= MIN_NEIGHBOUR_LUMINANCE_GAP;
-})());
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { LayoutChangeEvent, Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 
-import { assignSliceColors, OTHERS_COLOR } from '../../theme/chartPalette';
+import { OTHERS_COLOR } from '../../theme/chartPalette';
 import { useTheme } from '../../theme/ThemeProvider';
 import { formatETB, formatNumber } from '../../utils/format';
 import { SpendingSlice, spendingAccessibilityLabel } from '../../utils/homeModel';
@@ -13,56 +13,30 @@ import Card from '../Card';
 interface SpendingCardProps {
   slices: SpendingSlice[];
   total: number;
-  /** Category id by category name, so a category keeps the same colour on every screen. Unknown names fall back to the name itself. */
-  categoryIds: Record<string, string>;
   /** Balances are hidden: nothing here is masked today (spending is not a balance), but the spoken summary leaves amounts out. */
   hidden: boolean;
   onSeeDetails: () => void;
 }
 
-// The ring takes about a third of the card and never less than MIN_DONUT, so the legend keeps room for names.
-const DONUT_SHARE = 0.33;
-const MIN_DONUT = 96;
-const MAX_DONUT = 168;
-// Dot 10 + name 70 + percent 34 + amount 56 + three 8 dp gaps: below this legend width the amount column is dropped, so names
+// The ring is large, like the old one: about 150 dp across with a thick stroke (21% of the diameter), scaled down on narrow cards
+// (half of the card width, never below MIN_DONUT) so the legend keeps room for "Name · 39%".
+const DONUT_SHARE = 0.5;
+const MIN_DONUT = 112;
+const MAX_DONUT = 152;
+const STROKE_SHARE = 0.21;
+// Dot 10 + "Name · 39%" (about 120) + amount 64 + two 8 dp gaps: below this legend width the amount column is dropped, so names
 // are never truncated to make room for it.
-const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 194;
+const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 210;
 
-export default function SpendingCard({ slices, total, categoryIds, hidden, onSeeDetails }: SpendingCardProps) {
-  const { colors, scheme } = useTheme();
+export default function SpendingCard({ slices, total, hidden, onSeeDetails }: SpendingCardProps) {
+  const { colors } = useTheme();
   const [innerWidth, setInnerWidth] = useState(0);
   const [legendWidth, setLegendWidth] = useState(0);
 
   const donutSize = innerWidth > 0 ? Math.max(MIN_DONUT, Math.min(MAX_DONUT, Math.round(innerWidth * DONUT_SHARE))) : MIN_DONUT;
   const showAmounts = legendWidth === 0 || legendWidth >= AMOUNT_COLUMN_MIN_LEGEND_WIDTH;
-  // Real categories get their colours together (so neighbours differ); "Others" is always the neutral grey.
-  const categorySlices = slices.filter((slice) => !slice.isOthers);
-  const sliceColors = assignSliceColors(categorySlices.map((slice) => categoryIds[slice.label] ?? slice.label), scheme);
-  const colored = slices.map((slice) => ({
-    ...slice,
-    color: slice.isOthers ? OTHERS_COLOR : (sliceColors[categorySlices.indexOf(slice)] ?? OTHERS_COLOR),
-  }));
-
-  if (slices.length === 0) {
-    // No spending: no ring, no legend, no placeholder circle - just the title row and a centred message.
-    return (
-      <Card>
-        <View style={styles.header}>
-          <AppText variant="title" style={styles.title} accessibilityRole="header" numberOfLines={1}>
-            Spending this month
-          </AppText>
-        </View>
-        <View
-          style={styles.empty}
-          accessible
-          accessibilityLabel={`${spendingAccessibilityLabel([], 0, hidden)} Your spending will appear here.`}
-        >
-          <AppText style={[styles.emptyTitle, { color: colors.text }]}>No spending yet this month</AppText>
-          <AppText style={[styles.emptyHint, { color: colors.textMuted }]}>Your spending will appear here.</AppText>
-        </View>
-      </Card>
-    );
-  }
+  // Each category has the colour the existing breakdown gave it (the same one Insights shows); "Others" is always the neutral grey.
+  const colored = slices.map((slice) => ({ ...slice, color: slice.isOthers ? OTHERS_COLOR : (slice.color ?? OTHERS_COLOR) }));
 
   return (
     <Card>
@@ -83,6 +57,10 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
         </Pressable>
       </View>
 
+      {slices.length === 0 ? (
+        // No spending: no ring, no legend - the old message under the title row.
+        <AppText style={[styles.emptyMessage, { color: colors.textMuted }]}>No expenses logged yet this month.</AppText>
+      ) : (
       <View
         style={styles.body}
         onLayout={(event: LayoutChangeEvent) => setInnerWidth(event.nativeEvent.layout.width)}
@@ -106,7 +84,7 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
                   {formatNumber(total, 0)}
                 </AppText>
                 <AppText style={[styles.centerLabel, { color: colors.textMuted }]} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
-                  Total
+                  ETB total
                 </AppText>
             </>
           </View>
@@ -116,11 +94,14 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
             {colored.map((slice) => (
               <View key={slice.key} style={styles.legendRow} accessible accessibilityLabel={`${slice.label}, ${slice.percent} percent, ${formatETB(slice.amount)}`}>
                 <View style={[styles.dot, { backgroundColor: slice.color }]} />
-                <AppText style={[styles.legendName, { color: colors.text }]} numberOfLines={1}>
-                  {slice.label}
-                </AppText>
-                <AppText variant="number" style={[styles.legendPercent, { color: colors.textMuted }]} numberOfLines={1}>
-                  {slice.percent}%
+                <AppText
+                  style={[styles.legendName, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                  maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}
+                >
+                  {slice.label} · {slice.percent}%
                 </AppText>
                 {showAmounts ? (
                   <AppText
@@ -137,6 +118,7 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
             ))}
         </View>
       </View>
+      )}
     </Card>
   );
 }
@@ -145,7 +127,7 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
 const SLICE_GAP = 2;
 
 function Ring({ size, slices }: { size: number; slices: (SpendingSlice & { color: string })[] }) {
-  const strokeWidth = Math.round(size * 0.14);
+  const strokeWidth = Math.round(size * STROKE_SHARE);
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
@@ -213,7 +195,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
   },
   centerValue: {
     fontSize: 18,
@@ -225,20 +207,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
-  empty: {
-    alignItems: 'center',
-    paddingTop: 14,
-    paddingBottom: 6,
-    gap: 2,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  emptyHint: {
-    fontSize: 13,
-    textAlign: 'center',
+  emptyMessage: {
+    fontSize: 14,
+    marginTop: 14,
   },
   legend: {
     flex: 1,
@@ -258,15 +229,11 @@ const styles = StyleSheet.create({
   legendName: {
     flex: 1,
     minWidth: 0,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '500',
   },
-  legendPercent: {
-    fontSize: 13,
-    flexShrink: 0,
-  },
   legendAmount: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     flexShrink: 1,
     minWidth: 56,

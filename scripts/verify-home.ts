@@ -72,7 +72,7 @@ check('does not modify its input', (() => {
 })());
 
 // ---- accessibility summary ------------------------------------------------------------------------------------------
-check('empty ring has a plain label', spendingAccessibilityLabel([], 0, false) === 'Spending this month: no spending yet.');
+check('empty ring has a plain label', spendingAccessibilityLabel([], 0, false) === 'No expenses logged yet this month.');
 const label = spendingAccessibilityLabel(four.slices, four.total, false);
 check('summary names every slice with its percent and the total', label.includes('ETB 100.00') && four.slices.every((s) => label.includes(`${s.label} ${s.percent} percent`)));
 check('hidden balances: amounts are not read out', !spendingAccessibilityLabel(four.slices, four.total, true).includes('ETB'));

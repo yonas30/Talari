@@ -13,6 +13,8 @@ export interface SpendingInput {
   /** Category name, as stored on the transactions. */
   label: string;
   amount: number;
+  /** The colour the existing breakdown gave this category (shared with Insights). */
+  color?: string;
 }
 
 export interface SpendingSlice {
@@ -24,6 +26,8 @@ export interface SpendingSlice {
   percent: number;
   /** The aggregate of every category after the top three. */
   isOthers: boolean;
+  /** Breakdown colour of a real category; "Others" has none (it is always the neutral grey). */
+  color?: string;
 }
 
 /**
@@ -64,11 +68,12 @@ export function buildSpendingSlices(items: SpendingInput[], topCount = TOP_CATEG
 
   const top = sorted.slice(0, topCount);
   const rest = sorted.slice(topCount);
-  const entries: { key: string; label: string; amount: number; isOthers: boolean }[] = top.map((item) => ({
+  const entries: { key: string; label: string; amount: number; isOthers: boolean; color?: string }[] = top.map((item) => ({
     key: `category:${item.label}`,
     label: item.label,
     amount: item.amount,
     isOthers: false,
+    color: item.color,
   }));
   if (rest.length > 0) {
     entries.push({
@@ -86,7 +91,7 @@ export function buildSpendingSlices(items: SpendingInput[], topCount = TOP_CATEG
 /** One sentence for screen readers: the legend text already carries the information, this summarises the whole ring. */
 export function spendingAccessibilityLabel(slices: SpendingSlice[], total: number, hidden: boolean): string {
   if (slices.length === 0) {
-    return 'Spending this month: no spending yet.';
+    return 'No expenses logged yet this month.';
   }
   if (hidden) {
     return 'Spending this month. Amounts are hidden.';

@@ -110,11 +110,10 @@ export default function HomeScreen() {
   const spending = useMemo(() => {
     const dates = getRangeDates('monthly');
     const filtered = getFilteredTransactionsByRange(transactions, dates.start, dates.end);
-    return buildSpendingSlices(getCategoryBreakdown(filtered).map(({ label, amount }) => ({ label, amount })));
+    return buildSpendingSlices(getCategoryBreakdown(filtered));
   }, [transactions]);
 
-  // By category NAME (what transactions store): the id keeps a category's chart colour stable, the icon is the emoji it stores.
-  const categoryIds = useMemo(() => Object.fromEntries(categories.map((category) => [category.name, category.id])), [categories]);
+  // By category NAME (what transactions store): the icon is the emoji the category stores.
   const categoryIcons = useMemo(() => Object.fromEntries(categories.map((category) => [category.name, category.icon])), [categories]);
 
   const recentTransactions = devPreview.noTransactions ? [] : transactions.slice(0, 3);
@@ -161,7 +160,6 @@ export default function HomeScreen() {
         <SpendingCard
           slices={shownSpending.slices}
           total={shownSpending.total}
-          categoryIds={categoryIds}
           hidden={isBalanceHidden}
           onSeeDetails={() => router.navigate('/reports')}
         />

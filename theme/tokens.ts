@@ -45,8 +45,8 @@ export interface ThemeColors {
   segmentSelectedText: string;
   segmentText: string;
   /**
-   * Icon discs. Light: the solid, vivid brand fill with a white glyph (3.5:1 or better). Dark: a soft 14% tint with the
-   * text-safe glyph colour. The glyph colours below are what to draw ON the matching disc.
+   * Icon discs: a pale 16% tint of the brand fill with the text-safe glyph colour on it (both themes). The glyph colours
+   * below are what to draw ON the matching disc.
    */
   incomeDisc: string;
   expenseDisc: string;
@@ -84,6 +84,8 @@ export const brandFills = {
 
 // Icon circles use the brand colour at about 14% alpha.
 export const FILL_TINT_ALPHA = 0.14;
+// Icon discs on Home (and the recent list): pale, so they do not compete with the numbers.
+export const DISC_ALPHA = 0.16;
 
 export function withAlpha(hex: string, alpha: number): string {
   const value = hex.replace('#', '');
@@ -121,14 +123,14 @@ export const lightColors: ThemeColors = {
   segmentSelectedBg: '#17233C',
   segmentSelectedText: '#FFFFFF',
   segmentText: '#5B6679',
-  incomeDisc: brandFills.income,
-  expenseDisc: brandFills.expense,
-  netDisc: brandFills.net,
-  transferDisc: brandFills.transfer,
-  incomeGlyph: '#FFFFFF',
-  expenseGlyph: '#FFFFFF',
-  netGlyph: '#FFFFFF',
-  transferGlyph: '#FFFFFF',
+  incomeDisc: withAlpha(brandFills.income, DISC_ALPHA),
+  expenseDisc: withAlpha(brandFills.expense, DISC_ALPHA),
+  netDisc: withAlpha(brandFills.net, DISC_ALPHA),
+  transferDisc: withAlpha(brandFills.transfer, DISC_ALPHA),
+  incomeGlyph: '#1F7A4A',
+  expenseGlyph: '#C23A33',
+  netGlyph: '#3A6AA8',
+  transferGlyph: '#6B5B9E',
   expenseWash: withAlpha(brandFills.expense, 0.12),
   netLarge: brandFills.net,
   heroDivider: 'rgba(255,255,255,0.14)',
@@ -169,10 +171,10 @@ export const darkColors: ThemeColors = {
   segmentSelectedBg: '#F5F5F2',
   segmentSelectedText: '#17233C',
   segmentText: '#AEB5C2',
-  incomeDisc: withAlpha(brandFills.income, FILL_TINT_ALPHA),
-  expenseDisc: withAlpha(brandFills.expense, FILL_TINT_ALPHA),
-  netDisc: withAlpha(brandFills.net, FILL_TINT_ALPHA),
-  transferDisc: withAlpha(brandFills.transfer, FILL_TINT_ALPHA),
+  incomeDisc: withAlpha(brandFills.income, DISC_ALPHA),
+  expenseDisc: withAlpha(brandFills.expense, DISC_ALPHA),
+  netDisc: withAlpha(brandFills.net, DISC_ALPHA),
+  transferDisc: withAlpha(brandFills.transfer, DISC_ALPHA),
   incomeGlyph: '#2E9B62',
   expenseGlyph: '#E8736F',
   netGlyph: '#5B8FD0',

@@ -79,6 +79,10 @@ export function getFilteredTransactionsByRange(
   return transactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate);
 }
 
+// The colours of the spending breakdown, handed out in the order categories first appear in the period. Home and Insights both
+// read them from getCategoryBreakdown, so a category has the same colour on both.
+export const BREAKDOWN_PALETTE = ['#f97316', '#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6', '#10b981', '#14b8a6'] as const;
+
 export function getCategoryBreakdown(transactions: Transaction[]): BarDatum[] {
   const totals = new Map<string, number>();
 
@@ -91,13 +95,11 @@ export function getCategoryBreakdown(transactions: Transaction[]): BarDatum[] {
     totals.set(transaction.category, (totals.get(transaction.category) ?? 0) + amount);
   }
 
-  const palette = ['#f97316', '#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6', '#10b981', '#14b8a6'];
-
   return Array.from(totals.entries())
     .map(([label, amount], index) => ({
       label,
       amount,
-      color: palette[index % palette.length],
+      color: BREAKDOWN_PALETTE[index % BREAKDOWN_PALETTE.length],
     }))
     .sort((a, b) => b.amount - a.amount);
 }
