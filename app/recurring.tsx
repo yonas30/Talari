@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
 import CurrencyPicker from '../components/CurrencyPicker';
+import OverlayModal from '../components/OverlayModal';
 import DateField from '../components/DateField';
 import SegmentedTabs from '../components/SegmentedTabs';
 import { defaultCategories } from '../constants/categories';
@@ -252,7 +253,7 @@ export default function RecurringScreen() {
         This sheet deliberately uses its own plain Modal, not the shared keyboard-aware SheetModal: with SheetModal the
         Amount field stopped accepting input on Android. Known limitation: the keyboard can cover the lower fields.
       */}
-      <Modal visible={isFormOpen} transparent animationType="slide" onRequestClose={resetForm}>
+      <OverlayModal visible={isFormOpen} animationType="slide" onRequestClose={resetForm}>
         <Pressable style={styles.modalBackdrop} onPress={resetForm}>
           <Pressable
             style={[styles.modalSheet, { paddingBottom: spacing.xl + insets.bottom }]}
@@ -345,7 +346,7 @@ export default function RecurringScreen() {
             />
           </Pressable>
         </Pressable>
-      </Modal>
+      </OverlayModal>
     </View>
   );
 }

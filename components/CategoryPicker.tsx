@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, radius, spacing } from '../constants/theme';
+import { spacing } from '../constants/theme';
+import { useThemeColors } from '../theme/ThemeProvider';
 import AppText from './AppText';
+import OverlayModal from './OverlayModal';
+import { usePickerStyles } from './pickerStyles';
 
 interface CategoryOption {
   id: string;
@@ -23,19 +26,21 @@ interface CategoryPickerProps {
 
 export default function CategoryPicker({ value, options, onChange, onAddCategory }: CategoryPickerProps) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const styles = usePickerStyles();
   const [isOpen, setIsOpen] = useState(false);
   const selected = options.find((item) => item.id === value || item.name === value);
 
   return (
     <>
-      <Pressable style={styles.trigger} onPress={() => setIsOpen(true)}>
+      <Pressable style={styles.trigger} onPress={() => setIsOpen(true)} accessibilityRole="button">
         <AppText style={styles.triggerText} numberOfLines={1}>
           {selected ? `${selected.icon} ${selected.name}` : 'Choose a category'}
         </AppText>
-        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
       </Pressable>
 
-      <Modal visible={isOpen} transparent animationType="fade" onRequestClose={() => setIsOpen(false)}>
+      <OverlayModal visible={isOpen} animationType="fade" onRequestClose={() => setIsOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setIsOpen(false)}>
           <View style={[styles.sheet, { paddingBottom: spacing.md + insets.bottom }]}>
             <ScrollView>
@@ -51,7 +56,7 @@ export default function CategoryPicker({ value, options, onChange, onAddCategory
                   <AppText style={[styles.optionText, selected?.id === item.id && styles.optionTextSelected]}>
                     {item.icon} {item.name}
                   </AppText>
-                  {selected?.id === item.id && <Ionicons name="checkmark" size={18} color={colors.orange} />}
+                  {selected?.id === item.id && <Ionicons name="checkmark" size={18} color={colors.primaryText} />}
                 </Pressable>
               ))}
               {options.length === 0 && <AppText style={styles.empty}>No categories of this type yet.</AppText>}
@@ -66,71 +71,13 @@ export default function CategoryPicker({ value, options, onChange, onAddCategory
                   accessibilityLabel="Add category"
                 >
                   <AppText style={styles.addText}>+ Add category</AppText>
-                  <Ionicons name="chevron-forward" size={18} color={colors.orange} />
+                  <Ionicons name="chevron-forward" size={18} color={colors.primaryText} />
                 </Pressable>
               )}
             </ScrollView>
           </View>
         </Pressable>
-      </Modal>
+      </OverlayModal>
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  trigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  triggerText: {
-    flex: 1,
-    color: colors.navy,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  backdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
-  },
-  sheet: {
-    maxHeight: '70%',
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
-  },
-  optionText: {
-    color: colors.navy,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  empty: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    paddingVertical: spacing.md,
-  },
-  addText: {
-    color: colors.orange,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  optionTextSelected: {
-    color: colors.orange,
-  },
-});

@@ -1,11 +1,13 @@
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, typography } from '../constants/theme';
+import { typography } from '../constants/theme';
 import { useUiStore } from '../store/ui';
+import { useThemeColors } from '../theme/ThemeProvider';
 import AppText from './AppText';
+import OverlayModal from './OverlayModal';
 
 interface DrawerLink {
   label: string;
@@ -27,6 +29,7 @@ export default function SideDrawer() {
   const closeDrawer = useUiStore((state) => state.closeDrawer);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
 
   const onNavigate = (route: string) => {
     closeDrawer();
@@ -35,35 +38,43 @@ export default function SideDrawer() {
   };
 
   return (
-    <Modal visible={isOpen} animationType="fade" transparent onRequestClose={closeDrawer}>
-      <Pressable style={styles.backdrop} onPress={closeDrawer}>
-        <Pressable style={styles.drawer} onPress={(event) => event.stopPropagation()}>
+    <OverlayModal visible={isOpen} animationType="fade" onRequestClose={closeDrawer}>
+      <Pressable style={[styles.backdrop, { backgroundColor: colors.scrim }]} onPress={closeDrawer}>
+        <Pressable
+          style={[styles.drawer, { backgroundColor: colors.surface, borderRightColor: colors.border }]}
+          onPress={(event) => event.stopPropagation()}
+        >
           <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 }]}>
-            <AppText style={styles.title}>More</AppText>
+            <AppText style={[styles.title, { color: colors.text }]}>More</AppText>
             {links.map((link) => (
-              <Pressable key={link.route} style={styles.linkRow} onPress={() => onNavigate(link.route)}>
-                <Ionicons name={link.icon} size={22} color={colors.navy} />
-                <AppText style={styles.linkLabel}>{link.label}</AppText>
+              <Pressable
+                key={link.route}
+                style={({ pressed }) => [styles.linkRow, { borderBottomColor: colors.border }, pressed && { backgroundColor: colors.surfaceMuted }]}
+                onPress={() => onNavigate(link.route)}
+                accessibilityRole="button"
+                accessibilityLabel={link.label}
+              >
+                <Ionicons name={link.icon} size={22} color={colors.text} />
+                <AppText style={[styles.linkLabel, { color: colors.text }]}>{link.label}</AppText>
               </Pressable>
             ))}
           </ScrollView>
         </Pressable>
       </Pressable>
-    </Modal>
+    </OverlayModal>
   );
 }
 
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
     flexDirection: 'row',
   },
   drawer: {
     width: '78%',
     maxWidth: 320,
     height: '100%',
-    backgroundColor: colors.surface,
+    borderRightWidth: 1,
   },
   content: {
     paddingHorizontal: 20,
@@ -72,7 +83,6 @@ const styles = StyleSheet.create({
   title: {
     ...typography.pageTitle,
     fontSize: 22,
-    color: colors.navy,
     marginBottom: 12,
   },
   linkRow: {
@@ -80,13 +90,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   linkLabel: {
     flex: 1,
     ...typography.body,
-    color: colors.navy,
     fontWeight: '600',
   },
 });

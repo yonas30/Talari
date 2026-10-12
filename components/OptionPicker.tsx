@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, radius, spacing } from '../constants/theme';
+import { spacing } from '../constants/theme';
+import { useThemeColors } from '../theme/ThemeProvider';
 import AppText from './AppText';
+import OverlayModal from './OverlayModal';
+import { usePickerStyles } from './pickerStyles';
 
 export interface PickerOption {
   value: string;
@@ -23,12 +26,14 @@ interface OptionPickerProps {
 // Generic dropdown in the same style as CategoryPicker / CurrencyPicker.
 export default function OptionPicker({ value, options, onChange, placeholder = 'Choose' }: OptionPickerProps) {
   const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const styles = usePickerStyles();
   const [isOpen, setIsOpen] = useState(false);
   const selected = options.find((item) => item.value === value);
 
   return (
     <>
-      <Pressable style={styles.trigger} onPress={() => setIsOpen(true)}>
+      <Pressable style={styles.trigger} onPress={() => setIsOpen(true)} accessibilityRole="button">
         <View style={styles.triggerBody}>
           <AppText style={styles.triggerText} numberOfLines={1}>
             {selected ? selected.label : placeholder}
@@ -39,10 +44,10 @@ export default function OptionPicker({ value, options, onChange, placeholder = '
             </AppText>
           ) : null}
         </View>
-        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
       </Pressable>
 
-      <Modal visible={isOpen} transparent animationType="fade" onRequestClose={() => setIsOpen(false)}>
+      <OverlayModal visible={isOpen} animationType="fade" onRequestClose={() => setIsOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setIsOpen(false)}>
           <View style={[styles.sheet, { paddingBottom: spacing.md + insets.bottom }]}>
             <ScrollView>
@@ -61,71 +66,13 @@ export default function OptionPicker({ value, options, onChange, placeholder = '
                     </AppText>
                     {item.hint ? <AppText style={styles.hint}>{item.hint}</AppText> : null}
                   </View>
-                  {item.value === value && <Ionicons name="checkmark" size={18} color={colors.orange} />}
+                  {item.value === value && <Ionicons name="checkmark" size={18} color={colors.primaryText} />}
                 </Pressable>
               ))}
             </ScrollView>
           </View>
         </Pressable>
-      </Modal>
+      </OverlayModal>
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  trigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  triggerBody: {
-    flex: 1,
-  },
-  triggerText: {
-    color: colors.navy,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  hint: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  backdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
-  },
-  sheet: {
-    maxHeight: '70%',
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
-  },
-  optionBody: {
-    flex: 1,
-  },
-  optionText: {
-    color: colors.navy,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  optionTextSelected: {
-    color: colors.orange,
-  },
-});

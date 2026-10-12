@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import DateField from '../../components/DateField';
 import SegmentedTabs from '../../components/SegmentedTabs';
+import OverlayModal from '../../components/OverlayModal';
 import SheetModal from '../../components/SheetModal';
 import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
@@ -397,7 +398,7 @@ export default function GoalsScreen() {
       </SheetModal>
 
       {/* Three-dot menu */}
-      <Modal visible={menuGoal !== undefined} transparent animationType="fade" onRequestClose={() => setMenuGoalId(null)}>
+      <OverlayModal visible={menuGoal !== undefined} animationType="fade" onRequestClose={() => setMenuGoalId(null)}>
         <Pressable style={styles.menuBackdrop} onPress={() => setMenuGoalId(null)}>
           <View style={[styles.menuSheet, { paddingBottom: spacing.xl + insets.bottom }]}>
             <Pressable
@@ -424,7 +425,7 @@ export default function GoalsScreen() {
             </Pressable>
           </View>
         </Pressable>
-      </Modal>
+      </OverlayModal>
     </View>
   );
 }

@@ -3,10 +3,11 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 
-import AppButton from './AppButton';
-import { colors, radius, spacing } from '../constants/theme';
+import { radius, spacing } from '../constants/theme';
+import { useThemeColors } from '../theme/ThemeProvider';
 import { parseDateKey, toLocalDateKey } from '../utils/dates';
 import AppText from './AppText';
+import Button from './Button';
 
 interface DateField {
   label: string;
@@ -15,6 +16,7 @@ interface DateField {
 }
 
 export default function DateField({ label, value, onChange }: DateField) {
+  const colors = useThemeColors();
   const [showPicker, setShowPicker] = useState(false);
 
   const dateValue = value ? parseDateKey(value) : new Date();
@@ -34,10 +36,15 @@ export default function DateField({ label, value, onChange }: DateField) {
 
   return (
     <View style={styles.container}>
-      <Pressable style={styles.row} onPress={() => setShowPicker(true)}>
-        <Ionicons name="calendar-outline" size={18} color={colors.navy} />
-        <AppText style={styles.rowText}>{value ?? `Pick ${label.toLowerCase()}`}</AppText>
-        <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
+      <Pressable
+        style={[styles.row, { backgroundColor: colors.bg, borderColor: colors.inputBorder }]}
+        onPress={() => setShowPicker(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}, ${value ?? 'not set'}`}
+      >
+        <Ionicons name="calendar-outline" size={18} color={colors.text} />
+        <AppText style={[styles.rowText, { color: colors.text }]}>{value ?? `Pick ${label.toLowerCase()}`}</AppText>
+        <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
       </Pressable>
       {showPicker && (
         <DateTimePicker
@@ -49,7 +56,7 @@ export default function DateField({ label, value, onChange }: DateField) {
         />
       )}
       {Platform.OS === 'ios' && showPicker && (
-        <AppButton title="Done" variant="primary" onPress={() => setShowPicker(false)} />
+        <Button title="Done" variant="primary" onPress={() => setShowPicker(false)} />
       )}
     </View>
   );
@@ -60,7 +67,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.background,
+    borderWidth: 1,
     borderRadius: radius.button,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
@@ -68,7 +75,6 @@ const styles = StyleSheet.create({
   rowText: {
     flex: 1,
     fontSize: 15,
-    color: colors.navy,
     fontWeight: '600',
   },
   container: {
