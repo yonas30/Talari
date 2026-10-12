@@ -129,6 +129,9 @@ const pairs: Pair[] = [
   { fg: 'welcomeAccent', bg: 'bg', min: LARGE, note: 'large bold headline' },
   { fg: 'segmentSelectedText', bg: 'segmentSelectedBg', min: BODY },
   { fg: 'segmentText', bg: 'segmentTrack', min: BODY },
+  // Buttons: Danger (label on the expense-tone fill) and the selected state of the secondary button
+  { fg: 'onDanger', bg: 'danger', min: BODY },
+  { fg: 'text', bg: 'segmentTrack', min: BODY },
 ];
 
 console.log('Contrast ratios (text pair -> ratio, required)');
@@ -230,6 +233,28 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
     const ratio = contrast(hex, palettes[scheme].surface);
     console.log(`  ${scheme.padEnd(5)} ${hex} on surface ${ratio.toFixed(2).padStart(6)}${ratio >= 3 ? '' : '   (below 3:1)'}`);
   }
+}
+
+// ---- 1c. Transactions list (Phase 4a) ---------------------------------------------------------------------------------
+// Rows sit on the card surface; a pressed row shows the screen background. Titles use text, sub-lines textMuted, signed amounts
+// income / expense / text (transfers), and the "Clear search" / "Show all" links primaryText.
+console.log('\nTransactions: row text on the card surface and on the pressed-row background (all small text, 4.5:1)');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  for (const bgName of ['surface', 'bg'] as const) {
+    for (const fg of ['text', 'textMuted', 'income', 'expense', 'primaryText'] as const) {
+      const ratio = contrast(c[fg], c[bgName]);
+      const ok = ratio >= BODY;
+      console.log(`  ${scheme.padEnd(5)} ${fg.padEnd(12)} on ${bgName.padEnd(8)} ${ratio.toFixed(2).padStart(6)}  (>= ${BODY})${ok ? '' : '   <-- FAIL'}`);
+      check(`${scheme}: transactions ${fg} on ${bgName}`, ok, ratio.toFixed(2));
+    }
+  }
+  // Overlays: text on the sheet / picker surface, and the drawer's pressed row
+  check(`${scheme}: sheet text on surface`, contrast(c.text, c.surface) >= BODY);
+  check(`${scheme}: picker selected row (primaryText) on surface`, contrast(c.primaryText, c.surface) >= BODY);
+  check(`${scheme}: drawer pressed row text on surfaceMuted`, contrast(c.text, c.surfaceMuted) >= BODY);
+  // The header badge: count on the danger fill
+  check(`${scheme}: bell badge count on danger`, contrast(c.onDanger, c.danger) >= BODY, contrast(c.onDanger, c.danger).toFixed(2));
 }
 
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------

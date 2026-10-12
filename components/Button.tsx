@@ -1,33 +1,51 @@
-import { Pressable, PressableProps, StyleSheet } from 'react-native';
+import { Pressable, PressableProps, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 
 import { radius } from '../constants/theme';
 import { useTheme } from '../theme/ThemeProvider';
 import AppText from './AppText';
 
-type ButtonVariant = 'primary' | 'secondary' | 'link';
+type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'link';
 
 interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> {
   title: string;
   variant?: ButtonVariant;
+  /** A toggled-on option (secondary only): the same navy / off-white pill as a selected segment. */
+  selected?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
-// primary: orange fill with navy text. secondary: quiet fill with a border. link: text only, in the orange text colour
-// (darker in Light so it stays readable). The label never wraps; it shrinks a little before it would be cut off.
-export default function Button({ title, variant = 'primary', disabled, ...rest }: ButtonProps) {
+// primary: orange fill with navy text. secondary: quiet fill with a border (selected: the segment pill). danger: the expense tone
+// with its own text colour (white in Light, navy in Dark). link: text only, in the orange text colour (darker in Light so it
+// stays readable). The label never wraps; it shrinks a little before it would be cut off.
+export default function Button({ title, variant = 'primary', selected = false, disabled, style, ...rest }: ButtonProps) {
   const { colors } = useTheme();
+  const isSelected = selected && variant === 'secondary';
 
   const container =
     variant === 'primary'
       ? { backgroundColor: colors.primary }
-      : variant === 'secondary'
-        ? { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderWidth: 1 }
-        : null;
-  const labelColor = variant === 'primary' ? colors.onPrimary : variant === 'secondary' ? colors.text : colors.primaryText;
+      : variant === 'danger'
+        ? { backgroundColor: colors.danger }
+        : variant === 'secondary'
+          ? isSelected
+            ? { backgroundColor: colors.segmentSelectedBg, borderColor: colors.segmentSelectedBg, borderWidth: 1 }
+            : { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderWidth: 1 }
+          : null;
+  const labelColor =
+    variant === 'primary'
+      ? colors.onPrimary
+      : variant === 'danger'
+        ? colors.onDanger
+        : variant === 'secondary'
+          ? isSelected
+            ? colors.segmentSelectedText
+            : colors.text
+          : colors.primaryText;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityState={{ disabled: Boolean(disabled), selected: variant === 'secondary' ? isSelected : undefined }}
       disabled={disabled}
       {...rest}
       style={({ pressed }) => [
@@ -36,6 +54,7 @@ export default function Button({ title, variant = 'primary', disabled, ...rest }
         container,
         pressed && styles.pressed,
         disabled && styles.disabled,
+        style,
       ]}
     >
       <AppText

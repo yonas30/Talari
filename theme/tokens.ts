@@ -24,6 +24,11 @@ export interface ThemeColors {
   onPrimary: string;
   /** Orange text and links: darker than the fill in Light so it stays readable. */
   primaryText: string;
+  /** The dim behind sheets, pickers and the drawer. */
+  scrim: string;
+  /** Destructive actions (Delete, Remove): the expense tone as a fill, and the text on it. */
+  danger: string;
+  onDanger: string;
   /** The Total Balance hero card (navy in both schemes). */
   heroBg: string;
   /** Border of the hero card: none in Light, a hairline in Dark. */
@@ -98,6 +103,9 @@ export const lightColors: ThemeColors = {
   surface: '#FFFFFF',
   surfaceMuted: '#F1EEE7',
   border: '#E7E2D8',
+  scrim: 'rgba(23,35,60,0.4)',
+  danger: '#C23A33',
+  onDanger: '#FFFFFF',
   // 3.68:1 on the white field, 3.41:1 on the cream screen.
   inputBorder: '#8A8578',
   text: '#17233C',
@@ -146,6 +154,9 @@ export const darkColors: ThemeColors = {
   surface: '#182033',
   surfaceMuted: '#222C44',
   border: 'rgba(255,255,255,0.08)',
+  scrim: 'rgba(0,0,0,0.6)',
+  danger: '#E8736F',
+  onDanger: '#17233C',
   // 3.67:1 on the dark surface field, 4.12:1 on the dark screen.
   inputBorder: '#6C7894',
   text: '#F5F5F2',
