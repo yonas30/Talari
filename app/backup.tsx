@@ -4,6 +4,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../components/AppHeader';
+import DevHomeRow from '../components/DevHomeRow';
 import DevOnboardingRow from '../components/DevOnboardingRow';
 import DevThemeRow from '../components/DevThemeRow';
 import NameSheet from '../components/NameSheet';
@@ -109,6 +110,7 @@ export default function SettingsScreen() {
         {/* Development builds only (Expo Go / dev client): never present in preview or production builds. */}
         {__DEV__ ? <DevThemeRow /> : null}
         {__DEV__ ? <DevOnboardingRow /> : null}
+        {__DEV__ ? <DevHomeRow /> : null}
       </ScrollView>
 
       <NameSheet

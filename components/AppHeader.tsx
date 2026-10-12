@@ -3,7 +3,8 @@ import { useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { colors, typography } from '../constants/theme';
+import { colors as legacyColors, typography } from '../constants/theme';
+import { useThemeColors } from '../theme/ThemeProvider';
 import { useUiStore } from '../store/ui';
 import AppText from './AppText';
 
@@ -11,9 +12,12 @@ interface AppHeaderProps {
   title: string;
   notificationCount?: number;
   onNotificationPress?: () => void;
+  /** Home has no title: the menu button and the bell sit at the two ends. */
+  hideTitle?: boolean;
 }
 
-export default function AppHeader({ title, notificationCount = 0, onNotificationPress }: AppHeaderProps) {
+export default function AppHeader({ title, notificationCount = 0, onNotificationPress, hideTitle = false }: AppHeaderProps) {
+  const colors = useThemeColors();
   const openDrawer = useUiStore((state) => state.openDrawer);
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -33,17 +37,17 @@ export default function AppHeader({ title, notificationCount = 0, onNotification
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+    <View style={[styles.container, { paddingTop: insets.top + 8, backgroundColor: colors.bg }]}>
       {isStackScreen ? (
         <Pressable onPress={goBack} hitSlop={12} style={styles.menuButton} accessibilityRole="button" accessibilityLabel="Go back">
-          <Ionicons name="chevron-back" size={26} color={colors.navy} />
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
         </Pressable>
       ) : (
         <Pressable onPress={openDrawer} hitSlop={12} style={styles.menuButton} accessibilityRole="button" accessibilityLabel="Open menu">
-          <Ionicons name="menu" size={26} color={colors.navy} />
+          <Ionicons name="menu" size={26} color={colors.text} />
         </Pressable>
       )}
-      <AppText style={styles.title}>{title}</AppText>
+      {hideTitle ? <View style={styles.titleSpace} /> : <AppText style={[styles.title, { color: colors.text }]}>{title}</AppText>}
       <View style={styles.rightArea}>
         {onNotificationPress ? (
           <Pressable
@@ -53,10 +57,10 @@ export default function AppHeader({ title, notificationCount = 0, onNotification
             accessibilityRole="button"
             accessibilityLabel={notificationCount > 0 ? `Notifications, ${notificationCount} unread` : 'Notifications'}
           >
-            <Ionicons name="notifications-outline" size={22} color={colors.navy} />
+            <Ionicons name="notifications-outline" size={22} color={colors.text} />
             {notificationCount > 0 && (
-              <View style={styles.badge} testID="notification-badge">
-                <AppText style={styles.badgeText} maxFontSizeMultiplier={1}>
+              <View style={[styles.badge, { borderColor: colors.bg }]} testID="notification-badge">
+                <AppText style={[styles.badgeText, { color: colors.heroText }]} maxFontSizeMultiplier={1}>
                   {notificationCount > 9 ? '9+' : notificationCount}
                 </AppText>
               </View>
@@ -76,7 +80,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingBottom: 12,
-    backgroundColor: colors.background,
     gap: 12,
   },
   menuButton: {
@@ -84,7 +87,6 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.sectionTitle,
-    color: colors.navy,
     fontWeight: '700',
     flex: 1,
   },
@@ -105,19 +107,20 @@ const styles = StyleSheet.create({
     height: 16,
     paddingHorizontal: 3,
     borderRadius: 8,
-    backgroundColor: colors.red,
+    backgroundColor: legacyColors.red,
     borderWidth: 1.5,
-    borderColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: {
-    color: '#FFFFFF',
     fontSize: 10,
     lineHeight: 12,
     fontWeight: '800',
   },
   spacer: {
     width: 26,
+  },
+  titleSpace: {
+    flex: 1,
   },
 });

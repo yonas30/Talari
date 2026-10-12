@@ -12,11 +12,23 @@ export interface AppNotification {
   route?: string;
 }
 
+export interface DevHomePreview {
+  noSpending: boolean;
+  noTransactions: boolean;
+  noGoals: boolean;
+  noStreak: boolean;
+}
+
+export const NO_DEV_HOME_PREVIEW: DevHomePreview = { noSpending: false, noTransactions: false, noGoals: false, noStreak: false };
+
 interface UiState {
   isDrawerOpen: boolean;
   // The splash overlay has left. Anything that opens a native Modal (which draws above the splash) waits for this.
   isSplashDone: boolean;
   setSplashDone: () => void;
+  // Development only: preview Home's empty states without touching real data (see components/DevHomeRow.tsx).
+  devHomePreview: DevHomePreview;
+  setDevHomePreview: (patch: Partial<DevHomePreview>) => void;
   isBalanceHidden: boolean;
   notifications: AppNotification[];
   // Ids the user has already seen, loaded from storage at start-up and kept in step with it. A notification whose id
@@ -36,6 +48,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   isDrawerOpen: false,
   isSplashDone: false,
   setSplashDone: () => set({ isSplashDone: true }),
+  devHomePreview: NO_DEV_HOME_PREVIEW,
+  setDevHomePreview: (patch) => set((state) => ({ devHomePreview: { ...state.devHomePreview, ...patch } })),
   // Balances start hidden every launch; the eye button reveals them (V2 Part I).
   isBalanceHidden: true,
   notifications: [],
