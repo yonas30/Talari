@@ -46,7 +46,13 @@ export default function SpendingCard({ slices, total, categoryIds, hidden, onSee
         <AppText variant="title" style={styles.title} accessibilityRole="header" numberOfLines={1}>
           Spending this month
         </AppText>
-        <Pressable onPress={onSeeDetails} hitSlop={10} accessibilityRole="link" accessibilityLabel="See spending details">
+        <Pressable
+          onPress={onSeeDetails}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="See spending details"
+          style={({ pressed }) => (pressed ? { opacity: 0.6 } : null)}
+        >
           <AppText style={[styles.link, { color: colors.primaryText }]} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
             See details →
           </AppText>

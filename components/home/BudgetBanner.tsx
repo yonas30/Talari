@@ -19,7 +19,7 @@ export default function BudgetBanner({ title, detail, onPress }: BudgetBannerPro
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel="Over budget, open budgets"
-      style={[styles.banner, { backgroundColor: colors.expenseTint, borderColor: colors.expense }]}
+      style={[styles.banner, { backgroundColor: colors.expenseWash, borderColor: colors.expense }]}
     >
       <Ionicons name="warning" size={20} color={colors.expense} />
       <View style={styles.text}>

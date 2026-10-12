@@ -14,8 +14,10 @@ interface MonthCardProps {
   net: number;
 }
 
-// "This Month": Income | Expenses side by side, then Net centred underneath. Net is always the blue Net colour - the explicit
-// sign (+ / −) is what says whether it is good or bad, never the colour.
+// "This Month": Income | Expenses side by side, then Net centred underneath. Compact on purpose (about 120 dp, clearly shorter
+// than the hero card): a 32 dp icon disc beside the label and amount. Net is always the blue Net colour - the explicit sign
+// (+ / −) says whether it is good or bad, never the colour. Income and expenses are small text, so they use the text-safe
+// tones; Net is 20 sp bold (large text), so Light may use the vivid brand blue.
 export default function MonthCard({ monthName, income, expenses, net }: MonthCardProps) {
   const { colors } = useTheme();
 
@@ -26,27 +28,31 @@ export default function MonthCard({ monthName, income, expenses, net }: MonthCar
       </AppText>
       <Card style={styles.card}>
         <View style={styles.topRow}>
-          <Metric icon="trending-up" label="Income" value={formatNumber(income)} color={colors.income} tint={colors.incomeTint} />
+          <Metric icon="trending-up" label="Income" value={formatNumber(income)} color={colors.income} disc={colors.incomeDisc} glyph={colors.incomeGlyph} />
           <View style={[styles.verticalDivider, { backgroundColor: colors.border }]} />
-          <Metric icon="trending-down" label="Expenses" value={formatNumber(expenses)} color={colors.expense} tint={colors.expenseTint} />
+          <Metric icon="trending-down" label="Expenses" value={formatNumber(expenses)} color={colors.expense} disc={colors.expenseDisc} glyph={colors.expenseGlyph} />
         </View>
 
         <View style={[styles.horizontalDivider, { backgroundColor: colors.border }]} />
 
         <View style={styles.netBlock}>
-          <View style={[styles.disc, { backgroundColor: colors.netTint }]}>
-            <Ionicons name="bar-chart" size={18} color={colors.net} />
+          <View style={[styles.disc, { backgroundColor: colors.netDisc }]}>
+            <Ionicons name="bar-chart" size={17} color={colors.netGlyph} />
           </View>
-          <AppText style={[styles.label, { color: colors.textMuted }]}>Net (Income − Expenses)</AppText>
-          <AppText
-            variant="number"
-            style={[styles.netValue, { color: colors.net }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-          >
-            {formatNet(net)}
-          </AppText>
+          <View style={styles.netText}>
+            <AppText style={[styles.label, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+              Net (Income − Expenses)
+            </AppText>
+            <AppText
+              variant="number"
+              style={[styles.netValue, { color: colors.netLarge }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.5}
+            >
+              {formatNet(net)}
+            </AppText>
+          </View>
         </View>
       </Card>
     </View>
@@ -58,40 +64,46 @@ function Metric({
   label,
   value,
   color,
-  tint,
+  disc,
+  glyph,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   color: string;
-  tint: string;
+  disc: string;
+  glyph: string;
 }) {
   const { colors } = useTheme();
   return (
     <View style={styles.metric}>
-      <View style={[styles.disc, { backgroundColor: tint }]}>
-        <Ionicons name={icon} size={18} color={color} />
+      <View style={[styles.disc, { backgroundColor: disc }]}>
+        <Ionicons name={icon} size={17} color={glyph} />
       </View>
-      <AppText style={[styles.label, { color: colors.textMuted }]}>{label}</AppText>
-      <AppText
-        variant="number"
-        style={[styles.value, { color }]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.6}
-      >
-        {value}
-      </AppText>
+      <View style={styles.metricText}>
+        <AppText style={[styles.label, { color: colors.textMuted }]} numberOfLines={1}>
+          {label}
+        </AppText>
+        <AppText
+          variant="number"
+          style={[styles.value, { color }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.5}
+        >
+          {value}
+        </AppText>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 10,
+    gap: 8,
   },
   heading: {
-    fontSize: 18,
+    fontSize: 17,
   },
   card: {
     padding: 0,
@@ -103,47 +115,54 @@ const styles = StyleSheet.create({
   metric: {
     flex: 1,
     minWidth: 0,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    gap: 4,
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  metricText: {
+    flex: 1,
+    minWidth: 0,
   },
   verticalDivider: {
     width: 1,
-    marginVertical: 14,
+    marginVertical: 10,
   },
   horizontalDivider: {
     height: 1,
   },
   netBlock: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    gap: 4,
-  },
-  disc: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  netText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  disc: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     fontSize: 13,
     fontWeight: '500',
-    textAlign: 'center',
   },
   value: {
-    fontSize: 20,
+    fontSize: 17,
+    lineHeight: 22,
     fontWeight: '700',
-    alignSelf: 'stretch',
-    textAlign: 'center',
   },
   netValue: {
-    fontSize: 24,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '700',
-    alignSelf: 'stretch',
-    textAlign: 'center',
   },
 });

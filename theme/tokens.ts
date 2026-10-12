@@ -44,18 +44,32 @@ export interface ThemeColors {
   segmentSelectedBg: string;
   segmentSelectedText: string;
   segmentText: string;
-  /** Tinted fills behind icons (about 14% of the brand fill), so the icon in the text-safe colour sits on a soft disc. */
-  incomeTint: string;
-  expenseTint: string;
-  netTint: string;
-  transferTint: string;
+  /**
+   * Icon discs. Light: the solid, vivid brand fill with a white glyph (3.5:1 or better). Dark: a soft 14% tint with the
+   * text-safe glyph colour. The glyph colours below are what to draw ON the matching disc.
+   */
+  incomeDisc: string;
+  expenseDisc: string;
+  netDisc: string;
+  transferDisc: string;
+  incomeGlyph: string;
+  expenseGlyph: string;
+  netGlyph: string;
+  transferGlyph: string;
+  /** A light wash of the expense colour: the over-budget banner. */
+  expenseWash: string;
+  /** Net at 18.66 px bold or more counts as large text (3:1), so Light may use the vivid brand blue for it. */
+  netLarge: string;
   /** The thin line between the balance and the Available / Saved columns on the hero card. */
   heroDivider: string;
-  /** Streak card: soft orange wash in Light, the plain surface in Dark. */
+  /** Streak card: a rich peach with an orange edge in Light, the plain surface in Dark. */
   streakFill: string;
   streakBorder: string;
-  /** The flame: the text-safe orange in Light, the brand orange in Dark. */
+  /** The flame glyph: navy on its solid orange disc in Light, the brand orange in Dark. */
   streakAccent: string;
+  /** Disc behind the flame (solid orange in Light, none in Dark) and the colour of the subtitle on the streak card. */
+  streakDisc: string;
+  streakMuted: string;
 }
 
 // Brand fills: icon circles, chart slices, dots. Same in both schemes (they are never text).
@@ -107,14 +121,22 @@ export const lightColors: ThemeColors = {
   segmentSelectedBg: '#17233C',
   segmentSelectedText: '#FFFFFF',
   segmentText: '#5B6679',
-  incomeTint: withAlpha(brandFills.income, FILL_TINT_ALPHA),
-  expenseTint: withAlpha(brandFills.expense, FILL_TINT_ALPHA),
-  netTint: withAlpha(brandFills.net, FILL_TINT_ALPHA),
-  transferTint: withAlpha(brandFills.transfer, FILL_TINT_ALPHA),
+  incomeDisc: brandFills.income,
+  expenseDisc: brandFills.expense,
+  netDisc: brandFills.net,
+  transferDisc: brandFills.transfer,
+  incomeGlyph: '#FFFFFF',
+  expenseGlyph: '#FFFFFF',
+  netGlyph: '#FFFFFF',
+  transferGlyph: '#FFFFFF',
+  expenseWash: withAlpha(brandFills.expense, 0.12),
+  netLarge: brandFills.net,
   heroDivider: 'rgba(255,255,255,0.14)',
-  streakFill: withAlpha('#F47C20', FILL_TINT_ALPHA),
-  streakBorder: '#E7E2D8',
-  streakAccent: '#BF3F12',
+  streakFill: '#FFD9B8',
+  streakBorder: '#F47C20',
+  streakAccent: '#17233C',
+  streakDisc: '#F47C20',
+  streakMuted: '#17233C',
 };
 
 export const darkColors: ThemeColors = {
@@ -147,14 +169,22 @@ export const darkColors: ThemeColors = {
   segmentSelectedBg: '#F5F5F2',
   segmentSelectedText: '#17233C',
   segmentText: '#AEB5C2',
-  incomeTint: withAlpha(brandFills.income, FILL_TINT_ALPHA),
-  expenseTint: withAlpha(brandFills.expense, FILL_TINT_ALPHA),
-  netTint: withAlpha(brandFills.net, FILL_TINT_ALPHA),
-  transferTint: withAlpha(brandFills.transfer, FILL_TINT_ALPHA),
+  incomeDisc: withAlpha(brandFills.income, FILL_TINT_ALPHA),
+  expenseDisc: withAlpha(brandFills.expense, FILL_TINT_ALPHA),
+  netDisc: withAlpha(brandFills.net, FILL_TINT_ALPHA),
+  transferDisc: withAlpha(brandFills.transfer, FILL_TINT_ALPHA),
+  incomeGlyph: '#2E9B62',
+  expenseGlyph: '#E8736F',
+  netGlyph: '#5B8FD0',
+  transferGlyph: '#9A8CCB',
+  expenseWash: withAlpha(brandFills.expense, 0.12),
+  netLarge: '#5B8FD0',
   heroDivider: 'rgba(255,255,255,0.14)',
   streakFill: '#182033',
   streakBorder: 'rgba(255,255,255,0.08)',
   streakAccent: '#F47C20',
+  streakDisc: 'transparent',
+  streakMuted: '#AEB5C2',
 };
 
 export const palettes: Record<ThemeScheme, ThemeColors> = { light: lightColors, dark: darkColors };

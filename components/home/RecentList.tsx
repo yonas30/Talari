@@ -18,9 +18,11 @@ interface RecentListProps {
   /** The emoji a category stores, by category name. Missing / empty -> a neutral icon. */
   categoryIcons: Record<string, string>;
   onSeeAll: () => void;
+  /** Opens the edit / detail screen for a transaction (the same one the Transactions list uses). */
+  onOpen: (transactionId: string) => void;
 }
 
-export default function RecentList({ transactions, goals, categoryIcons, onSeeAll }: RecentListProps) {
+export default function RecentList({ transactions, goals, categoryIcons, onSeeAll, onOpen }: RecentListProps) {
   const { colors } = useTheme();
 
   return (
@@ -29,7 +31,13 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
         <AppText variant="title" style={styles.title} accessibilityRole="header" numberOfLines={1}>
           Recent transactions
         </AppText>
-        <Pressable onPress={onSeeAll} hitSlop={10} accessibilityRole="link" accessibilityLabel="See all transactions">
+        <Pressable
+          onPress={onSeeAll}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="See all transactions"
+          style={({ pressed }) => (pressed ? { opacity: 0.6 } : null)}
+        >
           <AppText style={[styles.link, { color: colors.primaryText }]} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
             See all →
           </AppText>
@@ -43,16 +51,23 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
           {transactions.map((transaction, index) => {
             const role = transactionAmountRole(transaction.type);
             const textColor = role === 'expense' ? colors.expense : role === 'income' ? colors.income : colors.text;
-            const iconTint = role === 'expense' ? colors.expenseTint : role === 'income' ? colors.incomeTint : colors.transferTint;
-            const iconColor = role === 'expense' ? colors.expense : role === 'income' ? colors.income : colors.transfer;
+            const iconTint = role === 'expense' ? colors.expenseDisc : role === 'income' ? colors.incomeDisc : colors.transferDisc;
+            const iconColor = role === 'expense' ? colors.expenseGlyph : role === 'income' ? colors.incomeGlyph : colors.transferGlyph;
             const emoji = role === 'transfer' ? '' : (categoryIcons[transaction.category] ?? '').trim();
             const isTransfer = transaction.type === 'transfer';
 
             return (
               // The text column takes the remaining width and truncates; the amount shrinks to fit rather than overflowing.
-              <View
+              <Pressable
                 key={transaction.id}
-                style={[styles.row, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}
+                onPress={() => onOpen(transaction.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`${transactionTitle(transaction, goals)}, ${formatTransactionAmount(transaction.type, transaction.amountETB)}, ${formatDateKey(transaction.date)}. Opens the transaction.`}
+                style={({ pressed }) => [
+                  styles.row,
+                  index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+                  pressed && { backgroundColor: colors.surfaceMuted },
+                ]}
               >
                 <View style={[styles.disc, { backgroundColor: iconTint }]}>
                   {isTransfer ? (
@@ -96,7 +111,7 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
                     </AppText>
                   ) : null}
                 </View>
-              </View>
+              </Pressable>
             );
           })}
         </View>

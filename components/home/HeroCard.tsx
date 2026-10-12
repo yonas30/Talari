@@ -19,6 +19,7 @@ interface HeroCardProps {
 
 // The navy Total Balance card: the total, then Available and Saved side by side. Goals are not a column here; when they hold money a
 // small line says how much of the total they account for. Hidden balances mask every amount, that line included.
+// Sizes: total 30 sp, columns 16 sp, padding 16 dp - about 160 dp tall without the goals line.
 export default function HeroCard({ total, available, saved, goalsAmount, hidden, onToggleHidden }: HeroCardProps) {
   const { colors } = useTheme();
   const mask = (value: number) => (hidden ? HIDDEN_AMOUNT : formatETB(value));
@@ -32,8 +33,9 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
           hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel={hidden ? 'Show balances' : 'Hide balances'}
+          style={({ pressed }) => (pressed ? { opacity: 0.6 } : null)}
         >
-          <Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.heroText} />
+          <Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.heroText} />
         </Pressable>
       </View>
 
@@ -42,7 +44,7 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
         style={[styles.total, { color: colors.heroText }]}
         numberOfLines={1}
         adjustsFontSizeToFit
-        // 0.5, not 0.7: at 320 dp "ETB 1,234,567.89" needs 0.69 of 40 sp, and at the 1.3x font cap the 0.7 floor would still clip it.
+        // 0.5, not 0.7: a seven-figure total needs about 0.65 of its size in a narrow card, and at the 1.3x font cap a 0.7 floor would clip it.
         minimumFontScale={0.5}
       >
         {mask(total)}
@@ -88,7 +90,7 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
 
 const styles = StyleSheet.create({
   card: {
-    padding: 20,
+    padding: 16,
   },
   header: {
     flexDirection: 'row',
@@ -96,20 +98,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   label: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
     flexShrink: 1,
   },
   total: {
-    fontSize: 40,
-    lineHeight: 50,
+    fontSize: 30,
+    lineHeight: 38,
     fontWeight: '700',
-    marginTop: 6,
+    marginTop: 2,
   },
   divider: {
     height: 1,
-    marginTop: 14,
-    marginBottom: 16,
+    marginTop: 10,
+    marginBottom: 12,
   },
   columns: {
     flexDirection: 'row',
@@ -121,19 +123,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   columnLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   columnValue: {
-    fontSize: 20,
+    fontSize: 16,
+    lineHeight: 22,
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: 2,
     alignSelf: 'stretch',
     textAlign: 'center',
   },
   goalsLine: {
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 14,
+    marginTop: 10,
   },
 });

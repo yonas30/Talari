@@ -170,32 +170,41 @@ function solid(color: string, base: string): string {
   return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 
-console.log('\nHome: icons on their tinted discs (graphics need 3:1), streak card text, hero');
+console.log('\nHome: glyphs on their icon discs (graphics need 3:1), large figures, streak card, + button, tab bar');
 for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   const c = palettes[scheme];
   const discs: [string, keyof ThemeColors, keyof ThemeColors][] = [
-    ['income icon', 'income', 'incomeTint'],
-    ['expense icon', 'expense', 'expenseTint'],
-    ['net icon', 'net', 'netTint'],
-    ['transfer icon', 'transfer', 'transferTint'],
+    ['income glyph', 'incomeGlyph', 'incomeDisc'],
+    ['expense glyph', 'expenseGlyph', 'expenseDisc'],
+    ['net glyph', 'netGlyph', 'netDisc'],
+    ['transfer glyph', 'transferGlyph', 'transferDisc'],
   ];
-  for (const [label, icon, tint] of discs) {
-    const disc = solid(c[tint], c.surface);
-    const ratio = contrast(c[icon], disc);
-    console.log(`  ${scheme.padEnd(5)} ${label.padEnd(14)} on its disc over surface ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
-    check(`${scheme}: ${label} on tint`, ratio >= 3, ratio.toFixed(2));
+  for (const [label, glyph, disc] of discs) {
+    const fill = solid(c[disc], c.surface);
+    const ratio = contrast(c[glyph], fill);
+    console.log(`  ${scheme.padEnd(5)} ${label.padEnd(15)} on its disc over surface ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: ${label} on disc`, ratio >= 3, ratio.toFixed(2));
   }
-  // The same icons with their amounts: the amount text is checked on the card surface in the table above (income/expense on surface).
+  // Net is drawn at 20 sp bold = large text (3:1) in netLarge; income / expense amounts are small text (4.5:1, checked above).
+  for (const against of ['surface'] as const) {
+    const ratio = contrast(c.netLarge, c[against]);
+    console.log(`  ${scheme.padEnd(5)} Net amount (netLarge, 20 sp bold) on ${against.padEnd(8)} ${ratio.toFixed(2).padStart(6)}  (>= 3)${ratio >= 3 ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: netLarge on ${against}`, ratio >= LARGE, ratio.toFixed(2));
+  }
   const streakBg = solid(c.streakFill, c.bg);
-  for (const [label, fg, min] of [
-    ['streak title (text)', c.text, BODY],
-    ['streak subtitle (textMuted)', c.textMuted, BODY],
-    ['streak flame (graphic)', c.streakAccent, LARGE],
-  ] as [string, string, number][]) {
-    const ratio = contrast(fg, streakBg);
-    console.log(`  ${scheme.padEnd(5)} ${label.padEnd(28)} on streak card ${ratio.toFixed(2).padStart(6)}  (>= ${min})${ratio >= min ? '' : '   <-- FAIL'}`);
-    check(`${scheme}: ${label} on streak card`, ratio >= min, ratio.toFixed(2));
+  const flameDisc = c.streakDisc === 'transparent' ? streakBg : solid(c.streakDisc, streakBg);
+  for (const [label, fg, bgColor, min] of [
+    ['streak title (text)', c.text, streakBg, BODY],
+    ['streak subtitle', c.streakMuted, streakBg, BODY],
+    ['streak flame on its disc (graphic)', c.streakAccent, flameDisc, LARGE],
+  ] as [string, string, string, number][]) {
+    const ratio = contrast(fg, bgColor);
+    console.log(`  ${scheme.padEnd(5)} ${label.padEnd(36)} ${ratio.toFixed(2).padStart(6)}  (>= ${min})${ratio >= min ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: ${label}`, ratio >= min, ratio.toFixed(2));
   }
+  // Over-budget banner: its text is the normal text colour on the expense wash over the screen background
+  const banner = solid(c.expenseWash, c.bg);
+  check(`${scheme}: banner text on the expense wash`, contrast(c.text, banner) >= BODY, contrast(c.text, banner).toFixed(2));
   const heroDivider = contrast(solid(c.heroDivider, c.heroBg), c.heroBg);
   console.log(`  ${scheme.padEnd(5)} hero divider on hero (decorative line, informational) ${heroDivider.toFixed(2)}`);
   // Section headings and links on the screen background
@@ -203,11 +212,22 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
     const ratio = contrast(c[fg], c.bg);
     check(`${scheme}: ${fg} on bg (headings, See all links)`, ratio >= BODY, ratio.toFixed(2));
   }
-  // The raised + button: navy plus on the brand orange, and its separating ring in Dark
+  // The raised + button: navy plus on the brand orange
   check(`${scheme}: plus icon (onPrimary) on the primary fill`, contrast(c.onPrimary, c.primary) >= 3, contrast(c.onPrimary, c.primary).toFixed(2));
-  // Tab bar: active label (primaryText) and inactive label (textMuted) on the bar surface
+  // Tab bar: the active label (primaryText), the inactive label (textMuted) and the vivid active ICON (primary, a graphic) on the bar
   check(`${scheme}: active tab label on the bar`, contrast(c.primaryText, c.surface) >= BODY, contrast(c.primaryText, c.surface).toFixed(2));
   check(`${scheme}: inactive tab label on the bar`, contrast(c.textMuted, c.surface) >= BODY, contrast(c.textMuted, c.surface).toFixed(2));
+  const activeIcon = contrast(c.primary, c.surface);
+  console.log(`  ${scheme.padEnd(5)} active tab icon (vivid orange, filled + semi-bold label) on bar ${activeIcon.toFixed(2)}  (informational; below 3 in Light)`);
+}
+
+// Donut slices and legend dots against the card surface. They carry no meaning alone (the legend text says it all), so this is informational.
+console.log('\nChart colours on the card surface (informational: legend text carries the meaning)');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  for (const hex of [...CATEGORY_PALETTE, OTHERS_COLOR]) {
+    const ratio = contrast(hex, palettes[scheme].surface);
+    console.log(`  ${scheme.padEnd(5)} ${hex} on surface ${ratio.toFixed(2).padStart(6)}${ratio >= 3 ? '' : '   (below 3:1)'}`);
+  }
 }
 
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------

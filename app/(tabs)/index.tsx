@@ -155,7 +155,8 @@ export default function HomeScreen() {
 
         <MonthCard monthName={monthName} income={periodSummary.income} expenses={periodSummary.expenses} net={periodSummary.net} />
 
-        <StreakCard days={builderStreak} />
+        {/* Before the redesign this card did nothing when tapped; it now opens the Journey screen (streak and milestones). */}
+        <StreakCard days={builderStreak} onPress={() => router.push('/journey')} />
 
         <SpendingCard
           slices={shownSpending.slices}
@@ -170,6 +171,8 @@ export default function HomeScreen() {
           goals={goals}
           categoryIcons={categoryIcons}
           onSeeAll={() => router.navigate('/transactions')}
+          // Before the redesign these rows did nothing; they now open the same edit screen the Transactions list opens.
+          onOpen={(id) => router.push(`/edit-transaction/${id}`)}
         />
       </ScrollView>
 
@@ -210,8 +213,8 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   greeting: {
-    fontSize: 27,
-    lineHeight: 34,
+    fontSize: 25,
+    lineHeight: 32,
   },
   motivation: {
     fontSize: 14,

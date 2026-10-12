@@ -27,13 +27,14 @@ export default function TabsLayout() {
         tabBarIcon: ({ focused, color, size }) => {
           if (route.name === 'add') {
             return (
-              // Brand orange with a NAVY plus (white on orange fails contrast). Light: a soft shadow. Dark: no shadow, a thin ring
-              // in the background colour separates the button from the content behind it.
+              // Brand orange with a NAVY plus (white on orange fails contrast). It is one plain circle: no shadow and no elevation (on
+              // Android both drew a rectangular box below the button in Light). Light: a 1 px border token. Dark: a thin ring in the
+              // background colour separates the button from the content behind it.
               <View
                 style={[
                   styles.addButton,
                   { backgroundColor: colors.primary },
-                  scheme === 'light' ? styles.addShadow : { borderWidth: 3, borderColor: colors.bg },
+                  scheme === 'light' ? { borderWidth: 1, borderColor: colors.border } : { borderWidth: 3, borderColor: colors.bg },
                 ]}
               >
                 <Ionicons name="add" size={34} color={colors.onPrimary} />
@@ -58,7 +59,9 @@ export default function TabsLayout() {
                     ? 'flag'
                     : 'flag-outline';
 
-          return <Ionicons name={iconName as keyof typeof Ionicons.glyphMap} size={size} color={color} />;
+          // The active icon is the vivid brand orange (it is a graphic, and it is also filled, so it never relies on colour alone);
+          // the label next to it uses the text-safe orange.
+          return <Ionicons name={iconName as keyof typeof Ionicons.glyphMap} size={size} color={focused ? colors.primary : color} />;
         },
         // Active = the text-safe orange (primaryText: darker in Light), plus a filled icon and a semi-bold label, so the active tab
         // never depends on colour alone. Inactive = muted text.
@@ -107,12 +110,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     // Raised above the bar. Screens leave bottom padding for the part that sticks out.
     marginTop: -24,
-  },
-  addShadow: {
-    shadowColor: '#17233C',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
   },
 });
