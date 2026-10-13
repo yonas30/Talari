@@ -342,6 +342,39 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   check(`${scheme}: New goal button label on its fill`, contrast(c.onPrimary, c.primary) >= BODY, contrast(c.onPrimary, c.primary).toFixed(2));
 }
 
+// ---- 1g. Settings, drawer, About, Notifications, Journey (Phase 4e) -----------------------------------------------------------
+console.log('\nPhase 4e: settings rows, drawer, notifications, journey');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  const accent = solid(c.accentDisc, c.surface);
+  check(`${scheme}: settings/drawer icon (primaryText) on the accent disc`, contrast(c.primaryText, accent) >= LARGE, contrast(c.primaryText, accent).toFixed(2));
+  check(`${scheme}: row title (text) on the card`, contrast(c.text, c.surface) >= BODY);
+  check(`${scheme}: row subtitle / section title (textMuted) on the screen`, contrast(c.textMuted, c.bg) >= BODY, contrast(c.textMuted, c.bg).toFixed(2));
+  check(`${scheme}: row subtitle (textMuted) on the card`, contrast(c.textMuted, c.surface) >= BODY);
+  check(`${scheme}: pressed row text (text) on surfaceMuted`, contrast(c.text, c.surfaceMuted) >= BODY, contrast(c.text, c.surfaceMuted).toFixed(2));
+  check(`${scheme}: switch track off (inputBorder) on the card`, contrast(c.inputBorder, c.surface) >= LARGE, contrast(c.inputBorder, c.surface).toFixed(2));
+  check(`${scheme}: switch track on (primary) on the card`, contrast(c.primary, c.surface) >= 2.5 || scheme === 'light', contrast(c.primary, c.surface).toFixed(2));
+  check(`${scheme}: switch thumb on (onPrimary) on the on-track (primary)`, contrast(c.onPrimary, c.primary) >= LARGE, contrast(c.onPrimary, c.primary).toFixed(2));
+  check(`${scheme}: switch thumb off (surface) on the off-track (inputBorder)`, contrast(c.surface, c.inputBorder) >= 1.5, contrast(c.surface, c.inputBorder).toFixed(2));
+  check(`${scheme}: unread dot (danger) on the card`, contrast(c.danger, c.surface) >= LARGE, contrast(c.danger, c.surface).toFixed(2));
+  check(`${scheme}: chevron (textMuted) on the card`, contrast(c.textMuted, c.surface) >= LARGE);
+  check(`${scheme}: drawer title / items (text) on the drawer surface`, contrast(c.text, c.surface) >= BODY);
+  check(`${scheme}: drawer selected row text (text) on surfaceMuted`, contrast(c.text, c.surfaceMuted) >= BODY);
+  check(`${scheme}: drawer selected check (primaryText) on surfaceMuted`, contrast(c.primaryText, c.surfaceMuted) >= LARGE, contrast(c.primaryText, c.surfaceMuted).toFixed(2));
+  check(`${scheme}: budget notification glyph (expense) on its disc`, contrast(c.expense, solid(c.expenseWash, c.surface)) >= LARGE, contrast(c.expense, solid(c.expenseWash, c.surface)).toFixed(2));
+  check(`${scheme}: info notification glyph (netGlyph) on its disc`, contrast(c.netGlyph, solid(c.netDisc, c.surface)) >= LARGE, contrast(c.netGlyph, solid(c.netDisc, c.surface)).toFixed(2));
+  check(`${scheme}: notification link (primaryText) on the card`, contrast(c.primaryText, c.surface) >= BODY, contrast(c.primaryText, c.surface).toFixed(2));
+  check(`${scheme}: pressed notification (text) on the screen bg`, contrast(c.text, c.bg) >= BODY);
+  const streak = solid(c.streakFill, c.bg);
+  const flame = c.streakDisc === 'transparent' ? streak : solid(c.streakDisc, streak);
+  check(`${scheme}: journey streak number (text) on the streak fill`, contrast(c.text, streak) >= BODY, contrast(c.text, streak).toFixed(2));
+  check(`${scheme}: journey streak labels (streakMuted) on the streak fill`, contrast(c.streakMuted, streak) >= BODY, contrast(c.streakMuted, streak).toFixed(2));
+  check(`${scheme}: journey flame (streakAccent) on its disc`, contrast(c.streakAccent, flame) >= LARGE, contrast(c.streakAccent, flame).toFixed(2));
+  check(`${scheme}: journey income growth glyph (incomeGlyph) on its disc`, contrast(c.incomeGlyph, solid(c.incomeDisc, c.surface)) >= LARGE, contrast(c.incomeGlyph, solid(c.incomeDisc, c.surface)).toFixed(2));
+  check(`${scheme}: journey income / expense / set-aside values on the card`, Math.min(contrast(c.income, c.surface), contrast(c.expense, c.surface), contrast(c.goals, c.surface)) >= BODY, Math.min(contrast(c.income, c.surface), contrast(c.expense, c.surface), contrast(c.goals, c.surface)).toFixed(2));
+  check(`${scheme}: milestone bullet (primary) on the card (graphic)`, contrast(c.primary, c.surface) >= 2.5 || scheme === 'light', contrast(c.primary, c.surface).toFixed(2));
+}
+
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------
 const OLD_COLORS: Record<keyof typeof colors, string> = {
   background: '#F7F7F3',
