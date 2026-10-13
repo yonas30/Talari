@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 
-import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
+import AppText from '../components/AppText';
+import Button from '../components/Button';
+import Card from '../components/Card';
 import { exportAllData, importAllData, BackupPayload } from '../db/database';
 import { useFinanceStore } from '../store/finance';
-import AppText from '../components/AppText';
+import { useTheme } from '../theme/ThemeProvider';
 
 export default function ExportDataScreen() {
+  const { colors } = useTheme();
   const loadData = useFinanceStore((state) => state.loadData);
   const transactions = useFinanceStore((state) => state.transactions);
   const [isBusy, setIsBusy] = useState(false);
@@ -106,25 +109,40 @@ export default function ExportDataScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Export / Restore" />
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.card}>
-          <AppText style={styles.sectionTitle}>Export your data</AppText>
-          <AppText style={styles.description}>
+        <Card style={styles.card}>
+          <View style={styles.titleRow}>
+            <View style={[styles.disc, { backgroundColor: colors.accentDisc }]}>
+              <Ionicons name="share-outline" size={18} color={colors.primaryText} />
+            </View>
+            <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+              Export your data
+            </AppText>
+          </View>
+          <AppText style={[styles.description, { color: colors.textMuted }]}>
             Save a copy of all your transactions, categories, goals, and budgets as a JSON file you can keep safe or move to another device.
           </AppText>
-          <AppButton title="Export backup (JSON)" variant="primary" onPress={() => void onExport()} disabled={isBusy} />
-          <AppButton title="Export transactions (CSV)" onPress={() => void onExportCsv()} disabled={isBusy} />
-        </View>
+          <Button title="Export backup (JSON)" variant="primary" onPress={() => void onExport()} disabled={isBusy} />
+          <Button title="Export transactions (CSV)" variant="secondary" onPress={() => void onExportCsv()} disabled={isBusy} />
+        </Card>
 
-        <View style={styles.card}>
-          <AppText style={styles.sectionTitle}>Restore from backup</AppText>
-          <AppText style={styles.description}>
+        <Card style={styles.card}>
+          <View style={styles.titleRow}>
+            <View style={[styles.disc, { backgroundColor: colors.expenseDisc }]}>
+              <Ionicons name="warning-outline" size={18} color={colors.expenseGlyph} />
+            </View>
+            <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+              Restore from backup
+            </AppText>
+          </View>
+          <AppText style={[styles.description, { color: colors.textMuted }]}>
             Importing a backup replaces all current data on this device with the contents of the selected file.
           </AppText>
-          <AppButton title="Import backup" onPress={() => void onImport()} disabled={isBusy} />
-        </View>
+          {/* Destructive, so the danger tone: the button is the expense fill, and the warning above says what it does. */}
+          <Button title="Import backup" variant="danger" onPress={() => void onImport()} disabled={isBusy} />
+        </Card>
       </ScrollView>
     </View>
   );
@@ -133,31 +151,36 @@ export default function ExportDataScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 16,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 14,
+    gap: 12,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  disc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+    flex: 1,
+    minWidth: 0,
+    fontSize: 17,
   },
   description: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
     lineHeight: 20,
   },
 });
