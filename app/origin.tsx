@@ -2,27 +2,33 @@ import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
-import { useFinanceStore } from '../store/finance';
 import AppText from '../components/AppText';
-import AppTextInput from '../components/AppTextInput';
+import Button from '../components/Button';
+import Card from '../components/Card';
+import FormInput from '../components/FormInput';
+import InlineError from '../components/InlineError';
+import { useFinanceStore } from '../store/finance';
+import { useTheme } from '../theme/ThemeProvider';
 
 export default function OriginScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const origin = useFinanceStore((state) => state.origin);
   const saveOrigin = useFinanceStore((state) => state.saveOrigin);
 
   const [startingPoint, setStartingPoint] = useState(origin?.startingPoint ?? '');
   const [whyBuilding, setWhyBuilding] = useState(origin?.whyBuilding ?? '');
   const [storyText, setStoryText] = useState(origin?.storyText ?? '');
+  // Shown above the Save button (it used to be a native alert). The "Saved" confirmation below stays a native alert.
+  const [error, setError] = useState<string | null>(null);
 
   const onSave = async () => {
     if (!storyText.trim() && !whyBuilding.trim() && !startingPoint.trim()) {
-      Alert.alert('Write at least a little about your story before saving.');
+      setError('Write at least a little about your story before saving.');
       return;
     }
+    setError(null);
 
     await saveOrigin({ storyText, startingPoint, whyBuilding });
     Alert.alert('Saved', 'Your story has been saved.');
@@ -30,53 +36,64 @@ export default function OriginScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Your Origin" />
       {/* The soft keyboard doesn't resize an edge-to-edge window; lift the form so inputs stay visible. */}
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
-          <AppText style={styles.subtitle}>
+          <AppText style={[styles.subtitle, { color: colors.textMuted }]}>
             This is your story, in your own words. It's never generated for you — only you write this,
             and your dashboard will occasionally remind you of it.
           </AppText>
 
-          <View style={styles.card}>
-            <AppText style={styles.label}>Where did you start financially?</AppText>
-            <AppTextInput
+          <Card style={styles.card}>
+            <AppText style={[styles.label, { color: colors.textMuted }]}>Where did you start financially?</AppText>
+            <FormInput
               style={styles.textArea}
               value={startingPoint}
-              onChangeText={setStartingPoint}
+              onChangeText={(text) => {
+                setStartingPoint(text);
+                setError(null);
+              }}
               placeholder="e.g. Living paycheck to paycheck, no savings..."
-              placeholderTextColor={colors.textSecondary}
+              accessibilityLabel="Where did you start financially?"
               multiline
             />
-          </View>
+          </Card>
 
-          <View style={styles.card}>
-            <AppText style={styles.label}>Why are you building this?</AppText>
-            <AppTextInput
+          <Card style={styles.card}>
+            <AppText style={[styles.label, { color: colors.textMuted }]}>Why are you building this?</AppText>
+            <FormInput
               style={styles.textArea}
               value={whyBuilding}
-              onChangeText={setWhyBuilding}
+              onChangeText={(text) => {
+                setWhyBuilding(text);
+                setError(null);
+              }}
               placeholder="e.g. I want my family to never worry about money again..."
-              placeholderTextColor={colors.textSecondary}
+              accessibilityLabel="Why are you building this?"
               multiline
             />
-          </View>
+          </Card>
 
-          <View style={styles.card}>
-            <AppText style={styles.label}>Your story</AppText>
-            <AppTextInput
+          <Card style={styles.card}>
+            <AppText style={[styles.label, { color: colors.textMuted }]}>Your story</AppText>
+            <FormInput
               style={styles.textArea}
               value={storyText}
-              onChangeText={setStoryText}
+              onChangeText={(text) => {
+                setStoryText(text);
+                setError(null);
+              }}
               placeholder="Write as much or as little as you want..."
-              placeholderTextColor={colors.textSecondary}
+              accessibilityLabel="Your story"
               multiline
             />
-          </View>
+          </Card>
 
-          <AppButton title="Save my story" variant="primary" onPress={() => void onSave()} />
+          {error ? <InlineError message={error} /> : null}
+
+          <Button title="Save my story" variant="primary" onPress={() => void onSave()} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -89,44 +106,27 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 12,
   },
   subtitle: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
     lineHeight: 20,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 14,
+    gap: 10,
   },
   label: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
     fontWeight: '700',
   },
   textArea: {
-    backgroundColor: colors.background,
-    borderColor: '#E2E5DE',
-    borderWidth: 1,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 15,
     minHeight: 90,
     textAlignVertical: 'top',
-    color: colors.navy,
   },
 });
