@@ -140,3 +140,30 @@ export function shouldShowGoalsLine(goalsAmount: number, balancesHidden: boolean
 export function goalsLineText(goalsAmount: number): string {
   return `Includes ${formatETB(goalsAmount)} in goals`;
 }
+
+// ---- the shared spending donut ----------------------------------------------------------------------------------------------
+// Home's donut: a third of the card width, never below 96 or above 168 dp; ring stroke 14% of the diameter; 2 px gaps between the
+// slices; the amount column only when the legend is at least 194 dp wide. Insights passes a fixed size instead.
+export interface DonutSizeRule {
+  share: number;
+  min: number;
+  max: number;
+}
+
+export const HOME_DONUT_RULE: DonutSizeRule = { share: 0.33, min: 96, max: 168 };
+export const DONUT_STROKE_SHARE = 0.14;
+export const DONUT_SLICE_GAP = 2;
+export const AMOUNT_COLUMN_MIN_LEGEND_WIDTH = 194;
+
+/** Diameter for a card whose content is `innerWidth` wide; before the first measurement the minimum is used. */
+export function donutSizeFor(innerWidth: number, rule: DonutSizeRule = HOME_DONUT_RULE): number {
+  if (innerWidth <= 0) {
+    return rule.min;
+  }
+  return Math.max(rule.min, Math.min(rule.max, Math.round(innerWidth * rule.share)));
+}
+
+/** Before the legend has been measured the amount column is shown; once measured it needs enough room. */
+export function showAmountColumn(legendWidth: number): boolean {
+  return legendWidth === 0 || legendWidth >= AMOUNT_COLUMN_MIN_LEGEND_WIDTH;
+}

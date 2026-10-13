@@ -3,7 +3,13 @@ import { ExchangeRate, Transaction, TransactionInput } from '../types';
 import { getBalances } from '../utils/balances';
 import { getCurrentPeriodSummary } from '../utils/currency';
 import {
+  AMOUNT_COLUMN_MIN_LEGEND_WIDTH,
   buildSpendingSlices,
+  DONUT_SLICE_GAP,
+  DONUT_STROKE_SHARE,
+  donutSizeFor,
+  HOME_DONUT_RULE,
+  showAmountColumn,
   formatNet,
   formatTransactionAmount,
   goalsLineText,
@@ -135,6 +141,44 @@ const month = getCurrentPeriodSummary(ledgerOf(inc(5000, 'available', '2025-12-0
 check('Net comes from the existing summary and is negative here', month.net === -200 && formatNet(month.net) === '−200.00');
 const calm = getCurrentPeriodSummary(ledgerOf(inc(5000, 'available', '2025-12-01'), inc(1000, 'available', '2026-01-05'), exp(400, '2026-01-06')), now);
 check('Net positive here', calm.net === 600 && formatNet(calm.net) === '+600.00');
+
+// ---- the shared donut: Home keeps exactly today's numbers (before/after) ---------------------------------------------------
+// "Before" is the formula Home's card used inline (commit 3cb18ff and since): a third of the card width, 96-168, 0 until measured.
+const oldDonutSize = (inner: number) => (inner > 0 ? Math.max(96, Math.min(168, Math.round(inner * 0.33))) : 96);
+const oldShowAmounts = (legend: number) => legend === 0 || legend >= 194;
+let sizesSame = true;
+for (const width of [0, 1, 96, 100, 240, 243, 288, 290, 318, 340, 375, 400, 450, 510, 520, 600, 1000, 317.6]) {
+  sizesSame = sizesSame && donutSizeFor(width) === oldDonutSize(width);
+}
+check('Home donut diameter is unchanged for every card width (a third of it, 96 to 168; 96 before it is measured)', sizesSame);
+check('Home donut at the common widths: 320 dp phone 96, 360 dp 96, 390 dp 105, 412 dp 112, tablet 168', [240, 288, 318, 340, 700].map((w) => donutSizeFor(w)).join() === '96,96,105,112,168');
+let amountsSame = true;
+for (const width of [0, 50, 193, 193.9, 194, 195, 300]) {
+  amountsSame = amountsSame && showAmountColumn(width) === oldShowAmounts(width);
+}
+check('the amount column appears under exactly the same condition as before (unmeasured, or a legend of 194 dp or more)', amountsSame && AMOUNT_COLUMN_MIN_LEGEND_WIDTH === 194);
+check('stroke is 14% of the diameter and slices are 2 px apart (Home today)', DONUT_STROKE_SHARE === 0.14 && DONUT_SLICE_GAP === 2 && HOME_DONUT_RULE.share === 0.33 && HOME_DONUT_RULE.min === 96 && HOME_DONUT_RULE.max === 168);
+check('Home ring at its sizes: stroke 13 / 15 / 24 dp', [96, 105, 168].map((d) => Math.round(d * DONUT_STROKE_SHARE)).join() === '13,15,24');
+check('Insights ring: fixed 160 dp, stroke 22 dp', Math.round(160 * DONUT_STROKE_SHARE) === 22);
+
+// Insights lists every category (no "Others"), with the same percentage rule
+const coloured = [
+  { label: 'Rent', amount: 5000, color: '#f97316' },
+  { label: 'Food', amount: 3000, color: '#f59e0b' },
+  { label: 'Transport', amount: 1200, color: '#ef4444' },
+  { label: 'Fun', amount: 800, color: '#8b5cf6' },
+  { label: 'Health', amount: 600, color: '#3b82f6' },
+  { label: 'Gifts', amount: 250, color: '#10b981' },
+  { label: 'Misc', amount: 150, color: '#14b8a6' },
+];
+const everything = buildSpendingSlices(coloured, Number.POSITIVE_INFINITY);
+check('Insights: all 7 categories listed, none folded into Others', everything.slices.length === 7 && everything.slices.every((slice) => !slice.isOthers));
+check('Insights: percentages add to exactly 100 and the total is the sum', sum(everything.slices.map((slice) => slice.percent)) === 100 && everything.total === 11000);
+check('Insights: each slice keeps the colour the breakdown gave it', everything.slices.map((slice) => slice.color).join() === coloured.map((item) => item.color).join());
+const homeView = buildSpendingSlices(coloured);
+check('Home view of the same data is still top 3 + Others (4 slices)', homeView.slices.length === 4 && homeView.slices[3].isOthers && homeView.slices[3].amount === 1800);
+check('Home: the first three slices carry the breakdown colours, Others has none (it is drawn grey)', homeView.slices.slice(0, 3).map((slice) => slice.color).join() === '#f97316,#f59e0b,#ef4444' && homeView.slices[3].color === undefined);
+check('one category and empty data work for Insights too', buildSpendingSlices([{ label: 'A', amount: 10 }], Number.POSITIVE_INFINITY).slices[0].percent === 100 && buildSpendingSlices([], Number.POSITIVE_INFINITY).slices.length === 0);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
