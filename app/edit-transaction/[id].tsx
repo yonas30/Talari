@@ -1,17 +1,18 @@
 import { Alert, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import AppButton from '../../components/AppButton';
 import AppHeader from '../../components/AppHeader';
+import AppText from '../../components/AppText';
+import Button from '../../components/Button';
 import TransactionForm from '../../components/TransactionForm';
-import { colors, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
+import { useTheme } from '../../theme/ThemeProvider';
 import { TransactionInput } from '../../types';
 import { alertLedgerError } from '../../utils/alerts';
-import AppText from '../../components/AppText';
 
 export default function EditTransactionScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const transactions = useFinanceStore((state) => state.transactions);
   const updateTransaction = useFinanceStore((state) => state.updateTransaction);
@@ -21,9 +22,11 @@ export default function EditTransactionScreen() {
 
   if (!original) {
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { backgroundColor: colors.bg }]}>
         <AppHeader title="Edit transaction" />
-        <AppText style={styles.title}>Transaction not found</AppText>
+        <AppText variant="title" style={styles.notFound}>
+          Transaction not found
+        </AppText>
       </View>
     );
   }
@@ -55,7 +58,7 @@ export default function EditTransactionScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Edit transaction" />
       <TransactionForm
         // Remount if the user navigates between two different transactions.
@@ -63,7 +66,7 @@ export default function EditTransactionScreen() {
         initial={original}
         submitLabel="Save changes"
         onSubmit={onSubmit}
-        footer={<AppButton title="Delete transaction" variant="danger" onPress={onDelete} />}
+        footer={<Button title="Delete transaction" variant="danger" onPress={onDelete} />}
       />
     </View>
   );
@@ -72,11 +75,8 @@ export default function EditTransactionScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  title: {
-    ...typography.sectionTitle,
-    color: colors.navy,
-    padding: spacing.xl,
+  notFound: {
+    padding: 20,
   },
 });

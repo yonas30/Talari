@@ -1,17 +1,16 @@
 import { StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import AppHeader from '../../components/AppHeader';
 import TransactionForm from '../../components/TransactionForm';
-import { colors, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
+import { useTheme } from '../../theme/ThemeProvider';
 import { TransactionInput } from '../../types';
-import AppText from '../../components/AppText';
 
 export default function AddTransactionScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const addTransaction = useFinanceStore((state) => state.addTransaction);
-  const insets = useSafeAreaInsets();
 
   const onSubmit = async (input: TransactionInput) => {
     // Throws a LedgerError if the entry would overdraw a balance or has no exchange rate;
@@ -21,8 +20,8 @@ export default function AddTransactionScreen() {
   };
 
   return (
-    <View style={styles.screen}>
-      <AppText style={[styles.title, { marginTop: insets.top + 16 }]}>Add Transaction</AppText>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
+      <AppHeader title="Add transaction" />
       <TransactionForm submitLabel="Save" onSubmit={onSubmit} resetOnSuccess />
     </View>
   );
@@ -31,12 +30,5 @@ export default function AddTransactionScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
-  },
-  title: {
-    ...typography.pageTitle,
-    fontSize: 24,
-    color: colors.navy,
-    paddingHorizontal: spacing.xl,
   },
 });
