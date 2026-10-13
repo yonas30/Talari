@@ -257,6 +257,26 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   check(`${scheme}: bell badge count on danger`, contrast(c.onDanger, c.danger) >= BODY, contrast(c.onDanger, c.danger).toFixed(2));
 }
 
+// ---- 1d. Add / Edit transaction form (Phase 4b) -----------------------------------------------------------------------
+// The fields sit on the screen colour inside a surface card. The amount is typed in the type's accent tone (large, but held to
+// the small-text bar here because it sits on the field fill), labels are textMuted on the card, the inline error is the expense tone
+// on the screen, and the Delete button is the danger fill with its own label colour (checked above).
+console.log('\nForm: amount accents and field text on the field fill (the screen colour), labels on the card');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  for (const fg of ['income', 'expense', 'transfer', 'text', 'textMuted'] as const) {
+    const ratio = contrast(c[fg], c.bg);
+    const ok = ratio >= BODY;
+    console.log(`  ${scheme.padEnd(5)} ${fg.padEnd(10)} on field fill (bg)   ${ratio.toFixed(2).padStart(6)}  (>= ${BODY})${ok ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: form ${fg} on the field fill`, ok, ratio.toFixed(2));
+  }
+  check(`${scheme}: form labels and helper text (textMuted) on the card`, contrast(c.textMuted, c.surface) >= BODY);
+  check(`${scheme}: inline error (expense) on the screen`, contrast(c.expense, c.bg) >= BODY);
+  check(`${scheme}: inline error (expense) on the card`, contrast(c.expense, c.surface) >= BODY);
+  check(`${scheme}: field edge (inputBorder) on the field fill`, contrast(c.inputBorder, c.bg) >= LARGE);
+  check(`${scheme}: focused field edge (text) on the field fill`, contrast(c.text, c.bg) >= LARGE);
+}
+
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------
 const OLD_COLORS: Record<keyof typeof colors, string> = {
   background: '#F7F7F3',
