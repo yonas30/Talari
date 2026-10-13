@@ -2,14 +2,18 @@ import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
-import { useFinanceStore } from '../store/finance';
 import AppText from '../components/AppText';
-import AppTextInput from '../components/AppTextInput';
+import Button from '../components/Button';
+import Card from '../components/Card';
+import FormInput from '../components/FormInput';
+import InlineError from '../components/InlineError';
+import { spacing } from '../constants/theme';
+import { useFinanceStore } from '../store/finance';
+import { useTheme } from '../theme/ThemeProvider';
 
 export default function ExchangeRatesScreen() {
+  const { colors } = useTheme();
   const exchangeRates = useFinanceStore((state) => state.exchangeRates);
   const upsertExchangeRate = useFinanceStore((state) => state.upsertExchangeRate);
   const homeCurrency = useFinanceStore((state) => state.homeCurrency);
@@ -21,6 +25,8 @@ export default function ExchangeRatesScreen() {
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
   const [ratesSaved, setRatesSaved] = useState(false);
+  // A validation message shown under the "Add a currency" fields (it used to be a native alert).
+  const [currencyError, setCurrencyError] = useState<string | null>(null);
 
   const findRate = (from: string) => exchangeRates.find((rate) => rate.fromCurrency === from && rate.toCurrency === homeCurrency)?.rate;
 
@@ -40,9 +46,10 @@ export default function ExchangeRatesScreen() {
 
   const onAddCurrency = async () => {
     if (!newCode.trim()) {
-      Alert.alert('Enter a currency code, e.g. CAD.');
+      setCurrencyError('Enter a currency code, e.g. CAD.');
       return;
     }
+    setCurrencyError(null);
     await addCurrency(newCode.trim(), newName.trim() || newCode.trim());
     setNewCode('');
     setNewName('');
@@ -55,78 +62,103 @@ export default function ExchangeRatesScreen() {
     ]);
   };
 
+  const label = [styles.label, { color: colors.text }];
+  const helper = [styles.helper, { color: colors.textMuted }];
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Currencies & Exchange Rates" />
       {/* The soft keyboard doesn't resize an edge-to-edge window; lift the form so inputs stay visible. */}
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
-          <View style={styles.card}>
-            <AppText style={styles.sectionTitle}>Manual rates (to {homeCurrency})</AppText>
-            <AppText style={styles.helper}>These rates are used to convert every transaction into your home currency.</AppText>
+          <Card style={styles.card}>
+            <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+              Manual rates (to {homeCurrency})
+            </AppText>
+            <AppText style={helper}>These rates are used to convert every transaction into your home currency.</AppText>
 
             {otherCurrencies.length === 0 ? (
-              <AppText style={styles.helper}>Add another currency below to set its exchange rate.</AppText>
+              <AppText style={helper}>Add another currency below to set its exchange rate.</AppText>
             ) : (
               otherCurrencies.map((currency) => (
                 <View key={currency.code} style={styles.rateRow}>
-                  <AppText style={styles.label}>
+                  <AppText style={label}>
                     {currency.code} → {homeCurrency}
                     {findRate(currency.code) === undefined ? '  ·  not set (required before logging this currency)' : ''}
                   </AppText>
-                  <AppTextInput
-                    style={styles.input}
+                  <FormInput
                     value={rateInputs[currency.code] ?? String(findRate(currency.code) ?? '')}
                     onChangeText={(value) => {
                       setRatesSaved(false);
                       setRateInputs((prev) => ({ ...prev, [currency.code]: value }));
                     }}
                     keyboardType="decimal-pad"
+                    accessibilityLabel={`${currency.code} to ${homeCurrency} rate`}
                   />
                 </View>
               ))
             )}
             {otherCurrencies.length > 0 && (
               <View style={styles.saveRatesBlock}>
-                <AppButton
+                <Button
                   title={ratesSaved ? 'Saved' : 'Save rates'}
-                  variant="primary"
+                  variant={ratesSaved ? 'secondary' : 'primary'}
                   selected={ratesSaved}
                   onPress={() => void onSaveRates()}
                 />
-                {ratesSaved && <AppText style={styles.successText}>Manual exchange rates updated.</AppText>}
+                {ratesSaved && (
+                  <View style={styles.successRow} accessibilityLiveRegion="polite">
+                    <Ionicons name="checkmark-circle" size={18} color={colors.income} />
+                    <AppText style={[styles.successText, { color: colors.income }]}>Manual exchange rates updated.</AppText>
+                  </View>
+                )}
               </View>
             )}
-          </View>
+          </Card>
 
-          <View style={styles.card}>
-            <AppText style={styles.sectionTitle}>Your currencies</AppText>
-            {currencies.map((currency) => (
-              <View key={currency.code} style={styles.currencyRow}>
+          <Card style={styles.card}>
+            <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+              Your currencies
+            </AppText>
+            {currencies.map((currency, index) => (
+              <View
+                key={currency.code}
+                style={[styles.currencyRow, index < currencies.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}
+              >
                 <View style={styles.currencyInfo}>
-                  <AppText style={styles.currencyCode}>{currency.code}</AppText>
-                  <AppText style={styles.helper}>{currency.name}</AppText>
+                  <AppText style={[styles.currencyCode, { color: colors.text }]}>{currency.code}</AppText>
+                  <AppText style={helper}>{currency.name}</AppText>
                 </View>
                 {!currency.isDefault && (
-                  <Pressable onPress={() => onDeleteCurrency(currency.code)}>
-                    <Ionicons name="trash-outline" size={20} color={colors.red} />
+                  <Pressable
+                    onPress={() => onDeleteCurrency(currency.code)}
+                    style={({ pressed }) => [styles.deleteButton, pressed && { backgroundColor: colors.surfaceMuted }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${currency.code}`}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={colors.expense} />
                   </Pressable>
                 )}
               </View>
             ))}
 
-            <AppText style={styles.label}>Add a currency</AppText>
-            <AppTextInput
-              style={styles.input}
+            <AppText style={label}>Add a currency</AppText>
+            <FormInput
               value={newCode}
-              onChangeText={setNewCode}
+              onChangeText={(value) => {
+                setNewCode(value);
+                setCurrencyError(null);
+              }}
               placeholder="Code, e.g. CAD"
               autoCapitalize="characters"
               maxLength={6}
+              accessibilityLabel="Currency code"
+              invalid={currencyError !== null}
             />
-            <AppTextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Name, e.g. Canadian Dollar" />
-            <AppButton title="Add currency" variant="primary" onPress={() => void onAddCurrency()} />
-          </View>
+            <FormInput value={newName} onChangeText={setNewName} placeholder="Name, e.g. Canadian Dollar" accessibilityLabel="Currency name" />
+            {currencyError ? <InlineError message={currencyError} /> : null}
+            <Button title="Add currency" variant="primary" onPress={() => void onAddCurrency()} />
+          </Card>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -139,34 +171,26 @@ const styles = StyleSheet.create({
   },
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    padding: spacing.xl,
-    gap: spacing.lg,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 16,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
+    padding: 14,
     gap: spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   sectionTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+    fontSize: 17,
   },
   helper: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
   label: {
-    ...typography.helper,
-    color: colors.navy,
+    fontSize: 13,
     fontWeight: '700',
     marginTop: spacing.sm,
   },
@@ -177,18 +201,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  successText: {
-    ...typography.helper,
-    color: colors.statusIncome,
+  successRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  input: {
-    backgroundColor: colors.background,
-    borderColor: '#E2E5DE',
-    borderWidth: 1,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16,
+  successText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
   },
   currencyInfo: {
     flex: 1,
@@ -200,12 +221,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
   },
   currencyCode: {
     fontWeight: '700',
-    color: colors.navy,
     fontSize: 15,
+  },
+  deleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
