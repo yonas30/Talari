@@ -61,6 +61,10 @@ export interface ThemeColors {
   expenseGlyph: string;
   netGlyph: string;
   transferGlyph: string;
+  /** Goals: the pale disc behind a goal's icon, the glyph on it, and the progress-bar fill (the goals colour; its track is surfaceMuted). */
+  goalsDisc: string;
+  goalsGlyph: string;
+  goalsBar: string;
   /** A light wash of the expense colour: the over-budget banner. */
   expenseWash: string;
   /** Net at 18.66 px bold or more counts as large text (3:1), so Light may use the vivid brand blue for it. */
@@ -139,6 +143,9 @@ export const lightColors: ThemeColors = {
   expenseGlyph: '#C23A33',
   netGlyph: '#3A6AA8',
   transferGlyph: '#6B5B9E',
+  goalsDisc: withAlpha(brandFills.goals, DISC_ALPHA),
+  goalsGlyph: '#5F6D49',
+  goalsBar: brandFills.goals,
   expenseWash: withAlpha(brandFills.expense, 0.12),
   netLarge: brandFills.net,
   heroDivider: 'rgba(255,255,255,0.14)',
@@ -190,6 +197,9 @@ export const darkColors: ThemeColors = {
   expenseGlyph: '#E8736F',
   netGlyph: '#5B8FD0',
   transferGlyph: '#9A8CCB',
+  goalsDisc: withAlpha(brandFills.goals, DISC_ALPHA),
+  goalsGlyph: '#8FA070',
+  goalsBar: '#8FA070',
   expenseWash: withAlpha(brandFills.expense, 0.12),
   netLarge: '#5B8FD0',
   heroDivider: 'rgba(255,255,255,0.14)',

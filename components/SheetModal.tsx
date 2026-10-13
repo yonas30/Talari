@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { KeyboardAvoidingView, Pressable, StyleSheet } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { spacing } from '../constants/theme';
@@ -31,7 +31,15 @@ export default function SheetModal({ visible, onClose, children }: SheetModalPro
             ]}
             onPress={(event) => event.stopPropagation()}
           >
-            {children}
+            {/* Scrollable, so the last button can always be reached with the keyboard open, on a short screen or at a large font. */}
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {children}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
@@ -54,7 +62,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     padding: spacing.xl,
-    gap: spacing.md,
     maxHeight: '90%',
+  },
+  scroll: {
+    flexGrow: 0,
+  },
+  scrollContent: {
+    gap: spacing.md,
   },
 });

@@ -315,6 +315,33 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   check(`${scheme}: Insights highlight empty message (streakMuted) on its card`, contrast(c.streakMuted, highlight) >= BODY, contrast(c.streakMuted, highlight).toFixed(2));
 }
 
+// ---- 1f. Goals (Phase 4d) ---------------------------------------------------------------------------------------------------
+// The progress bar is a graphic: its fill must stand out from its track (3:1). The goal icon is a glyph on a pale disc. The "Add money"
+// pill and the selected account row sit on the streak wash (Light: peach, Dark: the surface); all their text is held to 4.5:1.
+console.log('\nGoals: progress bar against its track, glyph on the goal disc, pills and rows');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  const bar = contrast(c.goalsBar, c.surfaceMuted);
+  console.log(`  ${scheme.padEnd(5)} progress bar fill on its track (surfaceMuted)  ${bar.toFixed(2).padStart(6)}  (>= 3)${bar >= 3 ? '' : '   <-- FAIL'}`);
+  check(`${scheme}: goals progress fill on its track`, bar >= LARGE, bar.toFixed(2));
+  const barOnCard = contrast(c.goalsBar, c.surface);
+  console.log(`  ${scheme.padEnd(5)} progress bar fill on the card surface          ${barOnCard.toFixed(2).padStart(6)}  (informational)`);
+  const glyph = contrast(c.goalsGlyph, solid(c.goalsDisc, c.surface));
+  console.log(`  ${scheme.padEnd(5)} goal icon on its pale disc                      ${glyph.toFixed(2).padStart(6)}  (>= 3)${glyph >= 3 ? '' : '   <-- FAIL'}`);
+  check(`${scheme}: goals glyph on its disc`, glyph >= LARGE, glyph.toFixed(2));
+  const pill = solid(c.streakFill, c.surface);
+  check(`${scheme}: Add money pill text on its fill`, contrast(c.text, pill) >= BODY, contrast(c.text, pill).toFixed(2));
+  check(`${scheme}: Add money pill icon (primaryText) on its fill`, contrast(c.primaryText, pill) >= LARGE, contrast(c.primaryText, pill).toFixed(2));
+  check(`${scheme}: Add money pill edge (primary) on the card`, contrast(c.primary, c.surface) >= 2.5, contrast(c.primary, c.surface).toFixed(2));
+  check(`${scheme}: selected account row balance (streakMuted) on its fill`, contrast(c.streakMuted, pill) >= BODY, contrast(c.streakMuted, pill).toFixed(2));
+  check(`${scheme}: radio icon (primaryText) on the selected row`, contrast(c.primaryText, pill) >= LARGE, contrast(c.primaryText, pill).toFixed(2));
+  check(`${scheme}: unselected radio / pill text (textMuted) on the card`, contrast(c.textMuted, c.surface) >= BODY);
+  check(`${scheme}: quick chip text on its fill (surfaceMuted)`, contrast(c.text, c.surfaceMuted) >= BODY, contrast(c.text, c.surfaceMuted).toFixed(2));
+  check(`${scheme}: goals note text (textMuted) on the card`, contrast(c.textMuted, c.surface) >= BODY);
+  check(`${scheme}: delete menu text (expense) on the sheet`, contrast(c.expense, c.surface) >= BODY, contrast(c.expense, c.surface).toFixed(2));
+  check(`${scheme}: New goal button label on its fill`, contrast(c.onPrimary, c.primary) >= BODY, contrast(c.onPrimary, c.primary).toFixed(2));
+}
+
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------
 const OLD_COLORS: Record<keyof typeof colors, string> = {
   background: '#F7F7F3',
