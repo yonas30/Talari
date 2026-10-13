@@ -2,16 +2,20 @@ import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
+import AppText from '../components/AppText';
+import Button from '../components/Button';
+import FormInput from '../components/FormInput';
+import InlineError from '../components/InlineError';
+import SegmentedControl, { SegmentOption } from '../components/SegmentedControl';
 import SheetModal from '../components/SheetModal';
-import { colors, radius, spacing, typography } from '../constants/theme';
+import { radius, spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
+import { useTheme } from '../theme/ThemeProvider';
+import { storedCategoryColors } from '../theme/tokens';
 import { Category, CategoryType } from '../types';
 import { CATEGORY_EMOJI_CHOICES, suggestCategoryEmoji } from '../utils/categoryIcons';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
-import AppText from '../components/AppText';
-import AppTextInput from '../components/AppTextInput';
 
 type EditableType = 'income' | 'expense';
 
@@ -21,11 +25,17 @@ const SECTION_TITLES: Record<CategoryType, string> = {
   savings: 'Savings (not used by transactions)',
 };
 
+const TYPE_OPTIONS: SegmentOption<EditableType>[] = [
+  { key: 'expense', label: 'Expense' },
+  { key: 'income', label: 'Income' },
+];
+
 function colorForType(type: CategoryType): string {
-  return type === 'income' ? colors.olive : type === 'savings' ? colors.blue : colors.orange;
+  return type === 'income' ? storedCategoryColors.income : type === 'savings' ? storedCategoryColors.savings : storedCategoryColors.expense;
 }
 
 export default function CategoriesScreen() {
+  const { colors } = useTheme();
   const { categories, transactions, budgets, addCategory, updateCategory, deleteCategory } = useFinanceStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,6 +45,8 @@ export default function CategoriesScreen() {
   const [icon, setIcon] = useState('✨');
   // Once the user picks an icon themselves, typing in the name no longer overrides it.
   const [iconChosen, setIconChosen] = useState(false);
+  // A validation message shown inside the sheet (it used to be a native alert).
+  const [error, setError] = useState<string | null>(null);
 
   const resetForm = () => {
     setName('');
@@ -42,6 +54,7 @@ export default function CategoriesScreen() {
     setIcon('✨');
     setIconChosen(false);
     setEditingId(null);
+    setError(null);
   };
 
   const openCreateModal = () => {
@@ -66,6 +79,7 @@ export default function CategoriesScreen() {
 
   const onNameChange = (text: string) => {
     setName(text);
+    setError(null);
     if (!iconChosen) {
       setIcon(suggestCategoryEmoji(text));
     }
@@ -74,7 +88,7 @@ export default function CategoriesScreen() {
   const onSave = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      Alert.alert('Category name is required');
+      setError('Category name is required');
       return;
     }
 
@@ -84,7 +98,7 @@ export default function CategoriesScreen() {
       (item) => item.id !== editingId && item.type === type && item.name.trim().toLowerCase() === trimmed.toLowerCase(),
     );
     if (duplicate) {
-      Alert.alert('Already exists', `You already have a ${type} category called "${trimmed}".`);
+      setError(`You already have a ${type} category called "${trimmed}".`);
       return;
     }
 
@@ -129,93 +143,125 @@ export default function CategoriesScreen() {
   // Legacy savings categories are only listed while some still exist, so they can be re-typed or deleted.
   const sections: CategoryType[] = grouped.savings.length > 0 ? ['income', 'expense', 'savings'] : ['income', 'expense'];
 
+  const discFor = (itemType: CategoryType) => (itemType === 'income' ? colors.incomeDisc : itemType === 'savings' ? colors.netDisc : colors.expenseDisc);
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Categories" />
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.headerRow}>
-          <AppText style={[styles.sectionTitle, styles.headerTitle]}>Manage categories</AppText>
-          <Pressable style={styles.addButton} onPress={openCreateModal} accessibilityRole="button" accessibilityLabel="New category">
-            <Ionicons name="add" size={22} color="#FFFFFF" />
-          </Pressable>
-        </View>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <AppText variant="heading" style={styles.pageTitle}>
+          Manage categories
+        </AppText>
+        <Button title="New category" icon="add" onPress={openCreateModal} accessibilityLabel="New category" />
 
         {sections.map((section) => (
-          <View key={section} style={styles.card}>
-            <AppText style={styles.groupTitle}>{SECTION_TITLES[section]}</AppText>
-            {grouped[section].length === 0 ? (
-              <AppText style={styles.emptyState}>No {section} categories yet — tap + to add one.</AppText>
-            ) : (
-              grouped[section].map((item, index) => {
-                const used = usageCount(item);
-                return (
-                  <View key={item.id} style={[styles.categoryRow, index === grouped[section].length - 1 && styles.lastRow]}>
-                    <View style={[styles.iconCircle, { backgroundColor: `${item.color}1A` }]}>
-                      <AppText style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{item.icon}</AppText>
+          <View key={section} style={styles.group}>
+            <AppText style={[styles.groupTitle, { color: colors.textMuted }]} accessibilityRole="header">
+              {SECTION_TITLES[section]}
+            </AppText>
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {grouped[section].length === 0 ? (
+                <AppText style={[styles.emptyState, { color: colors.textMuted }]}>No {section} categories yet — tap + to add one.</AppText>
+              ) : (
+                grouped[section].map((item, index) => {
+                  const used = usageCount(item);
+                  return (
+                    <View
+                      key={item.id}
+                      style={[styles.categoryRow, index < grouped[section].length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}
+                    >
+                      <View style={[styles.iconCircle, { backgroundColor: discFor(item.type) }]}>
+                        <AppText style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{item.icon}</AppText>
+                      </View>
+                      <View style={styles.categoryText}>
+                        <AppText style={[styles.categoryName, { color: colors.text }]} numberOfLines={1}>
+                          {item.name}
+                        </AppText>
+                        {used > 0 && <AppText style={[styles.usage, { color: colors.textMuted }]}>{used} in use</AppText>}
+                      </View>
+                      <Pressable
+                        onPress={() => openEditModal(item)}
+                        style={({ pressed }) => [styles.rowButton, pressed && { backgroundColor: colors.surfaceMuted }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${item.name}`}
+                      >
+                        <Ionicons name="pencil-outline" size={18} color={colors.text} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => onDelete(item)}
+                        style={({ pressed }) => [styles.rowButton, pressed && { backgroundColor: colors.surfaceMuted }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${item.name}`}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={colors.expense} />
+                      </Pressable>
                     </View>
-                    <View style={styles.categoryText}>
-                      <AppText style={styles.categoryName} numberOfLines={1}>
-                        {item.name}
-                      </AppText>
-                      {used > 0 && <AppText style={styles.usage}>{used} in use</AppText>}
-                    </View>
-                    <Pressable onPress={() => openEditModal(item)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Edit ${item.name}`}>
-                      <Ionicons name="pencil-outline" size={18} color={colors.navy} />
-                    </Pressable>
-                    <Pressable onPress={() => onDelete(item)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${item.name}`}>
-                      <Ionicons name="trash-outline" size={18} color={colors.red} />
-                    </Pressable>
-                  </View>
-                );
-              })
-            )}
+                  );
+                })
+              )}
+            </View>
           </View>
         ))}
       </ScrollView>
 
       <SheetModal visible={isModalOpen} onClose={closeModal}>
-        <AppText style={styles.sectionTitle}>{editingId ? 'Edit category' : 'New category'}</AppText>
-        <AppTextInput
-          style={styles.input}
+        <AppText variant="title" style={styles.sheetTitle} accessibilityRole="header">
+          {editingId ? 'Edit category' : 'New category'}
+        </AppText>
+        <FormInput
           value={name}
           onChangeText={onNameChange}
           placeholder="Category name"
-          placeholderTextColor={colors.textSecondary}
+          accessibilityLabel="Category name"
+          invalid={error !== null}
         />
 
-        <View style={styles.segmented}>
-          {(['expense', 'income'] as const).map((option) => (
-            <AppButton
-              key={option}
-              title={option === 'expense' ? 'Expense' : 'Income'}
-              selected={type === option}
-              onPress={() => setType(option)}
-              style={styles.segmentButton}
-            />
-          ))}
-        </View>
+        <SegmentedControl
+          options={TYPE_OPTIONS}
+          value={type}
+          onChange={(next) => {
+            setType(next);
+            setError(null);
+          }}
+        />
 
         <View style={styles.iconSection}>
-          <AppText style={styles.label}>Icon {iconChosen ? '' : '· suggested from the name'}</AppText>
+          <AppText style={[styles.label, { color: colors.textMuted }]}>Icon {iconChosen ? '' : '· suggested from the name'}</AppText>
           <View style={styles.iconGrid}>
-            {CATEGORY_EMOJI_CHOICES.map((emoji) => (
-              <Pressable
-                key={emoji}
-                style={[styles.iconOption, icon === emoji && styles.iconOptionSelected]}
-                onPress={() => {
-                  setIcon(emoji);
-                  setIconChosen(true);
-                }}
-                accessibilityRole="button"
-                accessibilityState={{ selected: icon === emoji }}
-              >
-                <AppText style={styles.iconOptionEmoji} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{emoji}</AppText>
-              </Pressable>
-            ))}
+            {CATEGORY_EMOJI_CHOICES.map((emoji) => {
+              const selected = icon === emoji;
+              return (
+                <Pressable
+                  key={emoji}
+                  // Selected: the pale orange disc, a heavier dark edge AND a check mark - not colour alone.
+                  style={[
+                    styles.iconOption,
+                    { backgroundColor: selected ? colors.accentDisc : colors.bg, borderColor: selected ? colors.text : colors.border },
+                    selected && styles.iconOptionSelected,
+                  ]}
+                  onPress={() => {
+                    setIcon(emoji);
+                    setIconChosen(true);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Icon ${emoji}`}
+                  accessibilityState={{ selected }}
+                >
+                  <AppText style={styles.iconOptionEmoji} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{emoji}</AppText>
+                  {selected ? (
+                    <View style={[styles.checkBadge, { backgroundColor: colors.text }]}>
+                      <Ionicons name="checkmark" size={10} color={colors.surface} />
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 
-        <AppButton title={editingId ? 'Save changes' : 'Create category'} variant="primary" onPress={() => void onSave()} />
+        {error ? <InlineError message={error} /> : null}
+
+        <Button title={editingId ? 'Save changes' : 'Create category'} variant="primary" onPress={() => void onSave()} />
       </SheetModal>
     </View>
   );
@@ -224,110 +270,75 @@ export default function CategoriesScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 16,
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.md,
+  pageTitle: {
+    fontSize: 18,
   },
-  headerTitle: {
-    flex: 1,
-    minWidth: 0,
-  },
-  sectionTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  group: {
+    gap: 8,
   },
   groupTitle: {
-    ...typography.helper,
-    fontWeight: '800',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: spacing.xs,
+    fontSize: 13,
+    fontWeight: '600',
+    paddingHorizontal: 4,
+  },
+  card: {
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   categoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
-  },
-  lastRow: {
-    borderBottomWidth: 0,
+    gap: spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
   iconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconText: {
-    fontSize: 18,
+    fontSize: 16,
   },
   categoryText: {
     flex: 1,
+    minWidth: 0,
   },
   categoryName: {
     fontWeight: '600',
-    color: colors.navy,
     fontSize: 15,
   },
   usage: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  rowButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    padding: 14,
+  },
+  sheetTitle: {
+    fontSize: 17,
   },
   label: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
     fontWeight: '700',
-  },
-  input: {
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16,
-    color: colors.navy,
-  },
-  segmented: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  segmentButton: {
-    flex: 1,
   },
   iconSection: {
     gap: spacing.sm,
@@ -341,17 +352,24 @@ const styles = StyleSheet.create({
     width: '14%',
     aspectRatio: 1,
     borderRadius: radius.button,
-    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'transparent',
   },
   iconOptionSelected: {
-    backgroundColor: colors.orangeLight,
-    borderColor: colors.orange,
+    borderWidth: 2,
   },
   iconOptionEmoji: {
     fontSize: 20,
+  },
+  checkBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -93,6 +93,10 @@ export const brandFills = {
   goals: '#71805A',
 } as const;
 
+// The colour stored with a NEW category (the `color` column of the categories table). It is saved data, not a display colour: the app now
+// draws category discs from the tokens above, but the stored values stay exactly what they were so no saved or backed-up data changes.
+export const storedCategoryColors = { income: '#6B7D3A', savings: '#4169E1', expense: '#E87532' } as const;
+
 // Icon circles use the brand colour at about 14% alpha.
 export const FILL_TINT_ALPHA = 0.14;
 // Icon discs on Home (and the recent list): pale, so they do not compete with the numbers.
