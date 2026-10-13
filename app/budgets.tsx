@@ -128,7 +128,8 @@ export default function BudgetsScreen() {
                 key={budget.id}
                 style={({ pressed }) => [
                   styles.card,
-                  { backgroundColor: pressed ? colors.surfaceMuted : colors.surface, borderColor: isOverBudget ? colors.expense : colors.border },
+                  { backgroundColor: colors.surface, borderColor: isOverBudget ? colors.expense : colors.border },
+                  pressed && styles.pressed,
                 ]}
                 onPress={() => openEdit(budget)}
                 accessibilityRole="button"
@@ -243,6 +244,9 @@ const styles = StyleSheet.create({
   },
   pageSubtitle: {
     fontSize: 13,
+  },
+  pressed: {
+    opacity: 0.8,
   },
   card: {
     borderWidth: 1,

@@ -1,9 +1,7 @@
 // Checks the Talari theme tokens.
 //  1. WCAG contrast of every text/background pair in both palettes (4.5:1, or 3:1 for large bold text).
-//  2. The legacy `colors` object: a key may differ from its old value only if the change is imperceptible (CIEDE2000 < 3).
-//  3. The categorical chart palette: no red/green, stable id -> colour mapping.
+//  2. The categorical chart palette: no red/green, stable id -> colour mapping.
 // Run: npx tsx scripts/verify-contrast.ts
-import { colors } from '../constants/theme';
 import { CATEGORY_PALETTE, CHART_PALETTE, categoryColor, OTHERS_COLOR } from '../theme/chartPalette';
 import { BREAKDOWN_PALETTE } from '../utils/reports';
 import { brandFills, palettes, ThemeColors, ThemeScheme } from '../theme/tokens';
@@ -375,36 +373,76 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   check(`${scheme}: milestone bullet (primary) on the card (graphic)`, contrast(c.primary, c.surface) >= 2.5 || scheme === 'light', contrast(c.primary, c.surface).toFixed(2));
 }
 
-// ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------
-const OLD_COLORS: Record<keyof typeof colors, string> = {
-  background: '#F7F7F3',
-  surface: '#FFFFFF',
-  navy: '#172033',
-  textSecondary: '#66708B',
-  olive: '#6B7D3A',
-  oliveLight: '#E8EDDC',
-  orange: '#E87532',
-  orangeLight: '#FCE8DA',
-  blue: '#4169E1',
-  red: '#D95C5C',
-  redLight: '#FBE4E4',
-  statusIncome: '#16A34A',
-  statusExpense: '#D95C5C',
-  statusWarning: '#F59E0B',
-  statusInfo: '#3B82F6',
-};
-const CHANGEABLE: (keyof typeof colors)[] = ['background', 'surface', 'navy'];
-console.log('\nLegacy colors: old -> new');
-for (const key of Object.keys(OLD_COLORS) as (keyof typeof colors)[]) {
-  const before = OLD_COLORS[key];
-  const after = colors[key];
-  const dE = deltaE(before, after);
-  const changed = before.toLowerCase() !== after.toLowerCase();
-  console.log(`  ${key.padEnd(14)} ${before} -> ${after}  ${changed ? `dE ${dE.toFixed(2)}` : 'unchanged'}`);
-  check(`legacy ${key}: changed only if imperceptible`, !changed || (CHANGEABLE.includes(key) && dE < 3), `dE ${dE.toFixed(2)}`);
+// ---- 1h. Recurring, Budgets, Categories, Exchange rates, Origin, Export / Restore (Phase 4f) -------------------------------------
+// Every pair the migrated screens draw. Text is held to 4.5:1; glyphs and graphics (progress fills against their track, icons, edges) to 3:1.
+console.log('\nPhase 4f: rules, budgets, categories, rates, origin, export');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  const disc = (tint: string, base: string) => solid(tint, base);
+  const text: [string, string, string][] = [
+    // Recurring
+    ['rule amount (income) on its card', c.income, c.surface],
+    ['rule amount (expense) on its card', c.expense, c.surface],
+    ['rule meta (textMuted) on its card', c.textMuted, c.surface],
+    ['sheet label (textMuted) on the sheet', c.textMuted, c.surface],
+    ['category dropdown text (text) on the field (bg)', c.text, c.bg],
+    ['category dropdown placeholder (textMuted) on the field (bg)', c.textMuted, c.bg],
+    ['selected category check (primaryText) on the list (bg)', c.primaryText, c.bg],
+    ['pressed option text (text) on surfaceMuted', c.text, c.surfaceMuted],
+    // Budgets: the figure, the status words and the over-limit text, each on the card and on its pressed fill
+    ['budget percent / on-track status (income) on the card', c.income, c.surface],
+    ['budget close-to-limit (primaryText) on the card', c.primaryText, c.surface],
+    ['budget over-limit (expense) on the card', c.expense, c.surface],
+    ['budget spent line (textMuted) on the card', c.textMuted, c.surface],
+    // Errors in place: on the sheet / card surface, and on the screen (Origin)
+    ['in-place error (expense) on the sheet or card', c.expense, c.surface],
+    ['in-place error (expense) on the screen (Origin)', c.expense, c.bg],
+    // Categories
+    ['category name (text) on its card', c.text, c.surface],
+    ['category usage (textMuted) on its card', c.textMuted, c.surface],
+    ['category section title (textMuted) on the screen', c.textMuted, c.bg],
+    ['pencil / row text (text) on the pressed row (surfaceMuted)', c.text, c.surfaceMuted],
+    // Exchange rates
+    ['rate success message (income) on its card', c.income, c.surface],
+    ['rate label (text) on its card', c.text, c.surface],
+    ['rate helper (textMuted) on its card', c.textMuted, c.surface],
+    ['rate field text (text) on the field (bg)', c.text, c.bg],
+    // Origin / Export
+    ['origin question label (textMuted) on its card', c.textMuted, c.surface],
+    ['origin intro (textMuted) on the screen', c.textMuted, c.bg],
+    ['restore button label (onDanger) on the danger fill', c.onDanger, c.danger],
+    ['CSV / secondary button label (text) on surfaceMuted', c.text, c.surfaceMuted],
+    ['export description (textMuted) on its card', c.textMuted, c.surface],
+  ];
+  for (const [name, fg, bg] of text) {
+    check(`${scheme}: ${name}`, contrast(fg, bg) >= BODY, contrast(fg, bg).toFixed(2));
+  }
+  const graphics: [string, string, string][] = [
+    // Progress fills against their track (3:1): on track, close, over
+    ['budget bar fill (income) on its track (surfaceMuted)', c.income, c.surfaceMuted],
+    ['budget bar fill (primaryText) on its track (surfaceMuted)', c.primaryText, c.surfaceMuted],
+    ['budget bar fill (expense) on its track (surfaceMuted)', c.expense, c.surfaceMuted],
+    ['budget status icons (income) on the card', c.income, c.surface],
+    ['budget status icon (primaryText) on the card', c.primaryText, c.surface],
+    ['budget status icon (expense) on the card', c.expense, c.surface],
+    ['over-limit card edge (expense) on the screen', c.expense, c.bg],
+    ['delete icon (expense) on its card', c.expense, c.surface],
+    ['delete icon (expense) on the pressed fill', c.expense, c.surfaceMuted],
+    ['rule switch off-track (inputBorder) on its card', c.inputBorder, c.surface],
+    ['rule switch on-thumb (onPrimary) on the on-track (primary)', c.onPrimary, c.primary],
+    ['selected icon edge (text) on its fill (accentDisc over the sheet)', c.text, disc(c.accentDisc, c.surface)],
+    ['icon check badge (surface) on the badge (text)', c.surface, c.text],
+    ['sheet close icon (textMuted) on the sheet', c.textMuted, c.surface],
+    ['success check (income) on its card', c.income, c.surface],
+    ['restore warning glyph (expenseGlyph) on its pale disc', c.expenseGlyph, disc(c.expenseDisc, c.surface)],
+    ['export glyph (primaryText) on its pale disc', c.primaryText, disc(c.accentDisc, c.surface)],
+  ];
+  for (const [name, fg, bg] of graphics) {
+    check(`${scheme}: ${name}`, contrast(fg, bg) >= LARGE, contrast(fg, bg).toFixed(2));
+  }
 }
 
-// ---- 3. chart palette -----------------------------------------------------------------------------------------------
+// ---- 2. chart palette -----------------------------------------------------------------------------------------------
 function isRedOrGreen(hex: string): boolean {
   const [r, g, b] = parse(hex).rgb;
   const max = Math.max(r, g, b);

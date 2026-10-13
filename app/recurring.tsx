@@ -209,13 +209,13 @@ export default function RecurringScreen() {
             const isExpense = rule.type === 'expense';
             return (
               // One compact flat card: pale icon disc, category + amount on the first line, frequency + next date on the second,
-              // then the Active switch and delete. Tapping the row edits the rule. A paused rule is a quieter fill and says "Paused".
+              // then the Active switch and delete. Tapping the row edits the rule. A paused rule says "Paused" and its switch is off.
               <Pressable
                 key={rule.id}
                 style={({ pressed }) => [
                   styles.ruleRow,
-                  { backgroundColor: rule.isActive ? colors.surface : colors.surfaceMuted, borderColor: colors.border },
-                  pressed && { backgroundColor: colors.surfaceMuted },
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  pressed && styles.pressed,
                 ]}
                 onPress={() => openEdit(rule)}
                 accessibilityRole="button"
@@ -484,6 +484,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  pressed: {
+    opacity: 0.8,
   },
   ruleRow: {
     flexDirection: 'row',
