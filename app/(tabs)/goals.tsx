@@ -3,23 +3,28 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import AppHeader from '../../components/AppHeader';
+import AppText from '../../components/AppText';
+import Button from '../../components/Button';
+import Card from '../../components/Card';
 import DateField from '../../components/DateField';
-import SegmentedTabs from '../../components/SegmentedTabs';
+import FormInput from '../../components/FormInput';
+import InlineError from '../../components/InlineError';
 import OverlayModal from '../../components/OverlayModal';
+import SegmentedControl, { SegmentOption } from '../../components/SegmentedControl';
 import SheetModal from '../../components/SheetModal';
-import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
+import { useTheme } from '../../theme/ThemeProvider';
 import { Account, Goal } from '../../types';
 import { alertLedgerError } from '../../utils/alerts';
-import { getBalances } from '../../utils/balances';
-import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
+import { getBalances, LedgerError } from '../../utils/balances';
+import { toLocalDateKey } from '../../utils/dates';
 import { getProjectedCompletionDate } from '../../utils/currency';
 import { formatDateKey, formatETB } from '../../utils/format';
-import { toLocalDateKey } from '../../utils/dates';
-import AppText from '../../components/AppText';
-import AppTextInput from '../../components/AppTextInput';
+import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 
 type MoveMode = 'add' | 'withdraw';
+type GoalTab = 'active' | 'completed';
 
 interface MoveState {
   goalId: string;
@@ -31,23 +36,30 @@ const ACCOUNT_LABELS: Record<Account, string> = {
   saved: 'Saved',
 };
 
+// Messages of the checks the sheets always had; they were native pop-ups, they are now shown in place.
+const GOAL_FORM_MESSAGE = 'Enter a goal name and a valid target amount.';
+const MOVE_AMOUNT_MESSAGE = 'Enter an amount greater than zero.';
+
 export default function GoalsScreen() {
+  const { colors } = useTheme();
   const { goals, transactions, addGoal, updateGoal, deleteGoal, contributeToGoal, withdrawFromGoal } =
     useFinanceStore();
   const insets = useSafeAreaInsets();
 
-  const [tab, setTab] = useState<'active' | 'completed'>('active');
+  const [tab, setTab] = useState<GoalTab>('active');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [targetAmount, setTargetAmount] = useState('');
+  const [name, setNameState] = useState('');
+  const [targetAmount, setTargetAmountState] = useState('');
   const [deadline, setDeadline] = useState<string | null>(null);
+  const [goalError, setGoalError] = useState<string | null>(null);
   const [menuGoalId, setMenuGoalId] = useState<string | null>(null);
 
   // "Move money" sheet: add = Available|Saved -> Goal, withdraw = Goal -> Available|Saved.
   const [move, setMove] = useState<MoveState | null>(null);
-  const [moveAmount, setMoveAmount] = useState('');
-  const [moveAccount, setMoveAccount] = useState<Account>('available');
+  const [moveAmount, setMoveAmountState] = useState('');
+  const [moveAccount, setMoveAccountState] = useState<Account>('available');
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
 
   // Every figure on this screen comes from the ledger (V2 Part C); a goal holds only what was
@@ -58,6 +70,11 @@ export default function GoalsScreen() {
   const activeGoals = useMemo(() => goals.filter((goal) => goal.status !== 'completed'), [goals]);
   const completedGoals = useMemo(() => goals.filter((goal) => goal.status === 'completed'), [goals]);
   const totalInGoals = Object.values(balances.goals).reduce((sum, value) => sum + value, 0);
+
+  const tabOptions: SegmentOption<GoalTab>[] = [
+    { key: 'active', label: `Active (${activeGoals.length})` },
+    { key: 'completed', label: `Completed (${completedGoals.length})` },
+  ];
 
   const moveGoal = move ? goals.find((goal) => goal.id === move.goalId) : undefined;
   const moveGoalHeld = moveGoal ? heldBy(moveGoal) : 0;
@@ -73,10 +90,29 @@ export default function GoalsScreen() {
     return numericMoveAmount > source ? `${sourceName} only has ${formatETB(source)}.` : null;
   })();
 
+  // Any edit clears the message it was about.
+  const setName = (value: string) => {
+    setGoalError(null);
+    setNameState(value);
+  };
+  const setTargetAmount = (value: string) => {
+    setGoalError(null);
+    setTargetAmountState(value);
+  };
+  const setMoveAmount = (value: string) => {
+    setMoveError(null);
+    setMoveAmountState(value);
+  };
+  const setMoveAccount = (value: Account) => {
+    setMoveError(null);
+    setMoveAccountState(value);
+  };
+
   const resetGoalForm = () => {
-    setName('');
-    setTargetAmount('');
+    setNameState('');
+    setTargetAmountState('');
     setDeadline(null);
+    setGoalError(null);
   };
 
   const openCreateGoal = () => {
@@ -87,9 +123,10 @@ export default function GoalsScreen() {
 
   const openEditGoal = (goal: Goal) => {
     setEditingGoalId(goal.id);
-    setName(goal.name);
-    setTargetAmount(String(goal.targetAmount));
+    setNameState(goal.name);
+    setTargetAmountState(String(goal.targetAmount));
     setDeadline(goal.deadline);
+    setGoalError(null);
     setIsCreateOpen(false);
   };
 
@@ -102,7 +139,7 @@ export default function GoalsScreen() {
   const onSaveGoal = async () => {
     const numericTarget = Number(targetAmount);
     if (!name.trim() || !Number.isFinite(numericTarget) || numericTarget <= 0) {
-      Alert.alert('Enter a goal name and a valid target amount.');
+      setGoalError(GOAL_FORM_MESSAGE);
       return;
     }
 
@@ -116,13 +153,15 @@ export default function GoalsScreen() {
 
   const openMove = (goal: Goal, mode: MoveMode) => {
     setMove({ goalId: goal.id, mode });
-    setMoveAmount('');
-    setMoveAccount('available');
+    setMoveAmountState('');
+    setMoveAccountState('available');
+    setMoveError(null);
   };
 
   const closeMove = () => {
     setMove(null);
-    setMoveAmount('');
+    setMoveAmountState('');
+    setMoveError(null);
   };
 
   const onConfirmMove = async () => {
@@ -130,11 +169,12 @@ export default function GoalsScreen() {
       return;
     }
     if (!hasValidMoveAmount) {
-      Alert.alert('Enter an amount greater than zero.');
+      setMoveError(MOVE_AMOUNT_MESSAGE);
       return;
     }
 
     setIsMoving(true);
+    setMoveError(null);
     try {
       if (move.mode === 'add') {
         await contributeToGoal(moveGoal.id, numericMoveAmount, moveAccount);
@@ -143,8 +183,12 @@ export default function GoalsScreen() {
       }
       closeMove();
     } catch (error) {
-      // Blocked by the ledger (not enough money in the source): keep the sheet open to adjust.
-      alertLedgerError(error);
+      // Blocked by the ledger (not enough money in the source): keep the sheet open to adjust, with the reason shown in place.
+      if (error instanceof LedgerError) {
+        setMoveError(error.message);
+      } else {
+        throw error;
+      }
     } finally {
       setIsMoving(false);
     }
@@ -157,7 +201,8 @@ export default function GoalsScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
-          // Blocked while the goal still holds money - it must be moved out first.
+          // Blocked while the goal still holds money - it must be moved out first. (There is no sheet open here, so this stays a
+          // native alert.)
           deleteGoal(goal.id).catch(alertLedgerError);
         },
       },
@@ -172,256 +217,316 @@ export default function GoalsScreen() {
       <View style={styles.actionRow}>
         {showAdd && (
           <Pressable
-            style={({ pressed }) => [styles.addAction, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.action,
+              { backgroundColor: colors.streakFill, borderColor: colors.primary },
+              pressed && styles.pressed,
+            ]}
             onPress={() => openMove(goal, 'add')}
             accessibilityRole="button"
             accessibilityLabel={`Add money to ${goal.name}`}
           >
-            <Ionicons name="add-circle-outline" size={16} color={colors.orange} />
-            <AppText style={styles.addActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Add money</AppText>
+            <Ionicons name="add-circle-outline" size={16} color={colors.primaryText} />
+            <AppText style={[styles.actionText, { color: colors.text }]} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+              Add money
+            </AppText>
           </Pressable>
         )}
         {held > 0 && (
           <Pressable
-            style={({ pressed }) => [styles.withdrawAction, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.action, { borderColor: colors.inputBorder }, pressed && styles.pressed]}
             onPress={() => openMove(goal, 'withdraw')}
             accessibilityRole="button"
             accessibilityLabel={`Withdraw money from ${goal.name}`}
           >
-            <Ionicons name="arrow-down-circle-outline" size={16} color={colors.textSecondary} />
-            <AppText style={styles.withdrawActionText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>Withdraw</AppText>
+            <Ionicons name="arrow-down-circle-outline" size={16} color={colors.textMuted} />
+            <AppText style={[styles.actionText, { color: colors.textMuted }]} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+              Withdraw
+            </AppText>
           </Pressable>
         )}
       </View>
     );
   };
 
-  return (
-    <View style={styles.screen}>
-      <View style={[styles.headerRow, { paddingTop: insets.top + 12 }]}>
-        <AppText style={styles.title}>Savings Goals</AppText>
-        <Pressable style={styles.addButton} onPress={openCreateGoal} accessibilityRole="button" accessibilityLabel="Create a goal">
-          <Ionicons name="add" size={22} color="#FFFFFF" />
-        </Pressable>
-      </View>
+  const dotsButton = (goal: Goal) => (
+    <Pressable
+      style={({ pressed }) => [styles.dotsButton, pressed && styles.pressed]}
+      onPress={() => setMenuGoalId(goal.id)}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`${goal.name} options`}
+    >
+      <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
+    </Pressable>
+  );
 
-      <ScrollView contentContainerStyle={styles.container}>
-        <SegmentedTabs
-          tabs={[
-            { key: 'active', label: `Active (${activeGoals.length})` },
-            { key: 'completed', label: `Completed (${completedGoals.length})` },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
+  return (
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
+      <AppHeader title="Savings Goals" />
+
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        {/* A clear, labelled button at the top of the list - nothing like the round raised + in the tab bar. */}
+        <Button title="New goal" icon="add" onPress={openCreateGoal} accessibilityLabel="Create a new goal" />
+
+        <SegmentedControl options={tabOptions} value={tab} onChange={setTab} />
 
         {goals.length > 0 && (
-          <AppText style={styles.metaText}>
-            {formatETB(totalInGoals)} is set aside in goals. It is still part of your Total Balance — withdraw it to
-            Available or Saved to spend it.
-          </AppText>
+          <View style={[styles.note, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.textMuted} />
+            <AppText style={[styles.noteText, { color: colors.textMuted }]}>
+              {formatETB(totalInGoals)} is set aside in goals. It is still part of your Total Balance — withdraw it to
+              Available or Saved to spend it.
+            </AppText>
+          </View>
         )}
 
         {tab === 'active' &&
           (activeGoals.length === 0 ? (
-            <View style={styles.card}>
-              <AppText style={styles.emptyState}>No active goals yet — tap + to create your first savings goal.</AppText>
-            </View>
+            <AppText style={[styles.emptyState, { color: colors.textMuted }]}>
+              No active goals yet. Tap New goal to create your first savings goal.
+            </AppText>
           ) : (
             activeGoals.map((goal) => {
               const held = heldBy(goal);
               const percent = goal.targetAmount > 0 ? Math.min((held / goal.targetAmount) * 100, 100) : 0;
               const projectedDate = getProjectedCompletionDate(goal, transactions);
               return (
-                <View key={goal.id} style={styles.card}>
+                <Card key={goal.id} style={styles.card}>
                   <View style={styles.goalHeaderRow}>
-                    <View style={styles.goalIconCircle}>
-                      <Ionicons name="flag" size={18} color={colors.orange} />
+                    <View style={[styles.disc, { backgroundColor: colors.goalsDisc }]}>
+                      <Ionicons name="flag" size={18} color={colors.goalsGlyph} />
                     </View>
-                    <AppText style={styles.goalName} numberOfLines={1}>
+                    <AppText style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>
                       {goal.name}
                     </AppText>
-                    <AppText style={styles.percentBadge}>{percent.toFixed(0)}%</AppText>
-                    <Pressable
-                      style={styles.dotsButton}
-                      onPress={() => setMenuGoalId(goal.id)}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${goal.name} options`}
-                    >
-                      <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                    </Pressable>
+                    <AppText variant="number" style={[styles.percent, { color: colors.text }]} maxFontSizeMultiplier={1.3}>
+                      {percent.toFixed(0)}%
+                    </AppText>
+                    {dotsButton(goal)}
                   </View>
 
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${percent}%` }]} />
+                  <View
+                    style={[styles.progressTrack, { backgroundColor: colors.surfaceMuted }]}
+                    accessible
+                    accessibilityRole="progressbar"
+                    accessibilityLabel={`${goal.name}, ${percent.toFixed(0)} percent saved`}
+                    accessibilityValue={{ min: 0, max: 100, now: Math.round(percent) }}
+                  >
+                    <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: colors.goalsBar }]} />
                   </View>
 
-                  <AppText style={styles.goalText}>
+                  <AppText variant="number" style={[styles.goalText, { color: colors.text }]} maxFontSizeMultiplier={1.3}>
                     {formatETB(held)} of {formatETB(goal.targetAmount)}
                   </AppText>
-                  {goal.deadline && <AppText style={styles.metaText}>Deadline: {formatDateKey(goal.deadline)}</AppText>}
+                  {goal.deadline && (
+                    <View style={styles.metaRow}>
+                      <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
+                      <AppText style={[styles.metaText, { color: colors.textMuted }]}>Deadline: {formatDateKey(goal.deadline)}</AppText>
+                    </View>
+                  )}
                   {projectedDate && (
-                    <AppText style={styles.metaText}>Projected completion: {formatDateKey(toLocalDateKey(projectedDate))}</AppText>
+                    <View style={styles.metaRow}>
+                      <Ionicons name="trending-up-outline" size={14} color={colors.textMuted} />
+                      <AppText style={[styles.metaText, { color: colors.textMuted }]}>
+                        Projected completion: {formatDateKey(toLocalDateKey(projectedDate))}
+                      </AppText>
+                    </View>
                   )}
 
                   {renderActions(goal, true)}
-                </View>
+                </Card>
               );
             })
           ))}
 
         {tab === 'completed' &&
           (completedGoals.length === 0 ? (
-            <View style={styles.card}>
-              <AppText style={styles.emptyState}>No completed goals yet.</AppText>
-            </View>
+            <AppText style={[styles.emptyState, { color: colors.textMuted }]}>No completed goals yet.</AppText>
           ) : (
             completedGoals.map((goal) => (
-              <View key={goal.id} style={styles.card}>
+              <Card key={goal.id} style={styles.card}>
                 <View style={styles.goalHeaderRow}>
-                  <View style={[styles.goalIconCircle, styles.doneIconCircle]}>
-                    <Ionicons name="checkmark-circle" size={18} color={colors.olive} />
+                  <View style={[styles.disc, { backgroundColor: colors.goalsDisc }]}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.goalsGlyph} />
                   </View>
                   <View style={styles.completedInfo}>
-                    <AppText style={styles.goalName} numberOfLines={1}>
+                    <AppText style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>
                       {goal.name}
                     </AppText>
-                    <AppText style={styles.metaText}>Completed · {formatDateKey(goal.updatedAt.slice(0, 10))}</AppText>
+                    <View style={styles.metaRow}>
+                      <Ionicons name="checkmark" size={14} color={colors.textMuted} />
+                      <AppText style={[styles.metaText, { color: colors.textMuted }]}>
+                        Completed · {formatDateKey(goal.updatedAt.slice(0, 10))}
+                      </AppText>
+                    </View>
                   </View>
-                  <Pressable
-                    style={styles.dotsButton}
-                    onPress={() => setMenuGoalId(goal.id)}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${goal.name} options`}
-                  >
-                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                  </Pressable>
+                  {dotsButton(goal)}
                 </View>
-                <AppText style={styles.goalText}>
+                <AppText variant="number" style={[styles.goalText, { color: colors.text }]} maxFontSizeMultiplier={1.3}>
                   {formatETB(heldBy(goal))} of {formatETB(goal.targetAmount)}
                 </AppText>
                 {/* A finished goal still holds its money until it is moved out. */}
                 {renderActions(goal, false)}
-              </View>
+              </Card>
             ))
           ))}
       </ScrollView>
 
       {/* Create / edit goal */}
       <SheetModal visible={isCreateOpen || editingGoalId !== null} onClose={closeGoalModal}>
-        <AppText style={styles.sectionTitle}>{editingGoalId ? 'Edit goal' : 'Create a new goal'}</AppText>
-        <AppTextInput style={styles.input} value={name} onChangeText={setName} placeholder="Goal name" />
-        <AppTextInput
-          style={styles.input}
+        <AppText variant="title" style={styles.sheetTitle} accessibilityRole="header">
+          {editingGoalId ? 'Edit goal' : 'Create a new goal'}
+        </AppText>
+        <FormInput value={name} onChangeText={setName} placeholder="Goal name" accessibilityLabel="Goal name" invalid={goalError !== null && !name.trim()} />
+        <FormInput
           value={targetAmount}
           onChangeText={setTargetAmount}
           placeholder="Target amount (ETB)"
           keyboardType="decimal-pad"
+          accessibilityLabel="Target amount in ETB"
+          invalid={goalError !== null && !(Number(targetAmount) > 0)}
         />
         <DateField label="Deadline" value={deadline} onChange={setDeadline} />
-        <Pressable style={({ pressed }) => [styles.confirmButton, pressed && styles.pressed]} onPress={() => void onSaveGoal()}>
-          <AppText style={styles.confirmButtonText}>{editingGoalId ? 'Save changes' : 'Create goal'}</AppText>
-        </Pressable>
+        {goalError !== null && <InlineError message={goalError} />}
+        <Button title={editingGoalId ? 'Save changes' : 'Create goal'} onPress={() => void onSaveGoal()} />
       </SheetModal>
 
       {/* Move money: Available|Saved -> Goal, or Goal -> Available|Saved */}
       <SheetModal visible={move !== null} onClose={closeMove}>
         {move && moveGoal && (
           <>
-            <AppText style={styles.sectionTitle} numberOfLines={1}>
+            <AppText variant="title" style={styles.sheetTitle} numberOfLines={1} accessibilityRole="header">
               {move.mode === 'add' ? `Add money to ${moveGoal.name}` : `Withdraw from ${moveGoal.name}`}
             </AppText>
-            <AppText style={styles.metaText}>
+            <AppText style={[styles.metaText, { color: colors.textMuted }]}>
               Holds {formatETB(moveGoalHeld)} of {formatETB(moveGoal.targetAmount)}. This moves money you already
               have; your Total Balance does not change.
             </AppText>
 
-            <AppTextInput
+            <FormInput
               style={styles.amountInput}
               value={moveAmount}
               onChangeText={setMoveAmount}
               placeholder="0.00"
               keyboardType="decimal-pad"
               autoFocus
+              maxFontSizeMultiplier={1.3}
+              accessibilityLabel="Amount"
+              invalid={moveError !== null && !hasValidMoveAmount}
             />
             <View style={styles.quickRow}>
               {move.mode === 'add' && moveGoal.targetAmount - moveGoalHeld > 0 && (
                 <Pressable
-                  style={styles.quickChip}
+                  style={({ pressed }) => [
+                    styles.quickChip,
+                    { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                    pressed && styles.pressed,
+                  ]}
                   onPress={() => setMoveAmount(String(Math.round((moveGoal.targetAmount - moveGoalHeld) * 100) / 100))}
+                  accessibilityRole="button"
                 >
-                  <AppText style={styles.quickChipText}>Remaining {formatETB(moveGoal.targetAmount - moveGoalHeld)}</AppText>
+                  <AppText style={[styles.quickChipText, { color: colors.text }]}>
+                    Remaining {formatETB(moveGoal.targetAmount - moveGoalHeld)}
+                  </AppText>
                 </Pressable>
               )}
               {move.mode === 'withdraw' && moveGoalHeld > 0 && (
-                <Pressable style={styles.quickChip} onPress={() => setMoveAmount(String(moveGoalHeld))}>
-                  <AppText style={styles.quickChipText}>All {formatETB(moveGoalHeld)}</AppText>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.quickChip,
+                    { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => setMoveAmount(String(moveGoalHeld))}
+                  accessibilityRole="button"
+                >
+                  <AppText style={[styles.quickChipText, { color: colors.text }]}>All {formatETB(moveGoalHeld)}</AppText>
                 </Pressable>
               )}
             </View>
 
-            <AppText style={styles.fieldLabel}>{move.mode === 'add' ? 'From' : 'To'}</AppText>
+            <AppText style={[styles.fieldLabel, { color: colors.textMuted }]}>{move.mode === 'add' ? 'From' : 'To'}</AppText>
             {(['available', 'saved'] as const).map((account) => {
               const selected = moveAccount === account;
               return (
                 <Pressable
                   key={account}
-                  style={[styles.accountRow, selected && styles.accountRowSelected]}
+                  style={({ pressed }) => [
+                    styles.accountRow,
+                    { borderColor: selected ? colors.primary : colors.inputBorder },
+                    selected && { backgroundColor: colors.streakFill },
+                    pressed && styles.pressed,
+                  ]}
                   onPress={() => setMoveAccount(account)}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
+                  accessibilityLabel={`${ACCOUNT_LABELS[account]}, ${formatETB(balances[account])}`}
                 >
                   <Ionicons
                     name={selected ? 'radio-button-on' : 'radio-button-off'}
                     size={20}
-                    color={selected ? colors.orange : colors.textSecondary}
+                    color={selected ? colors.primaryText : colors.textMuted}
                   />
-                  <AppText style={styles.accountName}>{ACCOUNT_LABELS[account]}</AppText>
-                  <AppText style={styles.accountBalance} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE} numberOfLines={1}>{formatETB(balances[account])}</AppText>
+                  <AppText style={[styles.accountName, { color: colors.text }]}>{ACCOUNT_LABELS[account]}</AppText>
+                  <AppText
+                    variant="number"
+                    style={[styles.accountBalance, { color: selected ? colors.streakMuted : colors.textMuted }]}
+                    maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}
+                    numberOfLines={1}
+                  >
+                    {formatETB(balances[account])}
+                  </AppText>
                 </Pressable>
               );
             })}
 
-            {moveShortfall && <AppText style={styles.warningText}>{moveShortfall}</AppText>}
+            {moveShortfall && moveError === null && <InlineError message={moveShortfall} />}
+            {moveError !== null && <InlineError message={moveError} />}
 
-            <Pressable
-              style={({ pressed }) => [styles.confirmButton, (pressed || isMoving) && styles.pressed]}
+            <Button
+              title={move.mode === 'add' ? 'Add money' : 'Withdraw'}
               onPress={() => void onConfirmMove()}
               disabled={isMoving}
-            >
-              <AppText style={styles.confirmButtonText}>{move.mode === 'add' ? 'Add money' : 'Withdraw'}</AppText>
-            </Pressable>
+            />
           </>
         )}
       </SheetModal>
 
       {/* Three-dot menu */}
       <OverlayModal visible={menuGoal !== undefined} animationType="fade" onRequestClose={() => setMenuGoalId(null)}>
-        <Pressable style={styles.menuBackdrop} onPress={() => setMenuGoalId(null)}>
-          <View style={[styles.menuSheet, { paddingBottom: spacing.xl + insets.bottom }]}>
+        <Pressable style={[styles.menuBackdrop, { backgroundColor: colors.scrim }]} onPress={() => setMenuGoalId(null)}>
+          <View
+            style={[
+              styles.menuSheet,
+              { paddingBottom: 20 + insets.bottom, backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
             <Pressable
-              style={styles.menuOption}
+              style={({ pressed }) => [styles.menuOption, pressed && { backgroundColor: colors.surfaceMuted }]}
               onPress={() => {
                 const goal = menuGoal;
                 setMenuGoalId(null);
                 if (goal) openEditGoal(goal);
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Edit goal"
             >
-              <Ionicons name="create-outline" size={20} color={colors.navy} />
-              <AppText style={styles.menuOptionText}>Edit goal</AppText>
+              <Ionicons name="create-outline" size={20} color={colors.text} />
+              <AppText style={[styles.menuOptionText, { color: colors.text }]}>Edit goal</AppText>
             </Pressable>
             <Pressable
-              style={styles.menuOption}
+              style={({ pressed }) => [styles.menuOption, pressed && { backgroundColor: colors.surfaceMuted }]}
               onPress={() => {
                 const goal = menuGoal;
                 setMenuGoalId(null);
                 if (goal) onDeleteGoal(goal);
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Delete goal"
             >
-              <Ionicons name="trash-outline" size={20} color={colors.red} />
-              <AppText style={[styles.menuOptionText, styles.deleteText]}>Delete goal</AppText>
+              <Ionicons name="trash-outline" size={20} color={colors.expense} />
+              <AppText style={[styles.menuOptionText, { color: colors.expense }]}>Delete goal</AppText>
             </Pressable>
           </View>
         </Pressable>
@@ -433,251 +538,179 @@ export default function GoalsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  title: {
-    flex: 1,
-    minWidth: 0,
-    ...typography.pageTitle,
-    fontSize: 24,
-    color: colors.navy,
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 12,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  note: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  sectionTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+  noteText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    lineHeight: 18,
   },
   emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 15,
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  card: {
+    padding: 14,
+    gap: 8,
   },
   goalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 8,
   },
-  goalIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.orangeLight,
+  disc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  doneIconCircle: {
-    backgroundColor: colors.oliveLight,
-  },
   goalName: {
     flex: 1,
+    minWidth: 0,
     fontSize: 16,
     fontWeight: '700',
-    color: colors.navy,
   },
   completedInfo: {
     flex: 1,
+    minWidth: 0,
+    gap: 2,
   },
-  percentBadge: {
-    ...typography.helper,
-    fontWeight: '800',
-    color: colors.navy,
+  percent: {
+    fontSize: 15,
+    fontWeight: '700',
   },
   dotsButton: {
     padding: 2,
   },
   progressTrack: {
     height: 8,
-    borderRadius: radius.pill,
-    backgroundColor: colors.background,
+    borderRadius: 999,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.statusIncome,
-    borderRadius: radius.pill,
+    borderRadius: 999,
   },
   goalText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    color: colors.navy,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   metaText: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    flexShrink: 1,
+    fontSize: 13,
   },
-  // Quiet secondary actions - a soft tint and an outline, not a filled CTA.
-  // Wraps onto a second line instead of pushing the second pill out of the card at large font sizes.
+  // Quiet secondary actions. Wraps onto a second line instead of pushing the second pill out of the card at large font sizes.
   actionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: 8,
     marginTop: 4,
   },
-  addAction: {
+  action: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: radius.pill,
-    backgroundColor: colors.orangeLight,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  addActionText: {
+  actionText: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.navy,
-  },
-  withdrawAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: '#DDE0E8',
-  },
-  withdrawActionText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
   },
   pressed: {
     opacity: 0.7,
   },
-  input: {
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 15,
-    color: colors.navy,
+  sheetTitle: {
+    fontSize: 18,
   },
   amountInput: {
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
     fontSize: 26,
-    fontWeight: '800',
-    color: colors.navy,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   quickRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: 8,
   },
   quickChip: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: radius.pill,
-    backgroundColor: colors.background,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   quickChipText: {
-    ...typography.helper,
+    fontSize: 13,
     fontWeight: '700',
-    color: colors.navy,
   },
   fieldLabel: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
   },
   accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.button,
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E8EAF0',
-  },
-  accountRowSelected: {
-    borderColor: colors.orange,
-    backgroundColor: colors.orangeLight,
   },
   accountName: {
     flex: 1,
     fontSize: 15,
     fontWeight: '600',
-    color: colors.navy,
   },
   accountBalance: {
     flexShrink: 0,
-    ...typography.helper,
-    color: colors.textSecondary,
-  },
-  warningText: {
-    ...typography.helper,
-    color: colors.red,
-  },
-  confirmButton: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.navy,
-    borderRadius: radius.button,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  confirmButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 15,
+    fontSize: 13,
   },
   menuBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
   },
   menuSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    paddingHorizontal: 20,
+    paddingTop: 8,
   },
   menuOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.lg,
+    gap: 12,
+    paddingVertical: 16,
   },
   menuOptionText: {
-    ...typography.body,
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.navy,
-  },
-  deleteText: {
-    color: colors.red,
   },
 });
