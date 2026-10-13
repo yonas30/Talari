@@ -2,25 +2,28 @@ import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
+import AppText from '../components/AppText';
+import Button from '../components/Button';
 import CategoryPicker from '../components/CategoryPicker';
 import CurrencyPicker from '../components/CurrencyPicker';
+import FormInput from '../components/FormInput';
+import InlineError from '../components/InlineError';
 import SheetModal from '../components/SheetModal';
 import { defaultCategories } from '../constants/categories';
-import { colors, radius, spacing, typography } from '../constants/theme';
+import { radius, spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
+import { useTheme } from '../theme/ThemeProvider';
 import { Budget, CurrencyCode } from '../types';
 import { getBudgetProgress } from '../utils/currency';
 import { formatETB } from '../utils/format';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
-import AppText from '../components/AppText';
-import AppTextInput from '../components/AppTextInput';
 
 // Share of the limit at which a budget is flagged as "close" before it is actually exceeded.
 const NEAR_LIMIT_PERCENT = 80;
 
 export default function BudgetsScreen() {
+  const { colors } = useTheme();
   const { budgets, categories, transactions, exchangeRates, upsertBudget, deleteBudget } = useFinanceStore();
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -29,6 +32,8 @@ export default function BudgetsScreen() {
   const [category, setCategory] = useState('');
   const [monthlyLimit, setMonthlyLimit] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>('ETB');
+  // A validation message shown inside the sheet (it used to be a native alert).
+  const [error, setError] = useState<string | null>(null);
 
   const allCategories = categories.length > 0 ? categories : defaultCategories;
   const expenseCategories = useMemo(() => allCategories.filter((item) => item.type === 'expense'), [allCategories]);
@@ -39,6 +44,7 @@ export default function BudgetsScreen() {
     setCategory('');
     setMonthlyLimit('');
     setCurrency('ETB');
+    setError(null);
     setIsSheetOpen(true);
   };
 
@@ -47,18 +53,20 @@ export default function BudgetsScreen() {
     setCategory(budget.category);
     setMonthlyLimit(String(budget.monthlyLimit));
     setCurrency(budget.currency);
+    setError(null);
     setIsSheetOpen(true);
   };
 
   const closeSheet = () => {
     setIsSheetOpen(false);
     setEditingBudget(null);
+    setError(null);
   };
 
   const onSave = async () => {
     const numericLimit = Number(monthlyLimit);
     if (!category || !Number.isFinite(numericLimit) || numericLimit <= 0) {
-      Alert.alert('Choose a category and enter a valid monthly limit.');
+      setError('Choose a category and enter a valid monthly limit.');
       return;
     }
 
@@ -80,68 +88,84 @@ export default function BudgetsScreen() {
     ]);
   };
 
-  return (
-    <View style={styles.screen}>
-      <AppHeader title="Budgets" />
-      <View style={styles.topBar}>
-        <View style={styles.topBarText}>
-          <AppText style={styles.pageTitle}>Monthly budgets</AppText>
-          <AppText style={styles.pageSubtitle}>Spending is tracked in ETB against each limit.</AppText>
-        </View>
-        <Pressable style={styles.addButton} onPress={openCreate} accessibilityRole="button" accessibilityLabel="Add a budget">
-          <Ionicons name="add" size={22} color="#FFFFFF" />
-        </Pressable>
-      </View>
+  const label = [styles.label, { color: colors.textMuted }];
 
-      <ScrollView contentContainerStyle={styles.container}>
+  return (
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
+      <AppHeader title="Budgets" />
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <View style={styles.topText}>
+          <AppText variant="heading" style={styles.pageTitle}>
+            Monthly budgets
+          </AppText>
+          <AppText style={[styles.pageSubtitle, { color: colors.textMuted }]}>Spending is tracked in ETB against each limit.</AppText>
+        </View>
+        <Button title="New budget" icon="add" onPress={openCreate} accessibilityLabel="Add a budget" />
+
         {budgets.length === 0 ? (
-          <View style={styles.card}>
-            <AppText style={styles.emptyState}>No budgets yet — tap + to set a monthly limit for a category.</AppText>
-          </View>
+          <AppText style={[styles.emptyState, { color: colors.textMuted }]}>
+            No budgets yet — tap + to set a monthly limit for a category.
+          </AppText>
         ) : (
           budgets.map((budget) => {
             const { spentAmount, limitETB, percent, isOverBudget } = getBudgetProgress(budget, transactions, exchangeRates);
-            const meta = categoryLookup[budget.category] ?? { icon: '💰', color: colors.orange };
+            const meta = categoryLookup[budget.category] ?? { icon: '💰' };
             const isNear = !isOverBudget && percent >= NEAR_LIMIT_PERCENT;
-            const accent = isOverBudget ? colors.red : isNear ? colors.statusWarning : colors.statusIncome;
+            // The bar and the figure use one tone per state, and the state is ALSO written out with an icon, so colour is never the only signal.
+            const accent = isOverBudget ? colors.expense : isNear ? colors.primaryText : colors.income;
+            const statusIcon = isOverBudget ? 'alert-circle' : isNear ? 'warning' : 'checkmark-circle';
+            const statusText =
+              limitETB === null
+                ? ''
+                : isOverBudget
+                  ? `Over budget by ${formatETB(spentAmount - limitETB)} this month`
+                  : isNear
+                    ? `Close to the limit · ${formatETB(limitETB - spentAmount)} left`
+                    : `On track · ${formatETB(limitETB - spentAmount)} left`;
 
             return (
               <Pressable
                 key={budget.id}
-                style={({ pressed }) => [styles.card, isOverBudget && styles.overCard, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.card,
+                  { backgroundColor: pressed ? colors.surfaceMuted : colors.surface, borderColor: isOverBudget ? colors.expense : colors.border },
+                ]}
                 onPress={() => openEdit(budget)}
                 accessibilityRole="button"
-                accessibilityLabel={`${budget.category} budget, tap to edit`}
+                accessibilityLabel={`${budget.category} budget, ${statusText || 'no exchange rate'}, tap to edit`}
               >
                 <View style={styles.cardHeader}>
-                  <View style={[styles.iconBadge, { backgroundColor: `${meta.color}1A` }]}>
+                  <View style={[styles.iconBadge, { backgroundColor: colors.expenseDisc }]}>
                     <AppText style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{meta.icon}</AppText>
                   </View>
                   <View style={styles.cardTitleGroup}>
-                    <AppText style={styles.cardTitle} numberOfLines={1}>
+                    <AppText style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
                       {budget.category}
                     </AppText>
-                    <AppText style={styles.amountText} numberOfLines={2}>
+                    <AppText style={[styles.amountText, { color: colors.textMuted }]} numberOfLines={2}>
                       {limitETB === null
                         ? `${formatETB(spentAmount)} spent — set a ${budget.currency} exchange rate to track this limit`
                         : `${formatETB(spentAmount)} of ${formatETB(limitETB)}`}
                     </AppText>
                   </View>
-                  {limitETB !== null && <AppText style={[styles.percent, { color: accent }]}>{Math.round(percent)}%</AppText>}
+                  {limitETB !== null && (
+                    <AppText variant="number" style={[styles.percent, { color: accent }]}>
+                      {Math.round(percent)}%
+                    </AppText>
+                  )}
                 </View>
 
                 {limitETB !== null && (
                   <>
-                    <View style={styles.progressTrack}>
+                    <View style={[styles.progressTrack, { backgroundColor: colors.surfaceMuted }]}>
                       <View style={[styles.progressFill, { width: `${Math.min(percent, 100)}%`, backgroundColor: accent }]} />
                     </View>
-                    <AppText style={[styles.status, { color: isOverBudget ? colors.red : colors.textSecondary }]}>
-                      {isOverBudget
-                        ? `Over budget by ${formatETB(spentAmount - limitETB)} this month`
-                        : isNear
-                          ? `Close to the limit · ${formatETB(limitETB - spentAmount)} left`
-                          : `On track · ${formatETB(limitETB - spentAmount)} left`}
-                    </AppText>
+                    <View style={styles.statusRow}>
+                      <Ionicons name={statusIcon} size={16} color={accent} />
+                      <AppText style={[styles.status, { color: isOverBudget ? colors.expense : isNear ? colors.primaryText : colors.textMuted }]}>
+                        {statusText}
+                      </AppText>
+                    </View>
                   </>
                 )}
               </Pressable>
@@ -151,37 +175,49 @@ export default function BudgetsScreen() {
       </ScrollView>
 
       <SheetModal visible={isSheetOpen} onClose={closeSheet}>
-        <AppText style={styles.sheetTitle}>{editingBudget ? `Edit ${editingBudget.category} budget` : 'Set a monthly limit'}</AppText>
+        <AppText variant="title" style={styles.sheetTitle} accessibilityRole="header">
+          {editingBudget ? `Edit ${editingBudget.category} budget` : 'Set a monthly limit'}
+        </AppText>
 
         {!editingBudget && (
           <>
-            <AppText style={styles.label}>Category</AppText>
+            <AppText style={label}>Category</AppText>
             <CategoryPicker
               value={category}
               options={expenseCategories}
               onChange={(value) => setCategory(expenseCategories.find((item) => item.id === value)?.name ?? value)}
+              discColor={colors.expenseDisc}
+              glyphColor={colors.expenseGlyph}
             />
           </>
         )}
 
-        <AppText style={styles.label}>Monthly limit</AppText>
+        <AppText style={label}>Monthly limit</AppText>
         <View style={styles.amountRow}>
-          <AppTextInput
+          <FormInput
             style={styles.input}
             value={monthlyLimit}
             onChangeText={setMonthlyLimit}
             placeholder="Amount"
-            placeholderTextColor={colors.textSecondary}
             keyboardType="decimal-pad"
+            accessibilityLabel="Monthly limit"
+            invalid={error !== null && !(Number(monthlyLimit) > 0)}
           />
           <CurrencyPicker value={currency} onChange={setCurrency} />
         </View>
 
-        <AppButton title={editingBudget ? 'Save changes' : 'Save budget'} variant="primary" onPress={() => void onSave()} />
+        {error ? <InlineError message={error} /> : null}
+
+        <Button title={editingBudget ? 'Save changes' : 'Save budget'} variant="primary" onPress={() => void onSave()} />
         {editingBudget && (
-          <Pressable style={styles.deleteLink} onPress={() => onDelete(editingBudget)} accessibilityRole="button">
-            <Ionicons name="trash-outline" size={16} color={colors.red} />
-            <AppText style={styles.deleteLinkText}>Delete budget</AppText>
+          <Pressable
+            style={({ pressed }) => [styles.deleteLink, pressed && { backgroundColor: colors.surfaceMuted }]}
+            onPress={() => onDelete(editingBudget)}
+            accessibilityRole="button"
+            accessibilityLabel="Delete budget"
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.expense} />
+            <AppText style={[styles.deleteLinkText, { color: colors.expense }]}>Delete budget</AppText>
           </Pressable>
         )}
       </SheetModal>
@@ -192,58 +228,27 @@ export default function BudgetsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  topBarText: {
-    flex: 1,
-  },
-  pageTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
-  },
-  pageSubtitle: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 12,
+  },
+  topText: {
+    gap: 2,
+  },
+  pageTitle: {
+    fontSize: 18,
+  },
+  pageSubtitle: {
+    fontSize: 13,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  overCard: {
     borderWidth: 1,
-    borderColor: colors.redLight,
-  },
-  pressed: {
-    opacity: 0.8,
+    borderRadius: 20,
+    padding: 14,
+    gap: spacing.sm,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -251,27 +256,26 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   iconBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconText: {
-    fontSize: 18,
+    fontSize: 16,
   },
   cardTitleGroup: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: colors.navy,
   },
   amountText: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
     fontWeight: '600',
   },
   percent: {
@@ -281,28 +285,32 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: colors.background,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
     borderRadius: radius.pill,
   },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
   status: {
-    ...typography.helper,
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
     fontWeight: '600',
   },
   emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
   sheetTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+    fontSize: 17,
   },
   label: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
     fontWeight: '700',
   },
   amountRow: {
@@ -312,22 +320,17 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16,
-    color: colors.navy,
+    minWidth: 0,
   },
   deleteLink: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.sm,
+    borderRadius: radius.button,
   },
   deleteLinkText: {
-    color: colors.red,
     fontWeight: '600',
     fontSize: 14,
   },
