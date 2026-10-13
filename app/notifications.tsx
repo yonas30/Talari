@@ -4,11 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
-import { useUiStore } from '../store/ui';
 import AppText from '../components/AppText';
+import { useUiStore } from '../store/ui';
+import { useTheme } from '../theme/ThemeProvider';
 
 export default function NotificationsScreen() {
+  const { colors } = useTheme();
   const notifications = useUiStore((state) => state.notifications);
   const markAllNotificationsAsRead = useUiStore((state) => state.markAllNotificationsAsRead);
   const markNotificationAsRead = useUiStore((state) => state.markNotificationAsRead);
@@ -19,46 +20,60 @@ export default function NotificationsScreen() {
   }, [markAllNotificationsAsRead]);
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Notifications" hideBell />
       <ScrollView contentContainerStyle={styles.container}>
         {notifications.length === 0 ? (
-          <View style={styles.emptyStateCard}>
-            <Ionicons name="notifications-off-outline" size={28} color={colors.textSecondary} />
-            <AppText style={styles.emptyTitle}>No notifications yet</AppText>
-            <AppText style={styles.emptyText}>You’re all caught up for now.</AppText>
+          <View style={styles.empty}>
+            <Ionicons name="notifications-off-outline" size={28} color={colors.textMuted} />
+            <AppText style={[styles.emptyTitle, { color: colors.text }]}>No notifications yet</AppText>
+            <AppText style={[styles.emptyText, { color: colors.textMuted }]}>You’re all caught up for now.</AppText>
           </View>
         ) : (
-          notifications.map((notification) => (
-            <Pressable
-              key={notification.id}
-              style={styles.notificationCard}
-              onPress={() => {
-                markNotificationAsRead(notification.id);
-                if (notification.route) {
-                  router.push(notification.route as never);
-                }
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={notification.route ? `${notification.title}. ${notification.description} Opens budgets.` : `${notification.title}. ${notification.description}`}
-            >
-              <View style={styles.iconWrap}>
-                <Ionicons
-                  name={notification.type === 'budget' ? 'wallet-outline' : 'information-circle-outline'}
-                  size={18}
-                  color={notification.type === 'budget' ? colors.orange : colors.blue}
-                />
-              </View>
-              <View style={styles.body}>
-                <View style={styles.titleRow}>
-                  <AppText style={styles.title}>{notification.title}</AppText>
-                  {!notification.isRead && <View style={styles.unreadDot} />}
+          notifications.map((notification) => {
+            const isBudget = notification.type === 'budget';
+            const summary = notification.route
+              ? `${notification.title}. ${notification.description} Opens budgets.`
+              : `${notification.title}. ${notification.description}`;
+            return (
+              <Pressable
+                key={notification.id}
+                style={({ pressed }) => [
+                  styles.card,
+                  { backgroundColor: pressed ? colors.bg : colors.surface, borderColor: colors.border },
+                ]}
+                onPress={() => {
+                  markNotificationAsRead(notification.id);
+                  if (notification.route) {
+                    router.push(notification.route as never);
+                  }
+                }}
+                accessibilityRole="button"
+                // Unread is said out loud as well as shown (a dot and a bolder title), so it never depends on colour.
+                accessibilityLabel={notification.isRead ? summary : `Unread. ${summary}`}
+              >
+                <View style={[styles.disc, { backgroundColor: isBudget ? colors.expenseWash : colors.netDisc }]}>
+                  <Ionicons
+                    name={isBudget ? 'wallet-outline' : 'information-circle-outline'}
+                    size={18}
+                    color={isBudget ? colors.expense : colors.netGlyph}
+                  />
                 </View>
-                <AppText style={styles.description}>{notification.description}</AppText>
-                {notification.route && <AppText style={styles.action}>Review budgets →</AppText>}
-              </View>
-            </Pressable>
-          ))
+                <View style={styles.body}>
+                  <View style={styles.titleRow}>
+                    <AppText style={[styles.title, { color: colors.text, fontWeight: notification.isRead ? '600' : '800' }]}>
+                      {notification.title}
+                    </AppText>
+                    {!notification.isRead && <View style={[styles.unreadDot, { backgroundColor: colors.danger }]} />}
+                  </View>
+                  <AppText style={[styles.description, { color: colors.textMuted }]}>{notification.description}</AppText>
+                  {notification.route && (
+                    <AppText style={[styles.action, { color: colors.primaryText }]}>Review budgets →</AppText>
+                  )}
+                </View>
+              </Pressable>
+            );
+          })
         )}
       </ScrollView>
     </View>
@@ -68,80 +83,67 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 12,
   },
-  emptyStateCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.xl,
+  empty: {
     alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    gap: 6,
+    paddingVertical: 40,
   },
   emptyTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+    fontSize: 16,
+    fontWeight: '700',
   },
   emptyText: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 14,
     textAlign: 'center',
   },
-  notificationCard: {
+  card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 14,
   },
-  iconWrap: {
+  disc: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.oliveLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   body: {
     flex: 1,
-    gap: 4,
+    minWidth: 0,
+    gap: 3,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-  },
-  action: {
-    ...typography.helper,
-    color: colors.blue,
-    fontWeight: '700',
-    marginTop: 4,
+    gap: 8,
   },
   title: {
-    ...typography.sectionTitle,
-    color: colors.navy,
     flex: 1,
+    fontSize: 15,
   },
   unreadDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: colors.red,
   },
   description: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  action: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 4,
   },
 });
