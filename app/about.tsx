@@ -1,26 +1,35 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
 import AppText from '../components/AppText';
+import Card from '../components/Card';
+import TalariSymbol from '../components/TalariSymbol';
+import TalariWordmark from '../components/TalariWordmark';
+import { useTheme } from '../theme/ThemeProvider';
 
 export default function AboutScreen() {
+  const { colors } = useTheme();
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="About" />
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.card}>
-          <AppText style={styles.title}>Talari</AppText>
-          <AppText style={styles.version}>Version 1.0.0</AppText>
-          <AppText style={styles.body}>
+        <Card style={styles.card}>
+          {/* The approved symbol and wordmark (Latin letters only). */}
+          <View style={styles.logo} accessible accessibilityRole="image" accessibilityLabel="Talari">
+            <TalariSymbol width={56} />
+            <TalariWordmark width={132} />
+          </View>
+          <AppText style={[styles.version, { color: colors.textMuted }]}>Version 1.0.0</AppText>
+          <AppText style={[styles.body, { color: colors.text }]}>
             This is not a generic budgeting app. It's a personal tool built as part of a "LIFE 2.0" journey —
             helping its one user make better financial decisions while staying connected to why they're building
             their life.
           </AppText>
-          <AppText style={styles.body}>
+          <AppText style={[styles.body, { color: colors.text }]}>
             Built with React Native, Expo, SQLite, and Zustand. All your data stays on your device.
           </AppText>
-        </View>
+        </Card>
       </ScrollView>
     </View>
   );
@@ -29,34 +38,26 @@ export default function AboutScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    padding: spacing.xl,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 16,
+    gap: 12,
   },
-  title: {
-    ...typography.pageTitle,
-    fontSize: 24,
-    color: colors.navy,
+  logo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
   version: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
   },
   body: {
-    ...typography.body,
-    color: colors.navy,
+    fontSize: 15,
     lineHeight: 22,
   },
 });
