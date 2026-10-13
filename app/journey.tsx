@@ -3,11 +3,12 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppHeader from '../components/AppHeader';
-import { colors, radius, spacing, typography } from '../constants/theme';
+import AppText from '../components/AppText';
+import Card from '../components/Card';
 import { useFinanceStore } from '../store/finance';
+import { useTheme } from '../theme/ThemeProvider';
 import { calculateBuilderStreak } from '../utils/currency';
 import { formatDateKey, formatNumber } from '../utils/format';
-import AppText from '../components/AppText';
 
 // 'YYYY-MM' -> 'September 2026'
 function formatMonthKey(key: string): string {
@@ -16,6 +17,7 @@ function formatMonthKey(key: string): string {
 }
 
 export default function JourneyScreen() {
+  const { colors } = useTheme();
   const { milestones, monthlySnapshots, transactions } = useFinanceStore();
 
   const longestStreak = useMemo(() => calculateBuilderStreak(transactions), [transactions]);
@@ -32,48 +34,67 @@ export default function JourneyScreen() {
     return ((latest.income - first.income) / first.income) * 100;
   }, [monthlySnapshots]);
 
+  const header = (icon: keyof typeof Ionicons.glyphMap, title: string, disc: string, glyph: string) => (
+    <View style={styles.statHeader}>
+      <View style={[styles.disc, { backgroundColor: disc }]}>
+        <Ionicons name={icon} size={18} color={glyph} />
+      </View>
+      <AppText variant="title" style={styles.statTitle} accessibilityRole="header">
+        {title}
+      </AppText>
+    </View>
+  );
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Your Journey" />
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={[styles.card, styles.heroCard]}>
+        {/* The streak, in the same warm style as the streak card on Home. */}
+        <View
+          style={[styles.hero, { backgroundColor: colors.streakFill, borderColor: colors.streakBorder }]}
+          accessible
+          accessibilityLabel={`Your momentum: ${longestStreak} day streak`}
+        >
           <View style={styles.statHeader}>
-            <Ionicons name="flash" size={22} color={colors.orange} />
-            <AppText style={styles.statTitle}>Your Momentum</AppText>
+            <View style={[styles.disc, { backgroundColor: colors.streakDisc }]}>
+              <Ionicons name="flame" size={20} color={colors.streakAccent} />
+            </View>
+            <AppText variant="title" style={styles.statTitle}>
+              Your Momentum
+            </AppText>
           </View>
-          <AppText style={styles.streakNumber}>{longestStreak}</AppText>
-          <AppText style={styles.streakLabel}>day streak</AppText>
-          <AppText style={styles.streakSupport}>
+          <AppText variant="number" style={[styles.streakNumber, { color: colors.text }]} maxFontSizeMultiplier={1.3}>
+            {longestStreak}
+          </AppText>
+          <AppText style={[styles.streakLabel, { color: colors.streakMuted }]}>day streak</AppText>
+          <AppText style={[styles.streakSupport, { color: colors.streakMuted }]}>
             {longestStreak > 0 ? "You're tracking consistently!" : 'Record something today to start your streak.'}
           </AppText>
         </View>
 
         {incomeGrowth !== null && (
-          <View style={styles.card}>
-            <View style={styles.statHeader}>
-            <Ionicons name="arrow-up" size={22} color={colors.olive} />
-              <AppText style={styles.statTitle}>Income Growth</AppText>
-            </View>
-            <AppText style={styles.growthValue}>
-              {incomeGrowth >= 0 ? '+' : ''}{incomeGrowth.toFixed(0)}%
+          <Card style={styles.card}>
+            {header('arrow-up', 'Income Growth', colors.incomeDisc, colors.incomeGlyph)}
+            <AppText
+              variant="number"
+              style={[styles.growthValue, { color: incomeGrowth >= 0 ? colors.income : colors.expense }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {incomeGrowth >= 0 ? '+' : ''}
+              {incomeGrowth.toFixed(0)}%
             </AppText>
-            <AppText style={styles.growthLabel}>
-              since your first tracked month
-            </AppText>
-          </View>
+            <AppText style={[styles.small, { color: colors.textMuted }]}>since your first tracked month</AppText>
+          </Card>
         )}
 
-        <View style={styles.card}>
-          <View style={styles.statHeader}>
-            <Ionicons name="calendar" size={22} color={colors.navy} />
-            <AppText style={styles.statTitle}>Monthly History</AppText>
-          </View>
+        <Card style={styles.card}>
+          {header('calendar', 'Monthly History', colors.accentDisc, colors.primaryText)}
           {monthlySnapshots.length === 0 ? (
-            <AppText style={styles.emptyState}>
+            <AppText style={[styles.small, { color: colors.textMuted }]}>
               Come back after your first full month of tracking — your growth chart will appear here.
             </AppText>
           ) : (
-            <View style={styles.snapshotList}>
+            <View style={styles.list}>
               {monthlySnapshots
                 .slice()
                 .reverse()
@@ -82,26 +103,45 @@ export default function JourneyScreen() {
                     key={snapshot.id}
                     style={[
                       styles.snapshotRow,
-                      index === monthlySnapshots.length - 1 && styles.snapshotRowLast,
+                      { borderBottomColor: colors.border },
+                      index === monthlySnapshots.length - 1 && styles.rowLast,
                     ]}
                   >
-                    <AppText style={styles.snapshotMonth}>{formatMonthKey(snapshot.month)}</AppText>
+                    <AppText style={[styles.snapshotMonth, { color: colors.text }]}>{formatMonthKey(snapshot.month)}</AppText>
                     <View style={styles.snapshotMetrics}>
                       <View style={styles.metricItem}>
-                        <AppText style={styles.metricLabel}>In</AppText>
-                        <AppText style={[styles.metricValue, { color: colors.statusIncome }]}>
+                        <AppText style={[styles.metricLabel, { color: colors.textMuted }]}>In</AppText>
+                        <AppText
+                          variant="number"
+                          style={[styles.metricValue, { color: colors.income }]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.6}
+                        >
                           {snapshot.currency} {formatNumber(snapshot.income, 0)}
                         </AppText>
                       </View>
                       <View style={styles.metricItem}>
-                        <AppText style={styles.metricLabel}>Out</AppText>
-                        <AppText style={[styles.metricValue, { color: colors.statusExpense }]}>
+                        <AppText style={[styles.metricLabel, { color: colors.textMuted }]}>Out</AppText>
+                        <AppText
+                          variant="number"
+                          style={[styles.metricValue, { color: colors.expense }]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.6}
+                        >
                           {snapshot.currency} {formatNumber(snapshot.expenses, 0)}
                         </AppText>
                       </View>
                       <View style={styles.metricItem}>
-                        <AppText style={styles.metricLabel}>Set aside</AppText>
-                        <AppText style={[styles.metricValue, { color: colors.olive }]}>
+                        <AppText style={[styles.metricLabel, { color: colors.textMuted }]}>Set aside</AppText>
+                        <AppText
+                          variant="number"
+                          style={[styles.metricValue, { color: colors.goals }]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.6}
+                        >
                           {snapshot.currency} {formatNumber(snapshot.savings, 0)}
                         </AppText>
                       </View>
@@ -110,38 +150,36 @@ export default function JourneyScreen() {
                 ))}
             </View>
           )}
-        </View>
+        </Card>
 
-        <View style={styles.card}>
-          <View style={styles.statHeader}>
-            <Ionicons name="star" size={22} color={colors.orange} />
-            <AppText style={styles.statTitle}>Milestones</AppText>
-          </View>
+        <Card style={styles.card}>
+          {header('star', 'Milestones', colors.accentDisc, colors.primaryText)}
           {milestones.length === 0 ? (
-            <AppText style={styles.emptyState}>
+            <AppText style={[styles.small, { color: colors.textMuted }]}>
               No milestones yet — complete a goal or build a long streak to earn your first one.
             </AppText>
           ) : (
-            <View style={styles.milestoneList}>
+            <View style={styles.list}>
               {milestones.map((milestone, index) => (
                 <View
                   key={milestone.id}
                   style={[
                     styles.milestoneRow,
-                    index === milestones.length - 1 && styles.milestoneRowLast,
+                    { borderBottomColor: colors.border },
+                    index === milestones.length - 1 && styles.rowLast,
                   ]}
                 >
-                  <View style={styles.milestoneBullet} />
+                  <View style={[styles.bullet, { backgroundColor: colors.primary }]} />
                   <View style={styles.milestoneContent}>
-                    <AppText style={styles.milestoneTitle}>{milestone.title}</AppText>
-                    <AppText style={styles.milestoneDescription}>{milestone.description}</AppText>
-                    <AppText style={styles.milestoneDate}>{formatDateKey(milestone.date)}</AppText>
+                    <AppText style={[styles.milestoneTitle, { color: colors.text }]}>{milestone.title}</AppText>
+                    <AppText style={[styles.small, { color: colors.textMuted }]}>{milestone.description}</AppText>
+                    <AppText style={[styles.date, { color: colors.textMuted }]}>{formatDateKey(milestone.date)}</AppText>
                   </View>
                 </View>
               ))}
             </View>
           )}
-        </View>
+        </Card>
       </ScrollView>
     </View>
   );
@@ -150,137 +188,118 @@ export default function JourneyScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 16,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 14,
+    gap: 10,
   },
-  heroCard: {
-    backgroundColor: colors.orangeLight,
+  hero: {
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 14,
+    gap: 4,
   },
   statHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: 10,
+  },
+  disc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+    fontSize: 17,
+    flex: 1,
   },
   streakNumber: {
     fontSize: 32,
+    lineHeight: 40,
     fontWeight: '800',
-    color: colors.orange,
+    marginTop: 6,
   },
   streakLabel: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 14,
     fontWeight: '600',
   },
   streakSupport: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+    fontSize: 13,
+    marginTop: 2,
   },
   growthValue: {
     fontSize: 28,
+    lineHeight: 34,
     fontWeight: '800',
-    color: colors.olive,
   },
-  growthLabel: {
-    ...typography.helper,
-    color: colors.textSecondary,
+  small: {
+    fontSize: 13,
+    lineHeight: 18,
   },
-  emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
-  },
-  snapshotList: {
-    gap: spacing.md,
+  list: {
+    gap: 12,
   },
   snapshotRow: {
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
-    gap: spacing.sm,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
   },
-  snapshotRowLast: {
+  rowLast: {
     borderBottomWidth: 0,
     paddingBottom: 0,
   },
   snapshotMonth: {
     fontWeight: '700',
-    color: colors.navy,
     fontSize: 15,
   },
   snapshotMetrics: {
     flexDirection: 'row',
-    gap: spacing.lg,
+    gap: 12,
   },
   metricItem: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   metricLabel: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 12,
     fontWeight: '600',
   },
   metricValue: {
     fontSize: 14,
     fontWeight: '700',
   },
-  milestoneList: {
-    gap: spacing.md,
-  },
   milestoneRow: {
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: 12,
   },
-  milestoneRowLast: {
-    borderBottomWidth: 0,
-    paddingBottom: 0,
-  },
-  milestoneBullet: {
+  bullet: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.orange,
-    marginTop: spacing.md,
+    marginTop: 7,
   },
   milestoneContent: {
     flex: 1,
-    gap: 4,
+    minWidth: 0,
+    gap: 3,
   },
   milestoneTitle: {
     fontWeight: '700',
-    color: colors.navy,
     fontSize: 14,
   },
-  milestoneDescription: {
-    ...typography.helper,
-    color: colors.textSecondary,
-  },
-  milestoneDate: {
-    ...typography.helper,
-    color: colors.textSecondary,
+  date: {
     fontSize: 12,
-    marginTop: spacing.xs,
+    marginTop: 2,
   },
 });
