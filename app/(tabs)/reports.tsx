@@ -1,17 +1,22 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppHeader from '../../components/AppHeader';
+import AppText from '../../components/AppText';
+import Card from '../../components/Card';
 import DateField from '../../components/DateField';
-import DonutChart from '../../components/DonutChart';
 import HorizontalBarChart from '../../components/HorizontalBarChart';
+import MonthCard from '../../components/home/MonthCard';
+import SegmentedControl, { SegmentOption } from '../../components/SegmentedControl';
+import SpendingDonut from '../../components/SpendingDonut';
 import TrendLineChart from '../../components/TrendLineChart';
-import { colors, radius, spacing, typography } from '../../constants/theme';
 import { useFinanceStore } from '../../store/finance';
+import { useTheme } from '../../theme/ThemeProvider';
 import { addDays, toLocalDateKey } from '../../utils/dates';
+import { formatETB } from '../../utils/format';
+import { buildSpendingSlices } from '../../utils/homeModel';
 import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
-import { formatETB, formatNumber } from '../../utils/format';
 import {
   RangePreset,
   TREND_TITLES,
@@ -28,7 +33,15 @@ import {
   shiftWeek,
   startOfWeek,
 } from '../../utils/reports';
-import AppText from '../../components/AppText';
+
+const RANGE_OPTIONS: SegmentOption<RangePreset>[] = [
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'custom', label: 'Custom' },
+];
+
+// The Insights donut keeps its large size (160 dp); Home's is a third of its card.
+const INSIGHTS_DONUT_SIZE = 160;
 
 interface PeriodNavProps {
   label: string;
@@ -40,12 +53,19 @@ interface PeriodNavProps {
 // Shared ← label → control for the weekly and monthly views. Going forward past the current period
 // is disabled (nothing can have happened yet), and shown as such.
 function PeriodNav({ label, canGoForward, onBack, onForward }: PeriodNavProps) {
+  const { colors } = useTheme();
   return (
     <View style={styles.monthNav}>
-      <Pressable onPress={onBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Previous period">
-        <Ionicons name="chevron-back" size={22} color={colors.navy} />
+      <Pressable
+        onPress={onBack}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Previous period"
+        style={({ pressed }) => (pressed ? styles.pressed : null)}
+      >
+        <Ionicons name="chevron-back" size={22} color={colors.text} />
       </Pressable>
-      <AppText style={styles.monthLabel} numberOfLines={2} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+      <AppText style={[styles.monthLabel, { color: colors.text }]} numberOfLines={2} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
         {label}
       </AppText>
       <Pressable
@@ -55,14 +75,16 @@ function PeriodNav({ label, canGoForward, onBack, onForward }: PeriodNavProps) {
         accessibilityRole="button"
         accessibilityLabel="Next period"
         accessibilityState={{ disabled: !canGoForward }}
+        style={({ pressed }) => (pressed && canGoForward ? styles.pressed : null)}
       >
-        <Ionicons name="chevron-forward" size={22} color={canGoForward ? colors.navy : '#C9CDD6'} />
+        <Ionicons name="chevron-forward" size={22} color={canGoForward ? colors.text : colors.inputBorder} />
       </Pressable>
     </View>
   );
 }
 
 export default function ReportsScreen() {
+  const { colors } = useTheme();
   const transactions = useFinanceStore((state) => state.transactions);
   const [range, setRange] = useState<RangePreset>('monthly');
   const [monthOffset, setMonthOffset] = useState(0);
@@ -93,8 +115,8 @@ export default function ReportsScreen() {
   const sourceBreakdown = useMemo(() => getSourceBreakdown(filtered), [filtered]);
   const trend = useMemo(() => getTrendSeries(filtered, dates.start, dates.end), [filtered, dates]);
   const biggestCategory = useMemo(() => getBiggestSpendingCategory(filtered), [filtered]);
-
-  const totalSpending = categoryBreakdown.reduce((sum, item) => sum + item.amount, 0);
+  // Every category (no "Others" here), with the percentages worked out the same way as on Home.
+  const spending = useMemo(() => buildSpendingSlices(categoryBreakdown, Number.POSITIVE_INFINITY), [categoryBreakdown]);
 
   const weekLabel = useMemo(() => {
     const start = startOfWeek(referenceDate);
@@ -112,23 +134,11 @@ export default function ReportsScreen() {
     setCustomEnd(next.end);
   };
 
-  const netColor = totals.net < 0 ? colors.statusExpense : colors.statusIncome;
-
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Insights" />
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.segmented}>
-          {(['weekly', 'monthly', 'custom'] as const).map((option) => (
-            <Pressable
-              key={option}
-              style={[styles.pill, range === option && styles.pillSelected]}
-              onPress={() => setRange(option)}
-            >
-              <AppText style={[styles.pillText, range === option && styles.pillTextSelected]}>{option}</AppText>
-            </Pressable>
-          ))}
-        </View>
+        <SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} />
 
         {range === 'monthly' && (
           <PeriodNav
@@ -151,112 +161,74 @@ export default function ReportsScreen() {
         {range === 'custom' && (
           <View style={styles.customRow}>
             <View style={styles.customField}>
-              <AppText style={styles.label}>Start date</AppText>
+              <AppText style={[styles.label, { color: colors.textMuted }]}>Start date</AppText>
               <DateField label="Start date" value={customStart} onChange={(value) => onCustomChange('start', value)} />
             </View>
             <View style={styles.customField}>
-              <AppText style={styles.label}>End date</AppText>
+              <AppText style={[styles.label, { color: colors.textMuted }]}>End date</AppText>
               <DateField label="End date" value={customEnd} onChange={(value) => onCustomChange('end', value)} />
             </View>
           </View>
         )}
 
-        <AppText style={styles.currencyNote}>All amounts in ETB · transfers are not counted as income or spending</AppText>
+        <AppText style={[styles.currencyNote, { color: colors.textMuted }]}>
+          All amounts in ETB · transfers are not counted as income or spending
+        </AppText>
 
-        <View style={styles.summaryRow}>
-          <View style={[styles.summaryCard, { backgroundColor: colors.oliveLight }]}>
-            <View style={styles.summaryHeaderRow}>
-              <AppText style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
-                Income
-              </AppText>
-              <Ionicons name="trending-up" size={14} color={colors.statusIncome} />
-            </View>
-            <AppText
-              style={[styles.summaryValue, { color: colors.statusIncome }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-              maxFontSizeMultiplier={1.3}
-            >
-              {formatNumber(totals.income)}
-            </AppText>
-          </View>
-          <View style={[styles.summaryCard, { backgroundColor: colors.redLight }]}>
-            <View style={styles.summaryHeaderRow}>
-              <AppText style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
-                Expenses
-              </AppText>
-              <Ionicons name="trending-down" size={14} color={colors.statusExpense} />
-            </View>
-            <AppText
-              style={[styles.summaryValue, { color: colors.statusExpense }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-              maxFontSizeMultiplier={1.3}
-            >
-              {formatNumber(totals.expenses)}
-            </AppText>
-          </View>
-          <View style={[styles.summaryCard, { backgroundColor: colors.surface }]}>
-            <View style={styles.summaryHeaderRow}>
-              <AppText style={styles.summaryLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
-                Net
-              </AppText>
-              <Ionicons name="swap-vertical" size={14} color={netColor} />
-            </View>
-            <AppText
-              style={[styles.summaryValue, { color: netColor }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-              maxFontSizeMultiplier={1.3}
-            >
-              {totals.net > 0 ? '+' : ''}
-              {formatNumber(totals.net)}
-            </AppText>
-          </View>
-        </View>
+        {/* The same card as Home's This Month: Income | Expenses, then Net with its sign. */}
+        <MonthCard income={totals.income} expenses={totals.expenses} net={totals.net} />
 
-        <View style={styles.card}>
-          <AppText style={styles.sectionTitle}>Spending by category</AppText>
-          {categoryBreakdown.length === 0 ? (
-            <AppText style={styles.emptyState}>No expense data for this period.</AppText>
+        <Card>
+          <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+            Spending by category
+          </AppText>
+          {spending.slices.length === 0 ? (
+            <AppText style={[styles.emptyState, { color: colors.textMuted }]}>No expense data for this period.</AppText>
           ) : (
-            <DonutChart
-              data={categoryBreakdown}
-              centerLabel="ETB total"
-              centerValue={formatNumber(totalSpending, 0)}
+            <SpendingDonut
+              slices={spending.slices}
+              total={spending.total}
+              hidden={false}
+              size={INSIGHTS_DONUT_SIZE}
+              amountPlacement="below"
+              style={styles.donut}
             />
           )}
-        </View>
+        </Card>
 
-        <View style={styles.card}>
-          <AppText style={styles.sectionTitle}>Income by source</AppText>
+        <Card>
+          <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+            Income by source
+          </AppText>
           {sourceBreakdown.length === 0 ? (
-            <AppText style={styles.emptyState}>No income sources for this period.</AppText>
+            <AppText style={[styles.emptyState, { color: colors.textMuted }]}>No income sources for this period.</AppText>
           ) : (
             <HorizontalBarChart data={sourceBreakdown} />
           )}
-        </View>
+        </Card>
 
-        <View style={styles.card}>
-          <AppText style={styles.sectionTitle}>{TREND_TITLES[range]}</AppText>
+        <Card>
+          <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+            {TREND_TITLES[range]}
+          </AppText>
           {filtered.every((item) => item.type === 'transfer') ? (
-            <AppText style={styles.emptyState}>No activity for this period.</AppText>
+            <AppText style={[styles.emptyState, { color: colors.textMuted }]}>No activity for this period.</AppText>
           ) : (
             <TrendLineChart data={trend} />
           )}
-        </View>
+        </Card>
 
-        <View style={[styles.card, styles.highlightCard]}>
-          <AppText style={styles.sectionTitle}>Biggest spending category</AppText>
+        {/* The warm accent of the screen, like the streak card on Home. */}
+        <View style={[styles.highlight, { backgroundColor: colors.streakFill, borderColor: colors.streakBorder }]}>
+          <AppText variant="title" style={styles.sectionTitle} accessibilityRole="header">
+            Biggest spending category
+          </AppText>
           {biggestCategory ? (
-            <AppText style={styles.highlightText}>
+            <AppText style={[styles.highlightText, { color: colors.text }]}>
               {biggestCategory.label}: {formatETB(biggestCategory.amount)}
             </AppText>
           ) : (
-            <AppText style={styles.emptyState}>No spending categories yet.</AppText>
+            <AppText style={[styles.emptyState, { color: colors.streakMuted }]}>No spending categories yet.</AppText>
           )}
         </View>
       </ScrollView>
@@ -267,119 +239,63 @@ export default function ReportsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 16,
   },
-  segmented: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.button,
-    padding: 4,
-  },
-  pill: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderRadius: radius.button - 2,
-  },
-  pillSelected: {
-    backgroundColor: colors.navy,
-  },
-  pillText: {
-    color: colors.navy,
-    textTransform: 'capitalize',
-    fontWeight: '600',
-  },
-  pillTextSelected: {
-    color: '#FFFFFF',
+  pressed: {
+    opacity: 0.6,
   },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.lg,
+    gap: 16,
   },
   // Shrinks and wraps so the two arrows always stay on screen (a long week range is wider than the row at large fonts).
   monthLabel: {
     flexShrink: 1,
     textAlign: 'center',
     fontWeight: '700',
-    color: colors.navy,
     fontSize: 15,
   },
   customRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: 12,
   },
   customField: {
     flex: 1,
-    gap: spacing.xs,
+    gap: 4,
   },
   label: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
   },
   currencyNote: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 12,
     textAlign: 'center',
   },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
+  sectionTitle: {
+    fontSize: 17,
+    marginBottom: 12,
   },
-  summaryCard: {
-    flex: 1,
-    borderRadius: radius.card,
-    padding: spacing.md,
-  },
-  summaryHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  summaryLabel: {
-    flexShrink: 1,
-    ...typography.helper,
-    color: colors.textSecondary,
-  },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: '800',
+  donut: {
     marginTop: 4,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  sectionTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
-    marginBottom: spacing.md,
-  },
-  highlightCard: {
-    backgroundColor: colors.orangeLight,
+  highlight: {
+    borderRadius: 20,
+    borderWidth: 1.5,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   highlightText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.navy,
   },
   emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 14,
   },
 });

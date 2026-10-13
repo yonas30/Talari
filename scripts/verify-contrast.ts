@@ -6,7 +6,7 @@
 import { colors } from '../constants/theme';
 import { CATEGORY_PALETTE, CHART_PALETTE, categoryColor, OTHERS_COLOR } from '../theme/chartPalette';
 import { BREAKDOWN_PALETTE } from '../utils/reports';
-import { palettes, ThemeColors, ThemeScheme } from '../theme/tokens';
+import { brandFills, palettes, ThemeColors, ThemeScheme } from '../theme/tokens';
 
 let passed = 0;
 let failed = 0;
@@ -275,6 +275,44 @@ for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
   check(`${scheme}: inline error (expense) on the card`, contrast(c.expense, c.surface) >= BODY);
   check(`${scheme}: field edge (inputBorder) on the field fill`, contrast(c.inputBorder, c.bg) >= LARGE);
   check(`${scheme}: focused field edge (text) on the field fill`, contrast(c.text, c.bg) >= LARGE);
+}
+
+// ---- 1e. Insights (Phase 4c) ------------------------------------------------------------------------------------------------
+// Text is held to 4.5:1 on the card. Chart marks (trend lines and points, bars, donut slices) carry no meaning alone - the legend,
+// the axis labels and the percentages say it all - so their contrast against the card is printed as informational.
+console.log('\nInsights: chart marks on the card surface (informational; the text next to them carries the meaning)');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  const marks: [string, string][] = [
+    ['trend line: income (brand green)', brandFills.income],
+    ['trend line: expense (brand red)', brandFills.expense],
+    ['bar track (surfaceMuted)', c.surfaceMuted],
+    ['baseline (border)', c.border],
+  ];
+  for (const [label, hex] of marks) {
+    const ratio = contrast(hex.startsWith('rgba') ? solid(hex, c.surface) : hex, c.surface);
+    console.log(`  ${scheme.padEnd(5)} ${label.padEnd(34)} ${ratio.toFixed(2).padStart(6)}${ratio >= 3 ? '' : '   (below 3:1)'}`);
+  }
+  for (const [label, fg] of [
+    ['axis labels (textMuted)', c.textMuted],
+    ['legend text (textMuted)', c.textMuted],
+    ['bar labels (text)', c.text],
+    ['bar percentages (textMuted)', c.textMuted],
+    ['legend names (text)', c.text],
+    ['legend amounts below the name (textMuted)', c.textMuted],
+    ['donut centre total (text)', c.text],
+    ['donut centre caption (textMuted)', c.textMuted],
+    ['range label and period arrows (text)', c.text],
+  ] as [string, string][]) {
+    check(`${scheme}: Insights ${label} on the card`, contrast(fg, c.surface) >= BODY, contrast(fg, c.surface).toFixed(2));
+  }
+  // Text on the screen background: the currency note, the date labels and the period label
+  check(`${scheme}: Insights note and labels (textMuted) on the screen`, contrast(c.textMuted, c.bg) >= BODY);
+  check(`${scheme}: Insights period label (text) on the screen`, contrast(c.text, c.bg) >= BODY);
+  // The "Biggest spending category" highlight: text on the streak wash over the screen
+  const highlight = solid(c.streakFill, c.bg);
+  check(`${scheme}: Insights highlight title and value (text) on its card`, contrast(c.text, highlight) >= BODY, contrast(c.text, highlight).toFixed(2));
+  check(`${scheme}: Insights highlight empty message (streakMuted) on its card`, contrast(c.streakMuted, highlight) >= BODY, contrast(c.streakMuted, highlight).toFixed(2));
 }
 
 // ---- 2. legacy colors mapping ---------------------------------------------------------------------------------------

@@ -8,7 +8,9 @@ import AppText from '../AppText';
 import Card from '../Card';
 
 interface MonthCardProps {
-  monthName: string;
+  /** Heading text. Insights passes none: its period control above says what the numbers cover. */
+  heading?: string;
+  monthName?: string;
   income: number;
   expenses: number;
   net: number;
@@ -18,14 +20,17 @@ interface MonthCardProps {
 // than the hero card): a 32 dp icon disc beside the label and amount. Net is always the blue Net colour - the explicit sign
 // (+ / −) says whether it is good or bad, never the colour. Income and expenses are small text, so they use the text-safe
 // tones; Net is 20 sp bold (large text), so Light may use the vivid brand blue.
-export default function MonthCard({ monthName, income, expenses, net }: MonthCardProps) {
+export default function MonthCard({ heading, monthName, income, expenses, net }: MonthCardProps) {
+  const title = heading ?? (monthName !== undefined ? `This Month · ${monthName}` : undefined);
   const { colors } = useTheme();
 
   return (
     <View style={styles.wrap}>
-      <AppText variant="title" style={styles.heading} accessibilityRole="header">
-        This Month · {monthName}
-      </AppText>
+      {title !== undefined && (
+        <AppText variant="title" style={styles.heading} accessibilityRole="header">
+          {title}
+        </AppText>
+      )}
       <Card style={styles.card}>
         <View style={styles.topRow}>
           <Metric icon="trending-up" label="Income" value={formatNumber(income)} color={colors.income} disc={colors.incomeDisc} glyph={colors.incomeGlyph} />
