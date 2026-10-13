@@ -1,9 +1,8 @@
-import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { typography } from '../constants/theme';
 import { useUiStore } from '../store/ui';
 import { useThemeColors } from '../theme/ThemeProvider';
 import AppText from './AppText';
@@ -28,6 +27,7 @@ export default function SideDrawer() {
   const isOpen = useUiStore((state) => state.isDrawerOpen);
   const closeDrawer = useUiStore((state) => state.closeDrawer);
   const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
 
@@ -45,19 +45,32 @@ export default function SideDrawer() {
           onPress={(event) => event.stopPropagation()}
         >
           <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16 }]}>
-            <AppText style={[styles.title, { color: colors.text }]}>More</AppText>
-            {links.map((link) => (
-              <Pressable
-                key={link.route}
-                style={({ pressed }) => [styles.linkRow, { borderBottomColor: colors.border }, pressed && { backgroundColor: colors.surfaceMuted }]}
-                onPress={() => onNavigate(link.route)}
-                accessibilityRole="button"
-                accessibilityLabel={link.label}
-              >
-                <Ionicons name={link.icon} size={22} color={colors.text} />
-                <AppText style={[styles.linkLabel, { color: colors.text }]}>{link.label}</AppText>
-              </Pressable>
-            ))}
+            <AppText variant="heading" style={[styles.title, { color: colors.text }]} accessibilityRole="header">
+              More
+            </AppText>
+            {links.map((link) => {
+              // The screen you are on is marked with a bold label, a check and a tinted row - never by colour alone.
+              const current = pathname === link.route;
+              return (
+                <Pressable
+                  key={link.route}
+                  style={({ pressed }) => [
+                    styles.linkRow,
+                    (current || pressed) && { backgroundColor: colors.surfaceMuted },
+                  ]}
+                  onPress={() => onNavigate(link.route)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: current }}
+                  accessibilityLabel={current ? `${link.label}, current screen` : link.label}
+                >
+                  <View style={[styles.disc, { backgroundColor: colors.accentDisc }]}>
+                    <Ionicons name={link.icon} size={20} color={colors.primaryText} />
+                  </View>
+                  <AppText style={[styles.linkLabel, { color: colors.text, fontWeight: current ? '700' : '500' }]}>{link.label}</AppText>
+                  {current ? <Ionicons name="checkmark-circle" size={20} color={colors.primaryText} /> : null}
+                </Pressable>
+              );
+            })}
           </ScrollView>
         </Pressable>
       </Pressable>
@@ -77,24 +90,33 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
   },
   content: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     gap: 4,
   },
   title: {
-    ...typography.pageTitle,
     fontSize: 22,
+    lineHeight: 28,
+    paddingHorizontal: 8,
     marginBottom: 12,
   },
   linkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+  },
+  disc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   linkLabel: {
     flex: 1,
-    ...typography.body,
-    fontWeight: '600',
+    minWidth: 0,
+    fontSize: 15,
   },
 });
