@@ -16,7 +16,7 @@ interface SegmentedControlProps<T extends string> {
   onChange: (key: T) => void;
 }
 
-// THE segmented control (it replaces SegmentedTabs when screens are migrated; same large-font behaviour). Light: the
+// THE segmented control. Light: the
 // selected segment is a navy pill with white text. Dark: an off-white pill with navy text, which stays clearly visible
 // on the #222C44 track. Every segment has the same width and its label stays on one line, shrinking before it would wrap.
 export default function SegmentedControl<T extends string>({ options, value, onChange }: SegmentedControlProps<T>) {

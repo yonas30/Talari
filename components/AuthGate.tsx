@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 
-import AppButton from './AppButton';
+import Button from './Button';
 import { useThemeColors } from '../theme/ThemeProvider';
 import { isAppLockEnabled } from '../utils/appLock';
 import AppText from './AppText';
@@ -77,7 +77,7 @@ export default function AuthGate({ children, onLockResolved, promptAllowed = tru
       <View style={[styles.center, { backgroundColor: colors.bg }]}>
         <AppText style={[styles.title, { color: colors.text }]}>Talari is locked</AppText>
         {error && <AppText style={[styles.error, { color: colors.expense }]}>{error}</AppText>}
-        <AppButton title="Unlock" variant="primary" onPress={() => void attemptUnlock()} />
+        <Button title="Unlock" variant="primary" onPress={() => void attemptUnlock()} />
       </View>
     );
   }
