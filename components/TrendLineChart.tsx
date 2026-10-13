@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
+
+import { useThemeColors } from '../theme/ThemeProvider';
+import { brandFills } from '../theme/tokens';
 import AppText from './AppText';
 
 export interface TrendLinePoint {
@@ -31,7 +34,10 @@ function buildPath(values: number[], width: number, height: number, max: number)
     .join(' ');
 }
 
+// Income and expense over the period. The lines and points are the vivid brand fills (income green, expense red); the baseline,
+// axis labels and legend come from the theme tokens, so the chart is readable in Light and Dark.
 export default function TrendLineChart({ data, width: widthProp, height = 140 }: TrendLineChartProps) {
+  const colors = useThemeColors();
   // Fit the card it is placed in; 300 is only the first-paint fallback.
   const [measuredWidth, setMeasuredWidth] = useState(300);
   const width = widthProp ?? measuredWidth;
@@ -59,16 +65,16 @@ export default function TrendLineChart({ data, width: widthProp, height = 140 }:
   return (
     <View onLayout={(event) => setMeasuredWidth(Math.max(120, Math.floor(event.nativeEvent.layout.width)))}>
       <Svg width={width} height={height}>
-        <Line x1={0} y1={chartHeight} x2={width} y2={chartHeight} stroke="#E2E5DE" strokeWidth={1} />
-        {incomePath !== '' && <Path d={incomePath} stroke="#16A34A" strokeWidth={2} fill="none" />}
-        {expensePath !== '' && <Path d={expensePath} stroke="#D95C5C" strokeWidth={2} fill="none" />}
+        <Line x1={0} y1={chartHeight} x2={width} y2={chartHeight} stroke={colors.border} strokeWidth={1} />
+        {incomePath !== '' && <Path d={incomePath} stroke={brandFills.income} strokeWidth={2} fill="none" />}
+        {expensePath !== '' && <Path d={expensePath} stroke={brandFills.expense} strokeWidth={2} fill="none" />}
         {data.map((point, index) => (
           <Circle
             key={`${point.label}-income`}
             cx={xAt(index)}
             cy={chartHeight - (point.income / maxValue) * chartHeight}
             r={3}
-            fill="#16A34A"
+            fill={brandFills.income}
           />
         ))}
         {data.map((point, index) => (
@@ -77,7 +83,7 @@ export default function TrendLineChart({ data, width: widthProp, height = 140 }:
             cx={xAt(index)}
             cy={chartHeight - (point.expense / maxValue) * chartHeight}
             r={3}
-            fill="#D95C5C"
+            fill={brandFills.expense}
           />
         ))}
         {data.map((point, index) => {
@@ -85,7 +91,7 @@ export default function TrendLineChart({ data, width: widthProp, height = 140 }:
             return null;
           }
           return (
-            <SvgText key={`${point.label}-label`} x={xAt(index)} y={height - 4} fontSize={9} fill="#66708B" textAnchor="middle">
+            <SvgText key={`${point.label}-label`} x={xAt(index)} y={height - 4} fontSize={10} fill={colors.textMuted} textAnchor="middle">
               {point.label}
             </SvgText>
           );
@@ -94,12 +100,12 @@ export default function TrendLineChart({ data, width: widthProp, height = 140 }:
 
       <View style={styles.legend}>
         <View style={styles.legendItem}>
-          <View style={[styles.dot, { backgroundColor: '#16A34A' }]} />
-          <AppText style={styles.legendText}>Income</AppText>
+          <View style={[styles.dot, { backgroundColor: brandFills.income }]} />
+          <AppText style={[styles.legendText, { color: colors.textMuted }]}>Income</AppText>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.dot, { backgroundColor: '#D95C5C' }]} />
-          <AppText style={styles.legendText}>Expense</AppText>
+          <View style={[styles.dot, { backgroundColor: brandFills.expense }]} />
+          <AppText style={[styles.legendText, { color: colors.textMuted }]}>Expense</AppText>
         </View>
       </View>
     </View>
@@ -123,7 +129,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   legendText: {
-    color: '#334155',
     fontSize: 12,
   },
 });

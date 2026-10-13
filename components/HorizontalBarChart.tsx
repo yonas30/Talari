@@ -1,5 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
+import { useThemeColors } from '../theme/ThemeProvider';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 import AppText from './AppText';
 
@@ -13,7 +14,10 @@ interface HorizontalBarChartProps {
   data: BarDatum[];
 }
 
+// Income by source. Each bar keeps the colour the breakdown gave its source; the track, labels and percentages come from the theme
+// tokens, so the chart reads the same in Light and Dark.
 export default function HorizontalBarChart({ data }: HorizontalBarChartProps) {
+  const colors = useThemeColors();
   const total = data.reduce((sum, item) => sum + item.amount, 0);
   const maxAmount = Math.max(...data.map((item) => item.amount), 1);
 
@@ -22,21 +26,16 @@ export default function HorizontalBarChart({ data }: HorizontalBarChartProps) {
       {data.map((item) => {
         const percent = total > 0 ? Math.round((item.amount / total) * 100) : 0;
         return (
-          <View key={item.label} style={styles.row}>
-            <AppText style={styles.label} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+          <View key={item.label} style={styles.row} accessible accessibilityLabel={`${item.label}, ${percent} percent`}>
+            <AppText style={[styles.label, { color: colors.text }]} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
               {item.label}
             </AppText>
             <View style={styles.trackWrap}>
-              <View style={styles.track}>
-                <View
-                  style={[
-                    styles.fill,
-                    { width: `${(item.amount / maxAmount) * 100}%`, backgroundColor: item.color },
-                  ]}
-                />
+              <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}>
+                <View style={[styles.fill, { width: `${(item.amount / maxAmount) * 100}%`, backgroundColor: item.color }]} />
               </View>
             </View>
-            <AppText style={styles.percent} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
+            <AppText variant="number" style={[styles.percent, { color: colors.textMuted }]} numberOfLines={1} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>
               {percent}%
             </AppText>
           </View>
@@ -60,8 +59,7 @@ const styles = StyleSheet.create({
     flexBasis: 90,
     flexShrink: 1,
     maxWidth: '40%',
-    fontSize: 12,
-    color: '#172033',
+    fontSize: 13,
     fontWeight: '600',
   },
   trackWrap: {
@@ -70,7 +68,6 @@ const styles = StyleSheet.create({
   track: {
     height: 10,
     borderRadius: 999,
-    backgroundColor: '#F0F0EA',
     overflow: 'hidden',
   },
   fill: {
@@ -82,7 +79,6 @@ const styles = StyleSheet.create({
     minWidth: 36,
     flexShrink: 0,
     fontSize: 12,
-    color: '#66708B',
     textAlign: 'right',
     fontWeight: '700',
   },
