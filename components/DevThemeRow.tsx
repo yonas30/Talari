@@ -1,9 +1,10 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
-import { radius, spacing } from '../constants/theme';
+import { spacing } from '../constants/theme';
 import { useTheme } from '../theme/ThemeProvider';
 import { ThemeMode } from '../utils/themePreference';
 import AppText from './AppText';
+import Card from './Card';
 import SegmentedControl from './SegmentedControl';
 
 const OPTIONS: { key: ThemeMode; label: string }[] = [
@@ -19,21 +20,18 @@ export default function DevThemeRow() {
   const { activeMode, setMode, scheme, colors } = useTheme();
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <Card style={styles.card}>
       <AppText style={[styles.title, { color: colors.text }]}>Dev: theme mode</AppText>
       <AppText style={[styles.subtitle, { color: colors.textMuted }]}>
         Showing {scheme}. Development builds only; users stay on Light.
       </AppText>
       <SegmentedControl options={OPTIONS} value={activeMode} onChange={setMode} />
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.card,
-    borderWidth: 1,
-    padding: spacing.lg,
     gap: spacing.sm,
   },
   title: {

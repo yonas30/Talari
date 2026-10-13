@@ -8,14 +8,16 @@ import DevHomeRow from '../components/DevHomeRow';
 import DevOnboardingRow from '../components/DevOnboardingRow';
 import DevThemeRow from '../components/DevThemeRow';
 import NameSheet from '../components/NameSheet';
+import SettingsGroup from '../components/SettingsGroup';
 import SettingsRow from '../components/SettingsRow';
-import { colors, radius, spacing } from '../constants/theme';
 import { useProfileStore } from '../store/profile';
 import { useUiStore } from '../store/ui';
+import { useTheme } from '../theme/ThemeProvider';
 import { isAppLockEnabled, setAppLockEnabled } from '../utils/appLock';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const notifications = useUiStore((state) => state.notifications);
   const [lockEnabled, setLockEnabled] = useState(false);
   const name = useProfileStore((state) => state.profile.name);
@@ -48,10 +50,10 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Settings" />
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.card}>
+        <SettingsGroup title="Preferences">
           <SettingsRow
             icon="cash-outline"
             title="Currency & Exchange Rates"
@@ -69,12 +71,13 @@ export default function SettingsScreen() {
             title="Notifications"
             subtitle={unreadNotifications > 0 ? `${unreadNotifications} unread` : 'Everything is up to date'}
             showDot={unreadNotifications > 0}
+            accessibilityLabel={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : 'Notifications'}
             onPress={() => router.push('/notifications')}
             isLast
           />
-        </View>
+        </SettingsGroup>
 
-        <View style={styles.card}>
+        <SettingsGroup title="Profile">
           <SettingsRow
             icon="person-outline"
             title="Your name"
@@ -82,9 +85,9 @@ export default function SettingsScreen() {
             onPress={() => setNameSheetOpen(true)}
             isLast
           />
-        </View>
+        </SettingsGroup>
 
-        <View style={styles.card}>
+        <SettingsGroup title="Security and data">
           <SettingsRow
             icon="lock-closed-outline"
             title="App lock"
@@ -105,7 +108,7 @@ export default function SettingsScreen() {
             onPress={() => router.push('/about')}
             isLast
           />
-        </View>
+        </SettingsGroup>
 
         {/* Development builds only (Expo Go / dev client): never present in preview or production builds. */}
         {__DEV__ ? <DevThemeRow /> : null}
@@ -137,21 +140,11 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 16,
   },
 });

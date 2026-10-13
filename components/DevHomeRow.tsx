@@ -1,9 +1,10 @@
 import { StyleSheet, Switch, View } from 'react-native';
 
-import { radius, spacing } from '../constants/theme';
+import { spacing } from '../constants/theme';
 import { DevHomePreview, useUiStore } from '../store/ui';
 import { useTheme } from '../theme/ThemeProvider';
 import AppText from './AppText';
+import Card from './Card';
 
 const ROWS: { key: keyof DevHomePreview; label: string }[] = [
   { key: 'noSpending', label: 'No spending this month' },
@@ -22,7 +23,7 @@ export default function DevHomeRow() {
   const toggleBalanceVisibility = useUiStore((state) => state.toggleBalanceVisibility);
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <Card style={styles.card}>
       <AppText style={[styles.title, { color: colors.text }]}>Dev: Home empty states</AppText>
       <AppText style={[styles.subtitle, { color: colors.textMuted }]}>Preview only. Your data is not changed.</AppText>
       {ROWS.map((row) => (
@@ -45,15 +46,12 @@ export default function DevHomeRow() {
           trackColor={{ false: colors.surfaceMuted, true: colors.primary }}
         />
       </View>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.card,
-    borderWidth: 1,
-    padding: spacing.lg,
     gap: spacing.sm,
   },
   title: {

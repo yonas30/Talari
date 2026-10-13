@@ -61,6 +61,8 @@ export interface ThemeColors {
   expenseGlyph: string;
   netGlyph: string;
   transferGlyph: string;
+  /** A pale orange disc for general icons (settings rows, drawer items, headings); the glyph on it is primaryText. */
+  accentDisc: string;
   /** Goals: the pale disc behind a goal's icon, the glyph on it, and the progress-bar fill (the goals colour; its track is surfaceMuted). */
   goalsDisc: string;
   goalsGlyph: string;
@@ -143,6 +145,7 @@ export const lightColors: ThemeColors = {
   expenseGlyph: '#C23A33',
   netGlyph: '#3A6AA8',
   transferGlyph: '#6B5B9E',
+  accentDisc: withAlpha('#F47C20', DISC_ALPHA),
   goalsDisc: withAlpha(brandFills.goals, DISC_ALPHA),
   goalsGlyph: '#5F6D49',
   goalsBar: brandFills.goals,
@@ -197,6 +200,7 @@ export const darkColors: ThemeColors = {
   expenseGlyph: '#E8736F',
   netGlyph: '#5B8FD0',
   transferGlyph: '#9A8CCB',
+  accentDisc: withAlpha('#F47C20', DISC_ALPHA),
   goalsDisc: withAlpha(brandFills.goals, DISC_ALPHA),
   goalsGlyph: '#8FA070',
   goalsBar: '#8FA070',
