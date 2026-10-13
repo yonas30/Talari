@@ -65,6 +65,12 @@ export function usePickerStyles() {
         optionBody: {
           flex: 1,
         },
+        optionLead: {
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+        },
         optionText: {
           color: colors.text,
           fontSize: 16,
