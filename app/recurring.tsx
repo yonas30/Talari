@@ -3,21 +3,37 @@ import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import AppButton from '../components/AppButton';
 import AppHeader from '../components/AppHeader';
+import AppText from '../components/AppText';
+import Button from '../components/Button';
 import CurrencyPicker from '../components/CurrencyPicker';
-import OverlayModal from '../components/OverlayModal';
 import DateField from '../components/DateField';
-import SegmentedTabs from '../components/SegmentedTabs';
+import FormInput from '../components/FormInput';
+import InlineError from '../components/InlineError';
+import OverlayModal from '../components/OverlayModal';
+import SegmentedControl, { SegmentOption } from '../components/SegmentedControl';
 import { defaultCategories } from '../constants/categories';
-import { colors, radius, spacing, typography } from '../constants/theme';
+import { radius, spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
+import { useTheme } from '../theme/ThemeProvider';
 import { Account, CurrencyCode, RecurringFrequency, RecurringTransaction, RecurringType } from '../types';
 import { todayKey } from '../utils/dates';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 import { getNextDueDate } from '../utils/recurring';
-import AppText from '../components/AppText';
-import AppTextInput from '../components/AppTextInput';
+
+const TYPE_OPTIONS: SegmentOption<RecurringType>[] = [
+  { key: 'expense', label: 'Expense' },
+  { key: 'income', label: 'Income' },
+];
+const ACCOUNT_OPTIONS: SegmentOption<Account>[] = [
+  { key: 'available', label: 'Available' },
+  { key: 'saved', label: 'Saved' },
+];
+const FREQUENCY_OPTIONS: SegmentOption<RecurringFrequency>[] = [
+  { key: 'daily', label: 'Daily' },
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'monthly', label: 'Monthly' },
+];
 
 function getFrequencyLabel(freq: RecurringFrequency): string {
   return freq === 'daily' ? 'Every day' : freq === 'weekly' ? 'Every week' : 'Every month';
@@ -25,6 +41,7 @@ function getFrequencyLabel(freq: RecurringFrequency): string {
 
 export default function RecurringScreen() {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const {
     recurringTransactions,
     categories,
@@ -49,6 +66,8 @@ export default function RecurringScreen() {
   // New rules start active; editing only changes this if the switch is flipped.
   const [isActive, setIsActive] = useState(true);
   const [tab, setTab] = useState<'upcoming' | 'all'>('upcoming');
+  // A validation message shown inside the sheet (it used to be a native alert).
+  const [error, setError] = useState<string | null>(null);
 
   const resetForm = () => {
     setType('expense');
@@ -62,6 +81,7 @@ export default function RecurringScreen() {
     setIsActive(true);
     setEditing(null);
     setIsCategoryOpen(false);
+    setError(null);
     setIsFormOpen(false);
   };
 
@@ -76,6 +96,7 @@ export default function RecurringScreen() {
     setStartDate(rule.startDate);
     setAccount(rule.account);
     setIsActive(rule.isActive);
+    setError(null);
     setIsFormOpen(true);
   };
 
@@ -115,7 +136,7 @@ export default function RecurringScreen() {
   const onSave = async () => {
     const numericAmount = Number(amount);
     if (!Number.isFinite(numericAmount) || numericAmount <= 0 || !category) {
-      Alert.alert('Enter a valid amount and choose a category.');
+      setError('Enter a valid amount and choose a category.');
       return;
     }
 
@@ -146,68 +167,71 @@ export default function RecurringScreen() {
     resetForm();
   };
 
+  const upcomingOptions: SegmentOption<'upcoming' | 'all'>[] = [
+    { key: 'upcoming', label: `Upcoming (${upcomingCount})` },
+    { key: 'all', label: `All (${rules.length})` },
+  ];
+  const label = [styles.label, { color: colors.textMuted }];
+  const amountInvalid = error !== null && !(Number(amount) > 0);
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Recurring" />
-      <View style={styles.topBar}>
-        <View style={styles.topBarText}>
-          <AppText style={styles.pageTitle}>Recurring transactions</AppText>
-          <AppText style={styles.pageSubtitle}>Automate the entries you make regularly.</AppText>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <View style={styles.topText}>
+          <AppText variant="heading" style={styles.pageTitle}>
+            Recurring transactions
+          </AppText>
+          <AppText style={[styles.pageSubtitle, { color: colors.textMuted }]}>Automate the entries you make regularly.</AppText>
         </View>
-        <Pressable
-          style={styles.addButton}
+        {/* A labelled button, like "New goal" - no round raised + that reads as the tab bar's add button. */}
+        <Button
+          title="New recurring"
+          icon="add"
           onPress={() => {
             resetForm();
             setIsFormOpen(true);
           }}
-          accessibilityRole="button"
           accessibilityLabel="Add a recurring transaction"
-        >
-          <Ionicons name="add" size={24} color="#FFFFFF" />
-        </Pressable>
-      </View>
-      <ScrollView contentContainerStyle={styles.container}>
-        <SegmentedTabs
-          tabs={[
-            { key: 'upcoming', label: `Upcoming (${upcomingCount})` },
-            { key: 'all', label: `All (${rules.length})` },
-          ]}
-          value={tab}
-          onChange={setTab}
         />
 
+        <SegmentedControl options={upcomingOptions} value={tab} onChange={setTab} />
+
         {visibleRules.length === 0 ? (
-          <View style={styles.card}>
-            <AppText style={styles.emptyState}>
-              {rules.length === 0
-                ? 'No recurring transactions yet — tap + to set up automated tracking.'
-                : 'Nothing is scheduled. Switch a rule back on from the All tab.'}
-            </AppText>
-          </View>
+          <AppText style={[styles.emptyState, { color: colors.textMuted }]}>
+            {rules.length === 0
+              ? 'No recurring transactions yet — tap + to set up automated tracking.'
+              : 'Nothing is scheduled. Switch a rule back on from the All tab.'}
+          </AppText>
         ) : (
           visibleRules.map(({ rule, nextDate }) => {
-            const categoryMeta = categoryLookup[rule.category] ?? { icon: '💰', color: colors.orange };
+            const categoryMeta = categoryLookup[rule.category] ?? { icon: '💰' };
             const isExpense = rule.type === 'expense';
             return (
-              // One compact row: icon, category + amount on the first line, frequency + next date on the second,
-              // then the Active toggle and delete. Tapping the row edits the rule.
+              // One compact flat card: pale icon disc, category + amount on the first line, frequency + next date on the second,
+              // then the Active switch and delete. Tapping the row edits the rule. A paused rule is a quieter fill and says "Paused".
               <Pressable
                 key={rule.id}
-                style={({ pressed }) => [styles.ruleRow, !rule.isActive && styles.ruleRowPaused, pressed && styles.ruleRowPressed]}
+                style={({ pressed }) => [
+                  styles.ruleRow,
+                  { backgroundColor: rule.isActive ? colors.surface : colors.surfaceMuted, borderColor: colors.border },
+                  pressed && { backgroundColor: colors.surfaceMuted },
+                ]}
                 onPress={() => openEdit(rule)}
                 accessibilityRole="button"
                 accessibilityLabel={`${rule.category}, tap to edit`}
               >
-                <View style={[styles.iconBadge, { backgroundColor: `${categoryMeta.color}1A` }]}>
+                <View style={[styles.iconBadge, { backgroundColor: isExpense ? colors.expenseDisc : colors.incomeDisc }]}>
                   <AppText style={styles.iconText} maxFontSizeMultiplier={CONTROL_LABEL_MAX_SCALE}>{categoryMeta.icon}</AppText>
                 </View>
                 <View style={styles.ruleInfo}>
                   <View style={styles.ruleTopLine}>
-                    <AppText style={styles.ruleCategory} numberOfLines={1}>
+                    <AppText style={[styles.ruleCategory, { color: colors.text }]} numberOfLines={1}>
                       {rule.category}
                     </AppText>
                     <AppText
-                      style={[styles.ruleAmount, { color: isExpense ? colors.statusExpense : colors.statusIncome }]}
+                      variant="number"
+                      style={[styles.ruleAmount, { color: isExpense ? colors.expense : colors.income }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.8}
@@ -216,32 +240,28 @@ export default function RecurringScreen() {
                       {rule.currency} {rule.amount.toFixed(2)}
                     </AppText>
                   </View>
-                  <AppText style={styles.ruleMeta} numberOfLines={1}>
+                  <AppText style={[styles.ruleMeta, { color: colors.textMuted }]} numberOfLines={1}>
                     {getFrequencyLabel(rule.frequency)} ·{' '}
                     {rule.isActive
                       ? `Next: ${nextDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
                       : 'Paused'}
                   </AppText>
                 </View>
-                <Pressable
-                  onPress={() => void toggleRecurringTransaction(rule.id, !rule.isActive)}
-                  style={styles.toggleContainer}
-                  hitSlop={8}
-                  accessibilityRole="switch"
+                <Switch
+                  value={rule.isActive}
+                  onValueChange={(value) => void toggleRecurringTransaction(rule.id, value)}
+                  trackColor={{ false: colors.inputBorder, true: colors.primary }}
+                  thumbColor={rule.isActive ? colors.onPrimary : colors.surface}
                   accessibilityLabel={`${rule.category} active`}
-                  accessibilityState={{ checked: rule.isActive }}
-                >
-                  <View style={[styles.toggle, rule.isActive && styles.toggleActive]}>
-                    <View style={[styles.toggleCircle, rule.isActive && styles.toggleCircleActive]} />
-                  </View>
-                </Pressable>
+                />
                 <Pressable
                   onPress={() => confirmDelete(rule)}
-                  hitSlop={8}
+                  style={styles.deleteButton}
+                  hitSlop={6}
                   accessibilityRole="button"
                   accessibilityLabel={`Delete ${rule.category}`}
                 >
-                  <Ionicons name="trash-outline" size={18} color={colors.red} />
+                  <Ionicons name="trash-outline" size={20} color={colors.expense} />
                 </Pressable>
               </Pressable>
             );
@@ -250,100 +270,120 @@ export default function RecurringScreen() {
       </ScrollView>
 
       {/*
-        This sheet deliberately uses its own plain Modal, not the shared keyboard-aware SheetModal: with SheetModal the
-        Amount field stopped accepting input on Android. Known limitation: the keyboard can cover the lower fields.
+        This sheet deliberately keeps its own plain Modal, not the shared keyboard-aware SheetModal: with SheetModal the
+        Amount field stopped accepting input on Android. The content scrolls (keyboardShouldPersistTaps) so the lower fields
+        and the Save button can be reached while the keyboard is open.
       */}
       <OverlayModal visible={isFormOpen} animationType="slide" onRequestClose={resetForm}>
-        <Pressable style={styles.modalBackdrop} onPress={resetForm}>
+        <Pressable style={[styles.modalBackdrop, { backgroundColor: colors.scrim }]} onPress={resetForm}>
           <Pressable
-            style={[styles.modalSheet, { paddingBottom: spacing.xl + insets.bottom }]}
+            style={[
+              styles.modalSheet,
+              { backgroundColor: colors.surface, borderColor: colors.border, paddingBottom: spacing.xl + insets.bottom },
+            ]}
             onPress={(event) => event.stopPropagation()}
           >
-            <View style={styles.modalHeader}>
-              <AppText style={[styles.sectionTitle, styles.modalTitle]}>{editing ? 'Edit recurring transaction' : 'New recurring transaction'}</AppText>
-              <Pressable onPress={resetForm}>
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
+            <ScrollView contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <AppText variant="title" style={styles.modalTitle} accessibilityRole="header">
+                  {editing ? 'Edit recurring transaction' : 'New recurring transaction'}
+                </AppText>
+                <Pressable onPress={resetForm} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
+                  <Ionicons name="close" size={22} color={colors.textMuted} />
+                </Pressable>
+              </View>
+
+              <SegmentedControl
+                options={TYPE_OPTIONS}
+                value={type}
+                onChange={(next) => {
+                  setType(next);
+                  setCategory('');
+                }}
+              />
+
+              <View style={styles.amountRow}>
+                <FormInput
+                  style={styles.amountInput}
+                  value={amount}
+                  onChangeText={setAmount}
+                  placeholder="Amount"
+                  keyboardType="decimal-pad"
+                  accessibilityLabel="Amount"
+                  invalid={amountInvalid}
+                />
+                <CurrencyPicker value={currency} onChange={setCurrency} />
+              </View>
+
+              <AppText style={label}>Category</AppText>
+              <Pressable
+                style={[styles.dropdown, { backgroundColor: colors.bg, borderColor: colors.inputBorder }]}
+                onPress={() => setIsCategoryOpen((value) => !value)}
+                accessibilityRole="button"
+                accessibilityLabel={`Category, ${category || 'not chosen'}`}
+                accessibilityState={{ expanded: isCategoryOpen }}
+              >
+                <AppText style={[styles.dropdownText, { color: category ? colors.text : colors.textMuted }]} numberOfLines={1}>
+                  {category || 'Choose a category'}
+                </AppText>
+                <Ionicons name={isCategoryOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
               </Pressable>
-            </View>
+              {isCategoryOpen && (
+                <View style={[styles.categoryOptions, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                  {categoryOptions.map((item) => (
+                    <Pressable
+                      key={item.id}
+                      style={({ pressed }) => [
+                        styles.categoryOption,
+                        { borderBottomColor: colors.border },
+                        pressed && { backgroundColor: colors.surfaceMuted },
+                      ]}
+                      onPress={() => {
+                        setCategory(item.name);
+                        setIsCategoryOpen(false);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: category === item.name }}
+                    >
+                      <AppText style={[styles.dropdownText, { color: colors.text }, category === item.name && styles.optionSelected]}>
+                        {item.icon} {item.name}
+                      </AppText>
+                      {category === item.name ? <Ionicons name="checkmark" size={18} color={colors.primaryText} /> : null}
+                    </Pressable>
+                  ))}
+                </View>
+              )}
 
-            <View style={styles.segmented}>
-              {(['income', 'expense'] as const).map((option) => (
-            <AppButton
-              key={option}
-              title={option}
-              selected={type === option}
-              onPress={() => {
-                setType(option);
-                setCategory('');
-              }}
-            />
-          ))}
-        </View>
+              <FormInput value={source} onChangeText={setSource} placeholder="Source / place" accessibilityLabel="Source or place" />
 
-        <View style={styles.amountRow}>
-          <AppTextInput style={styles.amountInput} value={amount} onChangeText={setAmount} placeholder="Amount" keyboardType="decimal-pad" />
-          <CurrencyPicker value={currency} onChange={setCurrency} />
-        </View>
+              <AppText style={label}>{type === 'income' ? 'Into' : 'Pay from'}</AppText>
+              <SegmentedControl options={ACCOUNT_OPTIONS} value={account} onChange={setAccount} />
 
-        <AppText style={styles.label}>Category</AppText>
-        <Pressable style={styles.dropdown} onPress={() => setIsCategoryOpen((value) => !value)}>
-          <AppText style={styles.dropdownText}>{category || 'Choose a category'}</AppText>
-          <Ionicons name={isCategoryOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
-        </Pressable>
-        {isCategoryOpen && (
-          <View style={styles.categoryOptions}>
-            {categoryOptions.map((item) => (
-              <Pressable key={item.id} style={styles.categoryOption} onPress={() => { setCategory(item.name); setIsCategoryOpen(false); }}>
-                <AppText style={styles.dropdownText}>{item.icon} {item.name}</AppText>
-              </Pressable>
-            ))}
-          </View>
-        )}
+              <AppText style={label}>Frequency</AppText>
+              <SegmentedControl options={FREQUENCY_OPTIONS} value={frequency} onChange={setFrequency} />
+              {canEditDate ? (
+                <DateField label="Start date" value={startDate} onChange={setStartDate} />
+              ) : (
+                <AppText style={label}>
+                  Next: {editing ? getNextDueDate(editing).toLocaleDateString() : ''} · changes apply to future entries only.
+                </AppText>
+              )}
 
-        <AppTextInput style={styles.input} value={source} onChangeText={setSource} placeholder="Source / place" />
+              <View style={styles.switchRow}>
+                <AppText style={[styles.switchLabel, { color: colors.text }]}>Active</AppText>
+                <Switch
+                  value={isActive}
+                  onValueChange={setIsActive}
+                  trackColor={{ false: colors.inputBorder, true: colors.primary }}
+                  thumbColor={isActive ? colors.onPrimary : colors.surface}
+                  accessibilityLabel="Active"
+                />
+              </View>
 
-        <AppText style={styles.label}>{type === 'income' ? 'Into' : 'Pay from'}</AppText>
-        <View style={styles.segmented}>
-          {(['available', 'saved'] as const).map((option) => (
-            <AppButton
-              key={option}
-              title={option === 'available' ? 'Available' : 'Saved'}
-              selected={account === option}
-              onPress={() => setAccount(option)}
-            />
-          ))}
-        </View>
+              {error ? <InlineError message={error} /> : null}
 
-        <AppText style={styles.label}>Frequency</AppText>
-        <View style={styles.segmented}>
-          {(['daily', 'weekly', 'monthly'] as const).map((option) => (
-            <AppButton key={option} title={option} selected={frequency === option} onPress={() => setFrequency(option)} />
-          ))}
-        </View>
-        {canEditDate ? (
-          <DateField label="Start date" value={startDate} onChange={setStartDate} />
-        ) : (
-          <AppText style={styles.label}>
-            Next: {editing ? getNextDueDate(editing).toLocaleDateString() : ''} · changes apply to future entries only.
-          </AppText>
-        )}
-
-        <View style={styles.switchRow}>
-          <AppText style={styles.label}>Active</AppText>
-          <Switch
-            value={isActive}
-            onValueChange={setIsActive}
-            trackColor={{ false: '#D9DCE4', true: colors.statusIncome }}
-            thumbColor="#FFFFFF"
-            accessibilityLabel="Active"
-          />
-        </View>
-
-            <AppButton
-              title={editing ? 'Save changes' : 'Create recurring transaction'}
-              variant="primary"
-              onPress={() => void onSave()}
-            />
+              <Button title={editing ? 'Save changes' : 'Create recurring transaction'} variant="primary" onPress={() => void onSave()} />
+            </ScrollView>
           </Pressable>
         </Pressable>
       </OverlayModal>
@@ -354,97 +394,54 @@ export default function RecurringScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   container: {
     flexGrow: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 16,
   },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  // Takes the width the + button leaves and wraps. Without flex: 1 the title keeps its full natural width at large
-  // font sizes and shoves the button past the screen edge.
-  topBarText: {
-    flex: 1,
-    minWidth: 0,
+  topText: {
+    gap: 2,
   },
   pageTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+    fontSize: 18,
   },
   pageSubtitle: {
-    ...typography.helper,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.navy,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.lg,
-    gap: spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  sectionTitle: {
-    ...typography.sectionTitle,
-    color: colors.navy,
+    fontSize: 13,
   },
   label: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
     fontWeight: '700',
+  },
+  emptyState: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(23, 32, 51, 0.4)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
     padding: spacing.xl,
-    gap: spacing.md,
     maxHeight: '90%',
+  },
+  sheetContent: {
+    gap: spacing.md,
   },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  segmented: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  input: {
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    borderWidth: 1,
-    borderColor: '#E2E5DE',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16,
-    color: colors.navy,
+  switchLabel: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   amountRow: {
     flexDirection: 'row',
@@ -453,62 +450,54 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    backgroundColor: colors.background,
-    borderRadius: radius.button,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 24,
+    minWidth: 0,
+    fontSize: 22,
     fontWeight: '800',
-    color: colors.navy,
   },
   dropdown: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    gap: spacing.sm,
+    borderWidth: 1,
     borderRadius: radius.button,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
   },
   dropdownText: {
-    color: colors.navy,
+    flex: 1,
     fontSize: 15,
     fontWeight: '600',
   },
+  optionSelected: {
+    fontWeight: '800',
+  },
   categoryOptions: {
-    backgroundColor: colors.background,
+    borderWidth: 1,
     borderRadius: radius.button,
     overflow: 'hidden',
   },
   categoryOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   ruleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.button,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  ruleRowPaused: {
-    opacity: 0.6,
-  },
-  ruleRowPressed: {
-    opacity: 0.8,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   iconBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -517,6 +506,7 @@ const styles = StyleSheet.create({
   },
   ruleInfo: {
     flex: 1,
+    minWidth: 0,
     gap: 1,
   },
   ruleTopLine: {
@@ -527,55 +517,34 @@ const styles = StyleSheet.create({
   },
   ruleCategory: {
     flex: 1,
+    minWidth: 0,
     fontWeight: '700',
-    color: colors.navy,
     fontSize: 15,
   },
   ruleAmount: {
-    flexShrink: 0,
+    flexShrink: 1,
     fontWeight: '800',
     fontSize: 14,
   },
   ruleMeta: {
-    ...typography.helper,
-    color: colors.textSecondary,
+    fontSize: 13,
   },
-  toggleContainer: {
-    padding: 2,
-  },
-  toggle: {
-    width: 44,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#E2E8F0',
+  deleteButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 2,
   },
-  toggleActive: {
-    backgroundColor: colors.olive,
-  },
-  toggleCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#FFFFFF',
-  },
-  toggleCircleActive: {
-    alignSelf: 'flex-end',
-  },
-  emptyState: {
-    ...typography.helper,
-    color: colors.textSecondary,
-  },
+  // Wraps instead of shoving the close icon out of the sheet at large font sizes.
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: spacing.md,
   },
-  // Wraps instead of shoving the close icon out of the sheet at large font sizes.
   modalTitle: {
     flex: 1,
     minWidth: 0,
+    fontSize: 17,
   },
 });
