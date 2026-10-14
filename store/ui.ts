@@ -10,6 +10,10 @@ export interface AppNotification {
   type: 'budget' | 'system';
   // Where tapping the notification goes (e.g. '/budgets'); none for purely informational ones.
   route?: string;
+  // 'warning' = a budget at 80% or more (an alert icon, not the "over budget" wallet icon).
+  level?: 'warning';
+  // Read out instead of "title. description" when the plain text is not the best thing to say.
+  accessibilityLabel?: string;
 }
 
 export interface DevHomePreview {

@@ -32,9 +32,9 @@ export default function NotificationsScreen() {
         ) : (
           notifications.map((notification) => {
             const isBudget = notification.type === 'budget';
-            const summary = notification.route
-              ? `${notification.title}. ${notification.description} Opens budgets.`
-              : `${notification.title}. ${notification.description}`;
+            const isWarning = notification.level === 'warning';
+            const spoken = notification.accessibilityLabel ?? `${notification.title}. ${notification.description}`;
+            const summary = notification.route ? `${spoken} Opens budgets.` : spoken;
             return (
               <Pressable
                 key={notification.id}
@@ -52,11 +52,11 @@ export default function NotificationsScreen() {
                 // Unread is said out loud as well as shown (a dot and a bolder title), so it never depends on colour.
                 accessibilityLabel={notification.isRead ? summary : `Unread. ${summary}`}
               >
-                <View style={[styles.disc, { backgroundColor: isBudget ? colors.expenseWash : colors.netDisc }]}>
+                <View style={[styles.disc, { backgroundColor: isWarning ? colors.accentDisc : isBudget ? colors.expenseWash : colors.netDisc }]}>
                   <Ionicons
-                    name={isBudget ? 'wallet-outline' : 'information-circle-outline'}
+                    name={isWarning ? 'alert-circle-outline' : isBudget ? 'wallet-outline' : 'information-circle-outline'}
                     size={18}
-                    color={isBudget ? colors.expense : colors.netGlyph}
+                    color={isWarning ? colors.primaryText : isBudget ? colors.expense : colors.netGlyph}
                   />
                 </View>
                 <View style={styles.body}>

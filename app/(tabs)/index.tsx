@@ -19,7 +19,7 @@ import { getBalances } from '../../utils/balances';
 import { calculateBuilderStreak, getCurrentPeriodSummary } from '../../utils/currency';
 import { formatETB } from '../../utils/format';
 import { buildSpendingSlices, goalsTotal } from '../../utils/homeModel';
-import { getBudgetAlerts } from '../../utils/notifications';
+import { getBudgetAlerts, getBudgetWarnings } from '../../utils/notifications';
 import { getDashboardMessage } from '../../utils/motivation';
 import { formatGreeting } from '../../utils/profile';
 import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } from '../../utils/reports';
@@ -75,27 +75,41 @@ export default function HomeScreen() {
   }, [isReady]);
 
   const budgetAlerts = useMemo(() => getBudgetAlerts(budgets, transactions, exchangeRates), [budgets, transactions, exchangeRates]);
+  // Budgets at 80% or more (and not over). Never the same budget as an over-budget alert, so the bell has one entry per budget.
+  const budgetWarnings = useMemo(() => getBudgetWarnings(budgets, transactions, exchangeRates), [budgets, transactions, exchangeRates]);
 
   useEffect(() => {
     // Drop budget notifications for budgets that are back within their limit (or were deleted).
-    const activeIds = new Set(budgetAlerts.map((alert) => alert.id));
+    const activeIds = new Set([...budgetAlerts.map((alert) => alert.id), ...budgetWarnings.map((warning) => warning.id)]);
     removeNotificationsWhere((item) => item.type === 'budget' && !activeIds.has(item.id));
 
-    if (budgetAlerts.length === 0) {
+    if (budgetAlerts.length === 0 && budgetWarnings.length === 0) {
       return;
     }
 
-    const nextNotifications = budgetAlerts.map((alert) => ({
-      id: alert.id,
-      title: alert.title,
-      description: alert.description,
-      isRead: false,
-      type: 'budget' as const,
-      route: alert.route,
-    }));
+    const nextNotifications = [
+      ...budgetAlerts.map((alert) => ({
+        id: alert.id,
+        title: alert.title,
+        description: alert.description,
+        isRead: false,
+        type: 'budget' as const,
+        route: alert.route,
+      })),
+      ...budgetWarnings.map((warning) => ({
+        id: warning.id,
+        title: warning.title,
+        description: warning.description,
+        isRead: false,
+        type: 'budget' as const,
+        route: warning.route,
+        level: 'warning' as const,
+        accessibilityLabel: warning.accessibilityLabel,
+      })),
+    ];
 
     upsertNotifications(nextNotifications);
-  }, [budgetAlerts, upsertNotifications, removeNotificationsWhere]);
+  }, [budgetAlerts, budgetWarnings, upsertNotifications, removeNotificationsWhere]);
 
   // Every figure below is derived from the ledger on each render (V2 Part C) - nothing is cached. The redesign changes how the
   // numbers are drawn, not where they come from.
