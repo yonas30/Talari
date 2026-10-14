@@ -6,7 +6,7 @@
     "scheme": "myfinancesapp",
     "orientation": "portrait",
     "icon": "./assets/brand/talari-icon-1024.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
     },
