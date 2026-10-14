@@ -39,3 +39,24 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local env files and secrets
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+credentials.json
+
+# local databases and build outputs
+*.db
+*.sqlite
+*.sqlite3
+*.apk
+*.aab
+*.ipa
+build/
+
+# local tooling
+.claude/settings.local.json
+.tmp-verify/

@@ -1,0 +1,71 @@
+# Talari
+
+Know where your money is. Control where it goes. Watch it grow.
+
+Talari is a local-first personal finance app for Android (built with Expo and React Native). Your data stays on your phone: there are no accounts and no servers, and the app makes no network requests of its own.
+
+## Features
+
+- Transactions: income, expense and transfer, with categories, merchants, notes and dates.
+- Ledger-derived balances: every balance (Available, Saved, goals, total) is calculated from the ledger rather than stored, so the numbers always add up.
+- Goals: set money aside toward a target, add to it, withdraw from it, and see progress.
+- Budgets: monthly limits per category, with an alert in the in-app notification list at 80% of the limit and another when a budget goes over.
+- Recurring transactions: daily, weekly or monthly rules that post entries automatically.
+- Multi-currency: your own list of currencies with manual exchange rates; every amount is converted to ETB for balances and reports.
+- Insights: spending breakdown by category, income and expense totals, and a trend chart.
+- Streaks and Journey: a daily tracking streak, monthly history and milestones.
+- Backup and export: a full JSON backup you can restore, and a CSV export of your transactions.
+- App lock: unlock with the phone's biometrics or passcode.
+- Appearance: Light, Dark or System (follows the phone).
+
+## Tech stack
+
+- Expo SDK 57 and React Native 0.86, with Expo Router for navigation
+- TypeScript in strict mode
+- SQLite (expo-sqlite) with Drizzle ORM
+- Zustand for state
+- React Native Reanimated and SVG for animation and charts
+- Plus Jakarta Sans and Inter, embedded through the expo-font config plugin
+
+## Running it
+
+You need Node.js 22 or later, because one of the verify scripts uses Node's built-in SQLite module.
+
+```bash
+npm install
+npx expo start
+```
+
+Open the project in Expo Go on your phone by scanning the QR code. Expo Go is enough for day-to-day development. Two things only show up in a real build: following the phone's Light/Dark setting (the `userInterfaceStyle` setting is applied when the app is built) and the embedded fonts (Expo Go loads them at runtime instead). Builds are made with EAS:
+
+```bash
+npx eas-cli@latest build --platform android --profile preview
+```
+
+## Checks
+
+```bash
+npx tsc --noEmit
+npx expo lint
+```
+
+The verify scripts run the app's pure logic under Node (they use `npx tsx`, which is fetched on first use). The accounting script is written for East Africa Time; on macOS or Linux run it as `TZ=Africa/Addis_Ababa npx tsx scripts/verify-accounting.ts`:
+
+```bash
+npx tsx scripts/verify-accounting.ts      # accounting rules (V2_SPEC test cases), ledger, budgets, backup and migrations
+npx tsx scripts/verify-splash.ts          # splash timeline
+npx tsx scripts/verify-contrast.ts        # colour contrast of every text and graphic pair, Light and Dark
+npx tsx scripts/verify-fonts.ts           # font weight to font family mapping
+npx tsx scripts/verify-greeting.ts        # greeting, name rules and onboarding state
+npx tsx scripts/verify-home.ts            # the rules behind the Home screen
+npx tsx scripts/verify-budget-alerts.ts   # the 80% and over-budget alerts
+npx tsx scripts/verify-appearance.ts      # Light / Dark / System resolution and the saved choice
+```
+
+## Screenshots
+
+Screenshots will be added in `docs/screenshots`.
+
+## Project notes
+
+`V2_SPEC.md` is the specification the accounting model was built from, and the verify scripts check those rules. If something about how money is calculated is unclear, start there.
