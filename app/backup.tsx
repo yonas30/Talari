@@ -3,10 +3,10 @@ import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 
+import AppearanceRow from '../components/AppearanceRow';
 import AppHeader from '../components/AppHeader';
 import DevHomeRow from '../components/DevHomeRow';
 import DevOnboardingRow from '../components/DevOnboardingRow';
-import DevThemeRow from '../components/DevThemeRow';
 import NameSheet from '../components/NameSheet';
 import SettingsGroup from '../components/SettingsGroup';
 import SettingsRow from '../components/SettingsRow';
@@ -54,6 +54,7 @@ export default function SettingsScreen() {
       <AppHeader title="Settings" />
       <ScrollView contentContainerStyle={styles.container}>
         <SettingsGroup title="Preferences">
+          <AppearanceRow />
           <SettingsRow
             icon="cash-outline"
             title="Currency & Exchange Rates"
@@ -111,7 +112,6 @@ export default function SettingsScreen() {
         </SettingsGroup>
 
         {/* Development builds only (Expo Go / dev client): never present in preview or production builds. */}
-        {__DEV__ ? <DevThemeRow /> : null}
         {__DEV__ ? <DevOnboardingRow /> : null}
         {__DEV__ ? <DevHomeRow /> : null}
       </ScrollView>

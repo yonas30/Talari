@@ -1,21 +1,18 @@
 import * as SecureStore from 'expo-secure-store';
 
+import { DEFAULT_THEME_MODE, parseThemeMode, ThemeMode } from './themeResolve';
+
 // The user's Appearance choice. Stored next to the app-lock setting (SecureStore) because that is where this app keeps
 // device-level preferences that are not ledger data: no schema change, and it is not part of a backup.
-export type ThemeMode = 'system' | 'light' | 'dark';
+export { DEFAULT_THEME_MODE } from './themeResolve';
+export type { ThemeMode } from './themeResolve';
 
 const THEME_MODE_KEY = 'theme-mode';
-
-export const DEFAULT_THEME_MODE: ThemeMode = 'system';
-
-function isThemeMode(value: string | null): value is ThemeMode {
-  return value === 'system' || value === 'light' || value === 'dark';
-}
 
 export async function getThemeMode(): Promise<ThemeMode> {
   try {
     const value = await SecureStore.getItemAsync(THEME_MODE_KEY);
-    return isThemeMode(value) ? value : DEFAULT_THEME_MODE;
+    return parseThemeMode(value);
   } catch {
     // An unreadable keystore must never block launch.
     return DEFAULT_THEME_MODE;

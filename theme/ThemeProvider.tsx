@@ -2,13 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { Appearance, useColorScheme } from 'react-native';
 
 import { getThemeMode, setThemeMode, ThemeMode, DEFAULT_THEME_MODE } from '../utils/themePreference';
+import { nativeSchemeRequest, resolveScheme } from '../utils/themeResolve';
 import { APPEARANCE_ENABLED } from './config';
 import { palettes, ThemeColors, ThemeScheme } from './tokens';
 
 export interface ThemeContextValue {
-  /** The saved preference ('system' by default). It is saved even while Appearance is hidden. */
+  /** The saved preference ('system' by default). */
   mode: ThemeMode;
-  /** The mode actually applied: the saved one once Appearance is live; in development, the dev choice (Light by default). */
+  /** The mode actually applied: the saved one while Appearance is live, Light if it is switched off in theme/config.ts. */
   activeMode: ThemeMode;
   /** The scheme actually in use. */
   scheme: ThemeScheme;
@@ -23,9 +24,6 @@ export const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(DEFAULT_THEME_MODE);
   const [ready, setReady] = useState(false);
-  // Development-only override for testing the migrated parts (set from the "Dev: theme mode" row in Settings). In memory
-  // only, and it only exists when __DEV__ is true, so it can never reach a user.
-  const [devMode, setDevMode] = useState<ThemeMode | null>(null);
   const systemScheme = useColorScheme();
 
   useEffect(() => {
@@ -41,30 +39,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Until Phase 4 the app is Light for users, whatever is saved (see theme/config.ts).
-  const effectiveMode: ThemeMode = APPEARANCE_ENABLED ? mode : __DEV__ ? (devMode ?? 'light') : 'light';
-  const scheme: ThemeScheme = effectiveMode === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : effectiveMode;
+  // The saved choice, unless Appearance is switched off in theme/config.ts (then the app is Light whatever is saved).
+  const effectiveMode: ThemeMode = APPEARANCE_ENABLED ? mode : 'light';
+  const scheme: ThemeScheme = resolveScheme(effectiveMode, systemScheme);
 
-  // Keep native pieces (system dialogs, date pickers, keyboard) in step with the choice. 'unspecified' = follow the system.
+  // Keep native pieces (system dialogs, date pickers, keyboard) in step with the choice. 'unspecified' = follow the system, so
+  // "System" keeps following the phone live while the app is open (useColorScheme re-renders on every system change).
   useEffect(() => {
-    const requested = effectiveMode === 'system' ? 'unspecified' : effectiveMode;
-    Appearance.setColorScheme(requested);
-    if (__DEV__) {
-      // Evidence for "does Appearance.setColorScheme work in Expo Go": compare these in the Metro log.
-      console.log(
-        `[theme] mode=${effectiveMode} scheme=${scheme} | setColorScheme('${requested}') was called | ` +
-          `Appearance.getColorScheme() right after = ${String(Appearance.getColorScheme())} | useColorScheme() = ${String(systemScheme)}`,
-      );
-    }
-  }, [effectiveMode, scheme, systemScheme]);
+    Appearance.setColorScheme(nativeSchemeRequest(effectiveMode));
+  }, [effectiveMode]);
 
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
     void setThemeMode(next);
-    if (__DEV__) {
-      // While Appearance is hidden the saved choice is ignored; in development it also drives the dev override.
-      setDevMode(next);
-    }
   }, []);
 
   const value = useMemo<ThemeContextValue>(
