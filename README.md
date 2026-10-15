@@ -64,7 +64,20 @@ npx tsx scripts/verify-appearance.ts      # Light / Dark / System resolution and
 
 ## Screenshots
 
-Screenshots will be added in `docs/screenshots`.
+| Home (Light) | Home (Dark) |
+| :---: | :---: |
+| <img src="docs/screenshots/home-light.jpeg" width="260" alt="Home screen, Light theme"> | <img src="docs/screenshots/home-dark.jpeg" width="260" alt="Home screen, Dark theme"> |
+| Balances, this month's totals and recent transactions. | The same screen in the Dark theme. |
+
+| Home with balances hidden | Add transaction |
+| :---: | :---: |
+| <img src="docs/screenshots/home-hidden.jpeg" width="260" alt="Home screen with balances hidden"> | <img src="docs/screenshots/add-transaction.jpeg" width="260" alt="Add transaction screen"> |
+| Balances are hidden until you tap the eye. | Record income, an expense or a transfer. |
+
+| Insights | Goals |
+| :---: | :---: |
+| <img src="docs/screenshots/insights-light.jpeg" width="260" alt="Insights screen, Light theme"> | <img src="docs/screenshots/goals-light.jpeg" width="260" alt="Goals screen, Light theme"> |
+| Spending by category, totals and trend. | Money set aside toward your targets. |
 
 ## Project notes
 
