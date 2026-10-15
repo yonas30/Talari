@@ -4,6 +4,8 @@ Know where your money is. Control where it goes. Watch it grow.
 
 Talari is a local-first personal finance app for Android (built with Expo and React Native). Your data stays on your phone: there are no accounts and no servers, and the app makes no network requests of its own.
 
+Built by Yonas Kiros with Claude Code as an AI pair-programming assistant.
+
 ## Features
 
 - Transactions: income, expense and transfer, with categories, merchants, notes and dates.
