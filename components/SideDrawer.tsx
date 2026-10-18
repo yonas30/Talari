@@ -15,6 +15,7 @@ interface DrawerLink {
 }
 
 const links: DrawerLink[] = [
+  { label: 'Accounts', icon: 'albums-outline', route: '/accounts' },
   { label: 'Budgets', icon: 'wallet-outline', route: '/budgets' },
   { label: 'Recurring', icon: 'repeat-outline', route: '/recurring' },
   { label: 'Exchange Rates', icon: 'swap-horizontal-outline', route: '/exchange-rates' },

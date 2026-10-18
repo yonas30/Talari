@@ -1,15 +1,19 @@
-// Accounting verification for V2_SPEC Part W (Test Cases 1-13) plus extra edge cases.
+// Accounting verification for everything around the ledger: Insights periods and trends, goal progress and status, the streak, budgets
+// against real entries, recurring schedules, category icons, layout, the schema 3 migration steps, notification storage and search.
+// The accounts ledger itself (V2_SPEC Part W: balances, transfers and fees, foreign currency, reserved goal money, backup, the schema 4
+// migration) is checked by scripts/verify-accounts.ts. The old Available / Saved ledger tests were retired with that model.
 // Run:  TZ=Africa/Addis_Ababa npx tsx scripts/verify-accounting.ts
-//
-// It drives the same pure functions the store uses (planAdd / planEdit / planDelete +
-// getBalances), so it checks the real validation and balance logic - not a copy of it. It cannot
-// exercise React Native screens or SQLite; those are covered separately.
 
-import { findV2LaunchCutoff, runMigrations, SCHEMA_DDL, SCHEMA_VERSION, SqlRunner } from '../db/migrations';
+import { findV2LaunchCutoff, migrateToSchema3, SCHEMA_DDL, SqlRunner } from '../db/migrations';
 import { getReadIds, markRead, pruneReads } from '../db/notificationReads';
-import { Budget, ExchangeRate, Goal, Milestone, Transaction, TransactionInput } from '../types';
-import { getBalances, LedgerError, LedgerErrorCode } from '../utils/balances';
-import { calculateBuilderStreak, getBudgetProgress, getGoalProgress, nextGoalStatus } from '../utils/currency';
+import { Budget, ExchangeRate, Milestone } from '../types';
+import { AccountEntry, GoalAllocation } from '../types/accounts';
+import { EntryInput } from '../utils/accounts/entries';
+import { planAddEntry, planDeleteEntry, planEditEntry } from '../utils/accounts/entries';
+import { planAddToGoal, planCreateGoal, planDeleteGoal, planWithdrawFromGoal } from '../utils/accounts/goals';
+import { getGoalAmount } from '../utils/accounts/reserve';
+import { calculateStreak, getPeriodSummary } from '../utils/accounts/totals';
+import { getBudgetProgress, getGoalProgress, getProjectedCompletionDate, nextGoalStatus } from '../utils/currency';
 import { suggestCategoryEmoji } from '../utils/categoryIcons';
 import { parseDateKey, toLocalDateKey } from '../utils/dates';
 import { advanceDate, getNextDueDate, planRecurringEdit } from '../utils/recurring';
@@ -30,13 +34,30 @@ import { CONTROL_LABEL_MAX_SCALE, getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LAB
 import { statusBarStyleForBackground } from '../utils/statusBar';
 import { hasCompletionMilestone } from '../utils/milestones';
 import { budgetNotificationId, getBudgetAlerts } from '../utils/notifications';
+import {
+  clearAllNotifications,
+  forgetReadIds,
+  GOAL_MISSING_MESSAGE,
+  goalNotificationItems,
+  markAllRead,
+  markRead as markListRead,
+  mergeNotifications,
+  notificationActionLabel,
+  notificationOpensLabel,
+  notificationTarget,
+  notificationVisualState,
+  replaceGoalItems,
+  resolveGoalFocus,
+  sortNewestFirst,
+  unreadCount,
+} from '../utils/notificationList';
+import { AppNotification } from '../types/notifications';
+import { forgetReads } from '../db/notificationReads';
+import { expiredIds, markReserveRead, pruneExpired } from '../utils/accounts/notificationRetention';
 import { filterByType, filterTransactions, TypeFilter } from '../utils/search';
-import { planAdd, planDelete, planEdit } from '../utils/transactions';
+import { newFixture, USD_55 } from './support/fixture';
 
-const RATES: ExchangeRate[] = [
-  { id: 'USD-ETB', fromCurrency: 'USD', toCurrency: 'ETB', rate: 55, updatedAt: '2026-01-01T00:00:00Z' },
-];
-const GOALS = { laptop: 'Laptop' };
+const RATES: ExchangeRate[] = USD_55;
 
 let passed = 0;
 let failed = 0;
@@ -53,257 +74,78 @@ function check(name: string, condition: boolean, detail = ''): void {
   }
 }
 
-function ledgerOf(...inputs: TransactionInput[]): Transaction[] {
-  const ledger: Transaction[] = [];
-  for (const input of inputs) {
-    ledger.push(planAdd(ledger, input, RATES, GOALS));
+// Entries recorded through the real ledger rules in two ETB accounts: Cash (a cash account) and Savings (a bank account), both starting
+// empty. A step is built once the accounts' ids are known.
+interface Ids {
+  cash: string;
+  bank: string;
+}
+type Step = (ids: Ids) => EntryInput;
+type Which = keyof Ids;
+
+function ledgerOf(...steps: Step[]): AccountEntry[] {
+  const f = newFixture(RATES);
+  const ids: Ids = { cash: f.account('Cash', 'cash'), bank: f.account('Savings', 'bank') };
+  for (const step of steps) {
+    f.add(step(ids));
   }
-  return ledger;
+  return f.state().entries;
 }
 
-function add(ledger: Transaction[], input: TransactionInput): Transaction[] {
-  return [...ledger, planAdd(ledger, input, RATES, GOALS)];
-}
-
-function rejectedWith(code: LedgerErrorCode, action: () => unknown): boolean {
-  try {
-    action();
-    return false;
-  } catch (error) {
-    return error instanceof LedgerError && error.code === code;
-  }
-}
-
-const income = (amount: number, account: 'available' | 'saved', date = '2026-01-01'): TransactionInput => ({
-  type: 'income', amount, currency: 'ETB', category: 'Salary', source: 'Job', account, date,
+const income = (amount: number, account: Which = 'cash', date = '2026-01-01'): Step => (ids) => ({
+  type: 'income', accountId: ids[account], amount, currency: 'ETB', category: 'Salary', source: 'Job', date,
 });
-const expense = (amount: number, account: 'available' | 'saved', date = '2026-01-02'): TransactionInput => ({
-  type: 'expense', amount, currency: 'ETB', category: 'Food', account, date,
+const expense = (amount: number, account: Which = 'cash', date = '2026-01-02', currency = 'ETB', category = 'Food'): Step => (ids) => ({
+  type: 'expense', accountId: ids[account], amount, currency, category, date,
 });
-const transfer = (
-  amount: number,
-  from: 'available' | 'saved' | 'goal',
-  to: 'available' | 'saved' | 'goal',
-  date = '2026-01-02',
-): TransactionInput => ({
-  type: 'transfer', amount, currency: 'ETB', fromAccount: from, toAccount: to,
-  fromGoalId: from === 'goal' ? 'laptop' : null, toGoalId: to === 'goal' ? 'laptop' : null, date,
+const transfer = (amount: number, from: Which, to: Which, date = '2026-01-02'): Step => (ids) => ({
+  type: 'transfer', fromAccountId: ids[from], toAccountId: ids[to], fromAmount: amount, toAmount: amount, date,
 });
 
-// "Start: Total 100,000 / Available 70,000 / Saved 30,000"
-const start = () => ledgerOf(income(70000, 'available'), income(30000, 'saved'));
-
-function expectBalances(
-  name: string,
-  ledger: Transaction[],
-  want: { total: number; available: number; saved: number; laptop?: number },
-): void {
-  const got = getBalances(ledger);
-  const laptop = got.goals.laptop ?? 0;
-  check(
-    name,
-    got.total === want.total && got.available === want.available && got.saved === want.saved && laptop === (want.laptop ?? 0),
-    `got total=${got.total} available=${got.available} saved=${got.saved} laptop=${laptop}`,
-  );
-}
-
-console.log('\nPart W test cases');
-
-console.log('Test 1 - Income to Available');
-expectBalances('110,000 / 80,000 / 30,000', add(start(), income(10000, 'available', '2026-01-02')), { total: 110000, available: 80000, saved: 30000 });
-
-console.log('Test 2 - Income to Saved');
-expectBalances('110,000 / 70,000 / 40,000', add(start(), income(10000, 'saved', '2026-01-02')), { total: 110000, available: 70000, saved: 40000 });
-
-console.log('Test 3 - Available -> Saved');
-expectBalances('100,000 / 60,000 / 40,000', add(start(), transfer(10000, 'available', 'saved')), { total: 100000, available: 60000, saved: 40000 });
-
-console.log('Test 4 - Saved -> Available');
+console.log('\nStreak, budgets and arithmetic on real entries');
 {
-  const base = ledgerOf(income(60000, 'available'), income(40000, 'saved'));
-  expectBalances('100,000 / 70,000 / 30,000', add(base, transfer(10000, 'saved', 'available')), { total: 100000, available: 70000, saved: 30000 });
-}
-
-console.log('Test 5 - Expense from Available');
-expectBalances('95,000 / 65,000 / 30,000', add(start(), expense(5000, 'available')), { total: 95000, available: 65000, saved: 30000 });
-
-console.log('Test 6 - Expense from Saved');
-expectBalances('95,000 / 70,000 / 25,000', add(start(), expense(5000, 'saved')), { total: 95000, available: 70000, saved: 25000 });
-
-console.log('Test 7 - Available -> Goal');
-expectBalances('100,000 / 60,000 / 30,000 / Laptop 10,000', add(start(), transfer(10000, 'available', 'goal')), { total: 100000, available: 60000, saved: 30000, laptop: 10000 });
-
-console.log('Test 8 - Saved -> Goal');
-expectBalances('100,000 / 70,000 / 20,000 / Laptop 10,000', add(start(), transfer(10000, 'saved', 'goal')), { total: 100000, available: 70000, saved: 20000, laptop: 10000 });
-
-console.log('Test 9 - Goal -> Available');
-{
-  const base = ledgerOf(income(70000, 'available'), income(30000, 'saved'), transfer(10000, 'available', 'goal', '2026-01-01'));
-  expectBalances('start: 60,000 / 30,000 / Laptop 10,000', base, { total: 100000, available: 60000, saved: 30000, laptop: 10000 });
-  expectBalances('after: 100,000 / 65,000 / 30,000 / Laptop 5,000', add(base, transfer(5000, 'goal', 'available')), { total: 100000, available: 65000, saved: 30000, laptop: 5000 });
-}
-
-console.log('Test 10 - Goal cannot pay an expense');
-{
-  const base = ledgerOf(income(70000, 'available'), transfer(10000, 'available', 'goal', '2026-01-01'));
-  const goalExpense = { ...expense(5000, 'available'), account: 'goal' } as unknown as TransactionInput;
-  check('expense with Goal as pay-from is rejected (GOAL_EXPENSE)', rejectedWith('GOAL_EXPENSE', () => planAdd(base, goalExpense, RATES, GOALS)));
-  check('Laptop goal untouched', getBalances(base).goals.laptop === 10000);
-  console.log('  note  "UI must not offer Goal as an expense source": the Account type is "available" | "saved" (compile-time) and the ledger guard above is the runtime backstop. The Step 3 form only offers Available / Saved for expenses (components/TransactionForm.tsx); Goal appears only as a Transfer endpoint.');
-}
-
-console.log('Test 11 - Edit transaction (ledger model)');
-{
-  const base = start();
-  const withExpense = add(base, expense(5000, 'available'));
-  const original = withExpense[withExpense.length - 1];
-  const edited = planEdit(withExpense, original.id, expense(7000, 'saved'), RATES, GOALS);
-  const after = withExpense.map((row) => (row.id === original.id ? edited : row));
-  expectBalances('Available 70,000 (as if 5,000 never existed), Saved 23,000, Total 93,000', after, { total: 93000, available: 70000, saved: 23000 });
-  check('still exactly one expense row', after.filter((row) => row.type === 'expense').length === 1);
-  check('edit kept id / createdAt / timestamp', edited.id === original.id && edited.createdAt === original.createdAt && edited.timestamp === original.timestamp);
-}
-
-console.log('Test 12 - Currency conversion');
-{
-  const usd: TransactionInput = { type: 'expense', amount: 50, currency: 'USD', category: 'Coffee', account: 'available', date: '2026-01-02' };
-  const before = getBalances(start()).available;
-  const ledger = add(start(), usd);
-  const row = ledger[ledger.length - 1];
-  check('amount=50 currency=USD amountETB=2750', row.amount === 50 && row.currency === 'USD' && row.amountETB === 2750, JSON.stringify(row));
-  check('Available decreased by exactly 2,750 (not 50)', before - getBalances(ledger).available === 2750);
-  check('stored rate recorded on the row (55)', row.exchangeRate === 55);
-  check('list display data present: ETB amount + original amount/currency', row.amountETB === 2750 && row.amount === 50 && row.currency === 'USD');
-  console.log('  note  the "(originally $50)" text itself is rendered in app/transactions.tsx; checked by reading the code, not by running the UI.');
-}
-
-console.log('Test 13 - Negative balance blocked');
-{
-  const base = start();
-  check('expense > Available is blocked (NEGATIVE_BALANCE)', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, expense(70000.01, 'available'), RATES, GOALS)));
-  check('no transaction created (ledger unchanged)', base.length === 2);
-  check('exactly Available is allowed', (() => { const l = add(base, expense(70000, 'available')); return getBalances(l).available === 0; })());
-}
-
-console.log('\nExtra cases (approved scope: edit / delete / back-dated / rates / streak)');
-{
-  const base = start();
-  check('transfer > Available blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, transfer(70001, 'available', 'saved'), RATES, GOALS)));
-  check('transfer > Saved blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, transfer(30001, 'saved', 'available'), RATES, GOALS)));
-  check('goal contribution > Available blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, transfer(70001, 'available', 'goal'), RATES, GOALS)));
-  check('withdrawing more than the goal holds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(add(base, transfer(1000, 'available', 'goal')), transfer(1001, 'goal', 'available'), RATES, GOALS)));
-  check('same source and destination rejected', rejectedWith('SAME_ACCOUNT', () => planAdd(base, transfer(10, 'saved', 'saved'), RATES, GOALS)));
-  check('goal -> same goal rejected', rejectedWith('SAME_ACCOUNT', () => planAdd(base, transfer(10, 'goal', 'goal'), RATES, GOALS)));
-  check('zero / negative amount rejected', rejectedWith('INVALID_AMOUNT', () => planAdd(base, expense(0, 'available'), RATES, GOALS)) && rejectedWith('INVALID_AMOUNT', () => planAdd(base, expense(-5, 'available'), RATES, GOALS)));
-}
-{
-  // delete / edit that would strand later spending
-  const l = ledgerOf(income(1000, 'available', '2026-01-01'), expense(800, 'available', '2026-01-05'));
-  const incomeRow = l[0];
-  const expenseRow = l[1];
-  check('delete income that funds a later expense is blocked', rejectedWith('NEGATIVE_BALANCE', () => planDelete(l, incomeRow.id, GOALS)));
-  check('delete the expense is allowed', (() => { planDelete(l, expenseRow.id, GOALS); return true; })());
-  check('edit income down below later spending is blocked', rejectedWith('NEGATIVE_BALANCE', () => planEdit(l, incomeRow.id, income(500, 'available', '2026-01-01'), RATES, GOALS)));
-  check('edit income to a LATER date than the expense is blocked', rejectedWith('NEGATIVE_BALANCE', () => planEdit(l, incomeRow.id, income(1000, 'available', '2026-01-10'), RATES, GOALS)));
-  check('edit expense raising it above funds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planEdit(l, expenseRow.id, expense(1001, 'available', '2026-01-05'), RATES, GOALS)));
-  check('back-dated expense before the income is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(l, expense(10, 'available', '2025-12-31'), RATES, GOALS)));
-  check('back-dated expense that overdraws an intermediate day is blocked even though today balances', rejectedWith('NEGATIVE_BALANCE', () => planAdd(add(l, income(5000, 'available', '2026-02-01')), expense(300, 'available', '2026-01-06'), RATES, GOALS)));
-  check('same-day income + expense is judged at end of day', (() => { planAdd(ledgerOf(income(100, 'available', '2026-03-01')), expense(100, 'available', '2026-03-01'), RATES, GOALS); return true; })());
-}
-{
-  // exchange rates
-  check('non-ETB with no stored rate is blocked (MISSING_RATE, no 1:1 fallback)', rejectedWith('MISSING_RATE', () => planAdd(start(), { ...expense(10, 'available'), currency: 'EUR' }, RATES, GOALS)));
-  const override = planAdd(start(), { ...expense(10, 'available'), currency: 'USD', rateOverride: 60 }, RATES, GOALS);
-  check('per-transaction override used (10 USD @ 60 = 600)', override.amountETB === 600 && override.exchangeRate === 60);
-  check('override does not modify the stored rate table', RATES[0].rate === 55);
-  check('invalid override rejected', rejectedWith('INVALID_RATE', () => planAdd(start(), { ...expense(10, 'available'), currency: 'USD', rateOverride: 0 }, RATES, GOALS)));
-
-  // editing keeps the original rate even if the stored rate later changes
-  const l = ledgerOf(income(100000, 'available'), { type: 'expense', amount: 10, currency: 'USD', category: 'X', account: 'available', date: '2026-01-02' });
-  const newRates: ExchangeRate[] = [{ ...RATES[0], rate: 130 }];
-  const edited = planEdit(l, l[1].id, { type: 'expense', amount: 20, currency: 'USD', category: 'X', account: 'available', date: '2026-01-02' }, newRates, GOALS);
-  check('edit keeps the entry-time rate (20 USD @ 55 = 1,100, not 2,600)', edited.amountETB === 1100);
-}
-{
-  // arithmetic
-  let l = ledgerOf(income(0.1, 'available', '2026-01-01'));
-  l = add(l, income(0.2, 'available', '2026-01-01'));
-  check('0.1 + 0.2 = 0.3 exactly (cent arithmetic)', getBalances(l).available === 0.3);
-  check('total never double-counts goals', (() => { const g = add(start(), transfer(20000, 'available', 'goal')); return getBalances(g).total === 100000; })());
+  // streak: local day keys. Run under TZ=Africa/Addis_Ababa (UTC+3) to exercise the old UTC bug.
+  const at1am = new Date(2026, 0, 10, 1, 0, 0);
+  const rows = ledgerOf(income(100, 'cash', '2026-01-08'), income(100, 'cash', '2026-01-09'), income(100, 'cash', '2026-01-10'));
+  check(`streak at 01:00 local (TZ=${process.env.TZ ?? 'system'}) counts 3 consecutive days`, calculateStreak(rows, [], at1am) === 3, `got ${calculateStreak(rows, [], at1am)}`);
+  const noToday = rows.slice(0, 2);
+  check('streak survives a day with nothing logged yet (yesterday active)', calculateStreak(noToday, [], at1am) === 2);
+  check('streak breaks after a gap', calculateStreak(ledgerOf(income(1, 'cash', '2026-01-05')), [], at1am) === 0);
+  const one = ledgerOf(income(100, 'cash', '2026-01-01'))[0];
+  const withAuto = [one, { ...one, id: 'auto', date: '2026-01-10', isAutomatic: true }];
+  check('automatically generated (recurring) rows do not count toward the streak', calculateStreak(withAuto, [], at1am) === 0, `got ${calculateStreak(withAuto, [], at1am)}`);
+  const transferRows = ledgerOf(income(100, 'cash', '2026-01-01'), transfer(10, 'cash', 'bank', '2026-01-09'));
+  const manual: GoalAllocation = { id: 'a1', goalId: 'g', accountId: 'a', amount: 10, date: '2026-01-10', kind: 'manual', createdAt: '2026-01-10T10:00:00.000Z' };
+  check('transfers and manual goal additions count toward the streak', calculateStreak(transferRows, [manual], at1am) === 2, `got ${calculateStreak(transferRows, [manual], at1am)}`);
 }
 {
   // budgets use amountETB and a converted limit
-  const l = ledgerOf(income(100000, 'available'), { type: 'expense', amount: 10, currency: 'USD', category: 'Food', account: 'available', date: '2026-01-02' });
+  const l = ledgerOf(income(100000), expense(10, 'cash', '2026-01-02', 'USD', 'Food'));
   const budget = { id: 'b', category: 'Food', monthlyLimit: 10, currency: 'USD', createdAt: '', updatedAt: '' };
   const progress = getBudgetProgress(budget, l, RATES, new Date(2026, 0, 15));
   check('budget spent = 550 ETB vs limit 10 USD = 550 ETB (not over)', progress.spentAmount === 550 && progress.limitETB === 550 && !progress.isOverBudget);
   check('budget in a currency with no rate is not compared', getBudgetProgress({ ...budget, currency: 'EUR' }, l, RATES, new Date(2026, 0, 15)).limitETB === null);
 }
 {
-  // streak: local day keys. Run under TZ=Africa/Addis_Ababa (UTC+3) to exercise the old UTC bug.
-  const at1am = new Date(2026, 0, 10, 1, 0, 0);
-  const rows = ledgerOf(income(100, 'available', '2026-01-08'), income(100, 'available', '2026-01-09'), income(100, 'available', '2026-01-10'));
-  check(`streak at 01:00 local (TZ=${process.env.TZ ?? 'system'}) counts 3 consecutive days`, calculateBuilderStreak(rows, at1am) === 3, `got ${calculateBuilderStreak(rows, at1am)}`);
-  const noToday = rows.slice(0, 2);
-  check('streak survives a day with nothing logged yet (yesterday active)', calculateBuilderStreak(noToday, at1am) === 2);
-  check('streak breaks after a gap', calculateBuilderStreak(ledgerOf(income(1, 'available', '2026-01-05')), at1am) === 0);
-  const transferRows = ledgerOf(income(100, 'available', '2026-01-01'), transfer(10, 'available', 'saved', '2026-01-09'), transfer(10, 'available', 'goal', '2026-01-10'));
-  const withAuto = [...ledgerOf(income(100, 'available', '2026-01-01')), { ...ledgerOf(income(5, 'available', '2026-01-10'))[0], isAutomatic: true }];
-  check('automatically generated (recurring) rows do not count toward the streak', calculateBuilderStreak(withAuto, at1am) === 0, `got ${calculateBuilderStreak(withAuto, at1am)}`);
-  check('transfers and goal contributions count toward the streak', calculateBuilderStreak(transferRows, at1am) === 2);
-}
-
-console.log('\nStep 3: editing across all three transaction types');
-{
-  const base = ledgerOf(income(70000, 'available'), income(30000, 'saved'));
-  const exp = add(base, expense(5000, 'available'));
-  const expRow = exp[exp.length - 1];
-
-  // expense -> transfer (Saved -> Laptop goal): row is converted in place, no leftover expense effect
-  const asTransfer = planEdit(exp, expRow.id, transfer(5000, 'saved', 'goal'), RATES, GOALS);
-  const l1 = exp.map((row) => (row.id === expRow.id ? asTransfer : row));
-  expectBalances('expense -> Saved->Goal transfer: 100,000 / 70,000 / 25,000 / Laptop 5,000', l1, { total: 100000, available: 70000, saved: 25000, laptop: 5000 });
-  check('converted row has no category/account/source left over', asTransfer.category === '' && asTransfer.account === null && asTransfer.source === '' && asTransfer.fromGoalId === null && asTransfer.toGoalId === 'laptop');
-  check('id/createdAt/timestamp survive a type change', asTransfer.id === expRow.id && asTransfer.createdAt === expRow.createdAt && asTransfer.timestamp === expRow.timestamp);
-
-  // transfer -> income (Saved)
-  const asIncome = planEdit(l1, asTransfer.id, income(5000, 'saved', '2026-01-02'), RATES, GOALS);
-  const l2 = l1.map((row) => (row.id === asTransfer.id ? asIncome : row));
-  expectBalances('transfer -> Income to Saved: 105,000 / 70,000 / 35,000 / Laptop 0', l2, { total: 105000, available: 70000, saved: 35000 });
-  check('income row has account, no transfer endpoints', asIncome.account === 'saved' && asIncome.fromAccount === null && asIncome.toAccount === null && asIncome.toGoalId === null);
-
-  // move a transfer's endpoints (Available->Saved becomes Saved->Available)
-  const t = add(base, transfer(1000, 'available', 'saved'));
-  const tRow = t[t.length - 1];
-  const flipped = planEdit(t, tRow.id, transfer(1000, 'saved', 'available'), RATES, GOALS);
-  expectBalances('flipping a transfer: 100,000 / 71,000 / 29,000', t.map((row) => (row.id === tRow.id ? flipped : row)), { total: 100000, available: 71000, saved: 29000 });
-
-  // goal withdrawals
-  const funded = add(base, transfer(10000, 'available', 'goal'));
-  const withdrawn = add(funded, transfer(4000, 'goal', 'saved'));
-  expectBalances('Goal -> Saved: 100,000 / 60,000 / 34,000 / Laptop 6,000', withdrawn, { total: 100000, available: 60000, saved: 34000, laptop: 6000 });
-  const fundingRow = funded[funded.length - 1];
-  check('delete the goal-funding transfer after withdrawing is blocked', rejectedWith('NEGATIVE_BALANCE', () => planDelete(withdrawn, fundingRow.id, GOALS)));
-  check('shrinking the goal-funding transfer below what was withdrawn is blocked', rejectedWith('NEGATIVE_BALANCE', () => planEdit(withdrawn, fundingRow.id, transfer(3000, 'available', 'goal'), RATES, GOALS)));
-  check('goal -> a different goal id is not "same account"', (() => { planAdd(funded, { ...transfer(100, 'goal', 'goal'), toGoalId: 'other' }, RATES, { ...GOALS, other: 'Car' }); return true; })());
-  check('transfer with a goal endpoint but no goal id is rejected', rejectedWith('MISSING_GOAL', () => planAdd(base, { ...transfer(10, 'available', 'goal'), toGoalId: null }, RATES, GOALS)));
-  check('foreign-currency transfer converts to ETB (10 USD = 550)', planAdd(base, { ...transfer(10, 'available', 'saved'), currency: 'USD' }, RATES, GOALS).amountETB === 550);
+  // arithmetic
+  const l = ledgerOf(income(0.1, 'cash', '2026-01-01'), income(0.2, 'cash', '2026-01-01'));
+  check('0.1 + 0.2 = 0.3 exactly (cent arithmetic)', getPeriodSummary(l, '2026-01').income === 0.3);
 }
 
 console.log('\nStep 5: Insights periods, navigation, custom range, trend');
 {
-  // Fixture across several months. Transfers and a USD expense are included on purpose.
+  // Fixture across several months. Transfers and a USD expense (on an ETB account, converted at the stored rate) are included on purpose.
   const L = ledgerOf(
-    income(100000, 'available', '2025-12-31'),
-    income(5000, 'available', '2026-01-01'),
-    expense(300, 'available', '2026-01-05'),
-    expense(200, 'available', '2026-01-31'),
-    transfer(1000, 'available', 'saved', '2026-01-31'),
-    income(7000, 'saved', '2026-02-01'),
-    { type: 'expense', amount: 10, currency: 'USD', category: 'Food', account: 'available', date: '2026-02-10' },
-    expense(400, 'available', '2026-02-28'),
-    income(2000, 'available', '2026-03-15'),
-    expense(50, 'available', '2026-03-15'),
+    income(100000, 'cash', '2025-12-31'),
+    income(5000, 'cash', '2026-01-01'),
+    expense(300, 'cash', '2026-01-05'),
+    expense(200, 'cash', '2026-01-31'),
+    transfer(1000, 'cash', 'bank', '2026-01-31'),
+    income(7000, 'bank', '2026-02-01'),
+    expense(10, 'cash', '2026-02-10', 'USD', 'Food'),
+    expense(400, 'cash', '2026-02-28'),
+    income(2000, 'cash', '2026-03-15'),
+    expense(50, 'cash', '2026-03-15'),
   );
 
   // --- month navigation (the old setMonth() overflow bug) ---
@@ -360,6 +202,13 @@ console.log('\nStep 5: Insights periods, navigation, custom range, trend');
   check('monthly-bucketed trend reconciles with totals', sumTrend(yearTrend).i === getPeriodTotals(L).income * 100 && sumTrend(yearTrend).e === getPeriodTotals(L).expenses * 100);
   check('one-day custom range gives exactly one point', getTrendSeries(getFilteredTransactionsByRange(L, '2026-03-15', '2026-03-15'), '2026-03-15', '2026-03-15').length === 1);
   check('trend ignores transfers', getTrendSeries(jan, '2026-01-31', '2026-01-31')[0].income === 0 && getTrendSeries(jan, '2026-01-31', '2026-01-31')[0].expense === 200);
+  // --- system rows are neither income nor spending ---
+  const sys = newFixture(RATES);
+  const sysAccount = sys.account('Cash', 'cash', 'ETB', 500, '2026-01-05');
+  sys.add({ type: 'adjustment', accountId: sysAccount, amount: -100, date: '2026-01-06' });
+  const sysRows = sys.state().entries;
+  check('trend ignores the opening balance and adjustments (neither is income or spending)', getTrendSeries(sysRows, '2026-01-05', '2026-01-06').every((point) => point.income === 0 && point.expense === 0));
+  check('period totals and the category breakdown ignore them too', getPeriodTotals(sysRows).income === 0 && getPeriodTotals(sysRows).expenses === 0 && getCategoryBreakdown(sysRows).length === 0 && getSourceBreakdown(sysRows).length === 0);
 }
 
 console.log('\nStep 6: status bar contrast');
@@ -371,44 +220,45 @@ console.log('\nStep 6: status bar contrast');
   check('orange accent (#E87532) gets dark icons', statusBarStyleForBackground('#E87532') === 'dark');
 }
 
-console.log('\nStep 7: Goals - all transfer directions, completion status');
+console.log('\nStep 7: Goals - progress from allocations, completion status, projected date');
 {
-  const goal = { id: 'laptop', name: 'Laptop', targetAmount: 10000, deadline: null, status: 'active' as const, createdAt: '', updatedAt: '' };
-  const base = ledgerOf(income(70000, 'available'), income(30000, 'saved'));
+  const f = newFixture(RATES);
+  const cbe = f.account('CBE', 'bank', 'ETB', 100000, '2026-01-01');
+  const created = planCreateGoal(f.state(), { name: 'Laptop', targetAmount: 10000, heldInAccountId: cbe }, f.ctx);
+  const goal = { id: created.goal.id, targetAmount: 10000, status: 'active' as const };
+  const added = (state: typeof created.state, amount: number) => planAddToGoal(state, goal.id, amount, f.ctx).state;
+  const taken = (state: typeof created.state, amount: number) => planWithdrawFromGoal(state, goal.id, amount, f.ctx).state;
 
-  // all four directions in the Goals UI, each leaving Total untouched
-  const fromAvail = add(base, transfer(4000, 'available', 'goal'));
-  expectBalances('Available -> Goal 4,000', fromAvail, { total: 100000, available: 66000, saved: 30000, laptop: 4000 });
-  const fromSaved = add(fromAvail, transfer(3000, 'saved', 'goal'));
-  expectBalances('Saved -> Goal 3,000 (goal now 7,000)', fromSaved, { total: 100000, available: 66000, saved: 27000, laptop: 7000 });
-  const toAvail = add(fromSaved, transfer(2000, 'goal', 'available'));
-  expectBalances('Goal -> Available 2,000', toAvail, { total: 100000, available: 68000, saved: 27000, laptop: 5000 });
-  const toSaved = add(toAvail, transfer(1000, 'goal', 'saved'));
-  expectBalances('Goal -> Saved 1,000', toSaved, { total: 100000, available: 68000, saved: 28000, laptop: 4000 });
-
-  // sheet rules enforced by the ledger
-  check('withdraw more than the goal holds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(toSaved, transfer(4001, 'goal', 'available'), RATES, GOALS)));
-  check('withdraw exactly what it holds is allowed (goal -> 0)', (() => { const l = add(toSaved, transfer(4000, 'goal', 'available')); return (getBalances(l).goals.laptop ?? 0) === 0; })());
-  check('add more than Available holds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, transfer(70001, 'available', 'goal'), RATES, GOALS)));
-  check('add more than Saved holds is blocked', rejectedWith('NEGATIVE_BALANCE', () => planAdd(base, transfer(30001, 'saved', 'goal'), RATES, GOALS)));
-
-  // progress comes from the ledger only
-  check('goal progress = ledger amount (4,000 of 10,000 = 40%)', (() => { const p = getGoalProgress(goal, toSaved); return p.savedAmount === 4000 && p.percent === 40; })());
-  check('goal progress ignores money merely sitting in Saved', getGoalProgress(goal, base).savedAmount === 0);
+  const four = added(created.state, 4000);
+  check('goal progress = the sum of its allocations (4,000 of 10,000 = 40%)', (() => { const p = getGoalProgress(goal, four.allocations); return p.savedAmount === 4000 && p.percent === 40; })());
+  check('money merely sitting in the account is not goal progress', getGoalProgress(goal, created.state.allocations).savedAmount === 0);
+  const seven = added(four, 3000);
+  const five = taken(seven, 2000);
+  check('adding 3,000 then freeing 2,000 leaves 5,000', getGoalAmount(five.allocations, goal.id) === 5000 && getGoalProgress(goal, five.allocations).percent === 50);
+  check('progress is capped at 100% even if more is set aside', getGoalProgress(goal, added(five, 8000).allocations).percent === 100);
 
   // status transitions
-  const full = add(base, transfer(10000, 'available', 'goal'));
-  check('reaching the target completes an active goal', nextGoalStatus(goal, full) === 'completed');
-  check('exceeding the target keeps it completed (no change)', nextGoalStatus({ ...goal, status: 'completed' }, add(full, transfer(500, 'saved', 'goal'))) === null);
-  const reopened = add(full, transfer(1, 'goal', 'available'));
-  check('withdrawing below the target reopens a completed goal', nextGoalStatus({ ...goal, status: 'completed' }, reopened) === 'active');
-  check('an active goal below target is left alone', nextGoalStatus(goal, toSaved) === null);
-  check('raising the target above what is held reopens a completed goal', nextGoalStatus({ ...goal, status: 'completed', targetAmount: 20000 }, full) === 'active');
-  check('lowering the target to what is held completes the goal', nextGoalStatus({ ...goal, targetAmount: 4000 }, toSaved) === 'completed');
-  check('abandoned goals are never changed', nextGoalStatus({ ...goal, status: 'abandoned' }, full) === null);
+  const full = added(created.state, 10000);
+  check('reaching the target completes an active goal', nextGoalStatus(goal, full.allocations) === 'completed');
+  check('exceeding the target keeps it completed (no change)', nextGoalStatus({ ...goal, status: 'completed' as const }, added(full, 500).allocations) === null);
+  const reopened = taken(full, 1);
+  check('withdrawing below the target reopens a completed goal', nextGoalStatus({ ...goal, status: 'completed' as const }, reopened.allocations) === 'active');
+  check('an active goal below target is left alone', nextGoalStatus(goal, five.allocations) === null);
+  check('raising the target above what is held reopens a completed goal', nextGoalStatus({ ...goal, status: 'completed' as const, targetAmount: 20000 }, full.allocations) === 'active');
+  check('lowering the target to what is held completes the goal', nextGoalStatus({ ...goal, targetAmount: 5000 }, five.allocations) === 'completed');
+  check('abandoned goals are never changed', nextGoalStatus({ ...goal, status: 'abandoned' as const }, full.allocations) === null);
 
-  // a completed goal still holds money that can be moved out (and only then is it "free")
-  check('a completed goal can be withdrawn to Saved', (() => { const l = add(full, transfer(10000, 'goal', 'saved')); const b = getBalances(l); return (b.goals.laptop ?? 0) === 0 && b.saved === 40000 && b.total === 100000; })());
+  // reserved money being used up by spending reopens a completed goal too (the allocation falls back below the target)
+  const spent = f.add;
+  void spent;
+
+  // projected completion: pace of what the owner has set aside, by month
+  const ref = new Date(2026, 0, 20);
+  check('no manual additions: no projection', getProjectedCompletionDate(goal, created.state.allocations, ref) === null);
+  const projected = getProjectedCompletionDate(goal, added(created.state, 5000).allocations, ref);
+  check('5,000 of 10,000 set aside this month projects one more month (2026-02-20)', projected !== null && toLocalDateKey(projected) === '2026-02-20', projected ? toLocalDateKey(projected) : 'null');
+  check('a goal that is already full projects "today"', getProjectedCompletionDate(goal, full.allocations, ref)?.getTime() === ref.getTime());
+  check('automatic reductions are not "pace": with only a withdrawal there is no projection', getProjectedCompletionDate(goal, [{ id: 'w', goalId: goal.id, accountId: cbe, amount: -100, date: '2026-01-10', kind: 'auto_reduce', createdAt: '' }], ref) === null);
 }
 
 console.log('\nStep 8: recurring schedule, recurring edits, category icons');
@@ -488,7 +338,7 @@ console.log('\nLayout: tab bar clearance at any system font size');
   check('bar grows with font scale up to the cap', getTabBarMetrics(1.3, 24).height > getTabBarMetrics(1, 24).height);
 }
 
-console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milestone matching by goal id');
+console.log('\nMigration schema 3 step: V1 leftovers (real SQLite via node:sqlite) + milestone matching by goal id');
 {
   interface NodeStatement {
     all(...params: unknown[]): unknown[];
@@ -586,7 +436,7 @@ console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milest
     const categoriesBefore = ids(db, 'categories').filter((id) => id !== 'savings');
     const currenciesBefore = ids(db, 'currencies', 'code');
     check('V1 database is at user_version 0 before', version(db) === 0);
-    const purged = runMigrations(runnerFor(db), 0);
+    const purged = migrateToSchema3(runnerFor(db), 0);
     check('A: every V1 milestone is gone', countOf(db, 'milestones') === 0, JSON.stringify(ids(db, 'milestones')));
     check('A: every V1 budget is gone', countOf(db, 'budgets') === 0);
     check('A: every V1 exchange rate is gone (placeholder defaults are re-seeded by initializeDatabase, not kept)', countOf(db, 'exchange_rates') === 0);
@@ -596,7 +446,7 @@ console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milest
     check('A: currencies are untouched', JSON.stringify(ids(db, 'currencies', 'code')) === JSON.stringify(currenciesBefore));
     check('A: V1 ledger tables were rebuilt empty (transactions, goals, recurring, snapshots)', ['transactions', 'goals', 'recurring_transactions', 'monthly_snapshots'].every((t) => countOf(db, t) === 0));
     check('A: reported counts match (2 milestones, 2 budgets, 2 rates, 1 origin, 1 savings category)', purged?.milestones === 2 && purged?.budgets === 2 && purged?.exchangeRates === 2 && purged?.origin === 1 && purged?.savingsCategories === 1, JSON.stringify(purged));
-    check('A: user_version is now 3', version(db) === SCHEMA_VERSION && SCHEMA_VERSION === 3);
+    check('A: user_version is now 3', version(db) === 3);
     check('A: milestones now has a goal_id column', (db.prepare('PRAGMA table_info(milestones)').all() as { name: string }[]).some((c) => c.name === 'goal_id'));
   }
 
@@ -606,7 +456,7 @@ console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milest
     check('B: cutoff = the first monthly snapshot (first V2 launch)', findV2LaunchCutoff(runnerFor(db)) === T0);
     const currenciesBefore = ids(db, 'currencies', 'code');
     const goalsBefore = ids(db, 'goals');
-    runMigrations(runnerFor(db), 2);
+    migrateToSchema3(runnerFor(db), 2);
     check('B: V1 milestones removed, V2-era milestones kept', JSON.stringify(ids(db, 'milestones')) === JSON.stringify(['m-v2', 'm-v2-streak']), JSON.stringify(ids(db, 'milestones')));
     check('B: V1 budget removed, V1 budget you edited in V2 kept, V2 budget kept', JSON.stringify(ids(db, 'budgets')) === JSON.stringify(['b-old1', 'b-v2']), JSON.stringify(ids(db, 'budgets')));
     check('B: stale V1 rate removed, rate re-set in V2 kept', JSON.stringify(ids(db, 'exchange_rates')) === JSON.stringify(['EUR-ETB']), JSON.stringify(ids(db, 'exchange_rates')));
@@ -623,14 +473,14 @@ console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milest
     // one-time: a later launch must never purge again
     db.prepare('INSERT INTO budgets VALUES (?,?,?,?,?,?)').run('b-late', 'Food', 1, 'ETB', V1, V1); // old-looking row added afterwards
     db.prepare('INSERT INTO categories (id,name,type,icon,color,is_default) VALUES (?,?,?,?,?,?)').run('late-sav', 'Late', 'savings', 'x', '#000', 0);
-    const second = runMigrations(runnerFor(db), 3);
+    const second = migrateToSchema3(runnerFor(db), 3);
     check('B: re-running at version 3 is a no-op (nothing purged)', second === null && ids(db, 'budgets').includes('b-late') && ids(db, 'categories').includes('late-sav'));
   }
 
   // ---- C. fresh install -------------------------------------------------------------------------------------------
   {
     const db = new DatabaseSync(':memory:');
-    runMigrations(runnerFor(db), 0);
+    migrateToSchema3(runnerFor(db), 0);
     check('C: fresh install creates every table and ends at version 3', version(db) === 3 && ['categories', 'currencies', 'transactions', 'goals', 'budgets', 'milestones', 'user_origin', 'monthly_snapshots', 'exchange_rates', 'recurring_transactions'].every((t) => countOf(db, t) === 0));
   }
 
@@ -640,9 +490,9 @@ console.log('\nMigration v3: V1 leftovers (real SQLite via node:sqlite) + milest
     const base = runnerFor(db);
     const failing: SqlRunner = { ...base, run: (sql, ...params) => { if (sql.includes('DELETE FROM user_origin')) throw new Error('disk full'); base.run(sql, ...params); } };
     let threw = false;
-    try { runMigrations(failing, 2); } catch { threw = true; }
+    try { migrateToSchema3(failing, 2); } catch { threw = true; }
     check('D: a failure part-way throws, leaves user_version at 2, and rolls back every earlier delete', threw && version(db) === 2 && ids(db, 'milestones').length === 4 && ids(db, 'budgets').length === 3 && ids(db, 'categories').includes('savings'), `v${version(db)} milestones ${ids(db, 'milestones').length}`);
-    runMigrations(base, 2);
+    migrateToSchema3(base, 2);
     check('D: the next launch retries and completes', version(db) === 3 && ids(db, 'milestones').length === 2);
   }
 
@@ -671,24 +521,32 @@ console.log('\nNotifications: over-budget alerts and seen-state storage');
 {
   const budget = (category: string, limit: number, currency = 'ETB'): Budget => ({ id: `b-${category}`, category, monthlyLimit: limit, currency, createdAt: '', updatedAt: '' });
   const jan = new Date(2026, 0, 15);
-  const base = ledgerOf(income(100000, 'available', '2025-12-01'));
-  const spend = (rows: Transaction[], amount: number, category: string, date: string): Transaction[] => [...rows, planAdd(rows, { type: 'expense', amount, currency: 'ETB', category, account: 'available', date }, RATES, GOALS)];
+  const base: Step[] = [income(100000, 'cash', '2025-12-01')];
+  const spend = (steps: Step[], amount: number, category: string, date: string): Step[] => [...steps, expense(amount, 'cash', date, 'ETB', category)];
 
   // ---- alerts ----
   const over = spend(base, 1200, 'Food', '2026-01-05');
-  const alerts = getBudgetAlerts([budget('Food', 1000)], over, RATES, jan);
+  const overRows = ledgerOf(...over);
+  const alerts = getBudgetAlerts([budget('Food', 1000)], overRows, RATES, jan);
   check('over budget: one alert with the right id, amount over, title and destination', alerts.length === 1 && alerts[0].id === 'budget-Food-2026-01' && alerts[0].amountOver === 200 && alerts[0].title === 'Over budget' && alerts[0].route === '/budgets', JSON.stringify(alerts));
   check('the description names the category and the amount', alerts[0].description === 'Food is over its monthly budget by ETB 200.00.', alerts[0].description);
-  check('exactly at the limit is NOT over', getBudgetAlerts([budget('Food', 1200)], over, RATES, jan).length === 0);
-  check('under the limit: no alert', getBudgetAlerts([budget('Food', 5000)], over, RATES, jan).length === 0);
-  check('last month\'s spending does not alert this month', getBudgetAlerts([budget('Food', 1000)], spend(base, 1200, 'Food', '2025-12-20'), RATES, jan).length === 0);
-  check('income and transfers are not spending', getBudgetAlerts([budget('Food', 100)], add(base, transfer(5000, 'available', 'saved', '2026-01-03')), RATES, jan).length === 0);
-  check('only the budget\'s own category counts', getBudgetAlerts([budget('Food', 1000)], spend(base, 9999, 'Transport', '2026-01-05'), RATES, jan).length === 0);
-  check('two budgets over -> two alerts, one each', getBudgetAlerts([budget('Food', 1000), budget('Fun', 100)], spend(over, 500, 'Fun', '2026-01-06'), RATES, jan).length === 2);
-  check('a foreign-currency budget uses the stored rate (10 USD = 550 ETB; 600 spent is over)', getBudgetAlerts([budget('Food', 10, 'USD')], spend(base, 600, 'Food', '2026-01-05'), RATES, jan).length === 1);
-  check('a budget in a currency with no rate cannot be compared, so it does not alert', getBudgetAlerts([budget('Food', 10, 'EUR')], over, RATES, jan).length === 0);
+  check('exactly at the limit is NOT over', getBudgetAlerts([budget('Food', 1200)], overRows, RATES, jan).length === 0);
+  check('under the limit: no alert', getBudgetAlerts([budget('Food', 5000)], overRows, RATES, jan).length === 0);
+  check('last month\'s spending does not alert this month', getBudgetAlerts([budget('Food', 1000)], ledgerOf(...spend(base, 1200, 'Food', '2025-12-20')), RATES, jan).length === 0);
+  check('income and transfers are not spending', getBudgetAlerts([budget('Food', 100)], ledgerOf(...base, transfer(5000, 'cash', 'bank', '2026-01-03')), RATES, jan).length === 0);
+  check('only the budget\'s own category counts', getBudgetAlerts([budget('Food', 1000)], ledgerOf(...spend(base, 9999, 'Transport', '2026-01-05')), RATES, jan).length === 0);
+  check('two budgets over -> two alerts, one each', getBudgetAlerts([budget('Food', 1000), budget('Fun', 100)], ledgerOf(...spend(over, 500, 'Fun', '2026-01-06')), RATES, jan).length === 2);
+  check('a foreign-currency budget uses the stored rate (10 USD = 550 ETB; 600 spent is over)', getBudgetAlerts([budget('Food', 10, 'USD')], ledgerOf(...spend(base, 600, 'Food', '2026-01-05')), RATES, jan).length === 1);
+  check('a budget in a currency with no rate cannot be compared, so it does not alert', getBudgetAlerts([budget('Food', 10, 'EUR')], overRows, RATES, jan).length === 0);
+  check('a transfer fee is an expense (category Fees) and counts toward a Fees budget', (() => {
+    const f = newFixture(RATES);
+    const cash = f.account('Cash', 'cash', 'ETB', 1000, '2025-12-01');
+    const bank = f.account('Savings', 'bank');
+    f.add({ type: 'transfer', fromAccountId: cash, toAccountId: bank, fromAmount: 100, toAmount: 100, fee: { amount: 60, currency: 'ETB' }, date: '2026-01-05' });
+    return getBudgetAlerts([budget('Fees', 50)], f.state().entries, RATES, jan).length === 1;
+  })());
   check('the id includes the month: same budget, next month = a different notification', budgetNotificationId('Food', '2026-01') !== budgetNotificationId('Food', '2026-02'));
-  check('the id follows the month of the date given (February -> 2026-02)', getBudgetAlerts([budget('Food', 1000)], spend(base, 1200, 'Food', '2026-02-05'), RATES, new Date(2026, 1, 20))[0].id === 'budget-Food-2026-02');
+  check('the id follows the month of the date given (February -> 2026-02)', getBudgetAlerts([budget('Food', 1000)], ledgerOf(...spend(base, 1200, 'Food', '2026-02-05')), RATES, new Date(2026, 1, 20))[0].id === 'budget-Food-2026-02');
 
   // ---- seen state is stored (real SQLite) ----
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -717,23 +575,223 @@ console.log('\nNotifications: over-budget alerts and seen-state storage');
   const device = new DatabaseSync(':memory:');
   device.exec('CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT, type TEXT, icon TEXT, color TEXT, is_default INTEGER)');
   device.exec('PRAGMA user_version = 3');
-  runMigrations({ exec: (sql) => device.exec(sql), all: <T,>(sql: string, ...params: unknown[]) => device.prepare(sql).all(...params) as T[], run: (sql, ...params) => { device.prepare(sql).run(...params); } }, 3);
-  check('runMigrations on an already-v3 device still creates notification_reads (CREATE IF NOT EXISTS)', (device.prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE name = 'notification_reads'").all() as { c: number }[])[0].c === 1);
+  migrateToSchema3({ exec: (sql) => device.exec(sql), all: <T,>(sql: string, ...params: unknown[]) => device.prepare(sql).all(...params) as T[], run: (sql, ...params) => { device.prepare(sql).run(...params); } }, 3);
+  check('the schema 3 step on an already-v3 device still creates notification_reads (CREATE IF NOT EXISTS)', (device.prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE name = 'notification_reads'").all() as { c: number }[])[0].c === 1);
+}
+
+console.log('\nGoal notifications: listing, unread count, tap-through, deleted goal, multi-goal overspend');
+{
+  // A bank account with two goals; Laptop was set aside first, Car second (the most recent contribution).
+  const f = newFixture(RATES);
+  const cbe = f.account('CBE', 'bank', 'ETB', 100000, '2026-01-01');
+  const laptop = planCreateGoal(f.state(), { name: 'Laptop', targetAmount: 50000, heldInAccountId: cbe }, f.ctx);
+  const car = planCreateGoal(laptop.state, { name: 'Car', targetAmount: 20000, heldInAccountId: cbe }, f.ctx);
+  f.setState(planAddToGoal(planAddToGoal(car.state, laptop.goal.id, 30000, f.ctx).state, car.goal.id, 20000, f.ctx).state);
+
+  // ---- overspend touching two goals: one notification per goal, listed newest first ----
+  const spend = f.add({ type: 'expense', accountId: cbe, amount: 80000, currency: 'ETB', category: 'Food', date: '2026-01-10' });
+  const after = spend.state;
+  const items = goalNotificationItems(after.notifications, after.goals, {});
+  check('spending 80,000 of 100,000 with 50,000 reserved saves one notification per goal affected (2)', after.notifications.length === 2 && spend.notifications.length === 2 && items.length === 2);
+  check('every item is a goal notification carrying its goal id and time', items.every((item) => item.type === 'goal' && item.createdAt && item.goalId) && items[0].goalId === car.goal.id && items[1].goalId === laptop.goal.id);
+  const listed = sortNewestFirst(items);
+  check('the page lists the newest first (Laptop was reduced after Car)', listed[0].goalId === laptop.goal.id && listed[1].goalId === car.goal.id);
+  check('Car\'s text: all 20,000 used, now 0 of 20,000', items[0].description === 'ETB 20,000.00 reserved for Car was used. Car is now ETB 0.00 of ETB 20,000.00.', items[0].description);
+  check('Laptop\'s text: 10,000 used, now 20,000 of 50,000', items[1].description === 'ETB 10,000.00 reserved for Laptop was used. Laptop is now ETB 20,000.00 of ETB 50,000.00.', items[1].description);
+  check('the title is the same short line for both', items.every((item) => item.title === 'Reserved money used'));
+  check('the page sorting does not change the list it was given', items[0].goalId === car.goal.id);
+
+  // ---- unread count (the bell badge) and the read tracking ----
+  check('new goal notifications are unread: the badge counts both', unreadCount(items) === 2);
+  check('a saved read flag counts (it travels with a backup)', unreadCount(goalNotificationItems(after.notifications.map((n, i) => (i === 0 ? { ...n, read: true } : n)), after.goals, {})) === 1);
+  check('the existing seen-state (notification_reads) counts too', unreadCount(goalNotificationItems(after.notifications, after.goals, { [after.notifications[1].id]: true })) === 1);
+  check('opening the page marks them all read: the badge drops to 0', unreadCount(markAllRead(items)) === 0);
+  check('marking one read leaves the other unread', unreadCount(markListRead(items, [items[0].id])) === 1);
+  const budget: AppNotification = { id: 'budget-Food-2026-01', title: 'Over budget', description: 'Food is over.', isRead: false, type: 'budget', route: '/budgets' };
+  const combined = mergeNotifications([], [budget, ...items], {}, '2026-01-12T08:00:00.000Z');
+  check('budget alerts and goal notifications share one list and one badge (3 unread)', combined.length === 3 && unreadCount(combined) === 3);
+  check('an item with no time is stamped with when it was first seen, and keeps that stamp', combined.find((n) => n.id === budget.id)?.createdAt === '2026-01-12T08:00:00.000Z' && mergeNotifications(combined, [budget], {}, '2026-02-01T00:00:00.000Z').find((n) => n.id === budget.id)?.createdAt === '2026-01-12T08:00:00.000Z');
+  check('budget alerts first seen now are newer than older goal events, so they list first', sortNewestFirst(combined)[0].id === budget.id);
+  const readOnce = markAllRead(combined);
+  check('re-merging the same items does not duplicate them or make a read one unread', (() => {
+    const again = mergeNotifications(readOnce, [budget, ...items], {}, '2026-02-01T00:00:00.000Z');
+    return again.length === 3 && unreadCount(again) === 0;
+  })());
+  check('a seen id from an earlier launch keeps a recomputed alert read', unreadCount(mergeNotifications([], [budget], { [budget.id]: true }, '2026-01-12T08:00:00.000Z')) === 0);
+  check('two notifications from the same moment keep their order, later one first', sortNewestFirst([{ ...budget, id: 'a', createdAt: 't' }, { ...budget, id: 'b', createdAt: 't' }]).map((n) => n.id).join() === 'b,a');
+
+  // ---- tap-through ----
+  const target = notificationTarget(items[1]);
+  check('tapping a goal notification opens the Goals tab with that goal in the route param', target?.pathname === '/goals' && target?.params?.goal === laptop.goal.id);
+  check('budget alerts still open Budgets; a plain system notice opens nothing', notificationTarget(budget)?.pathname === '/budgets' && notificationTarget({ type: 'system' }) === null);
+  check('the link line follows the kind: View goal / Review budgets / none', notificationActionLabel(items[0]) === 'View goal →' && notificationActionLabel(budget) === 'Review budgets →' && notificationActionLabel({ type: 'system' }) === null);
+  check('the spoken hint follows the kind too (no "budgets" on a goal)', notificationOpensLabel(items[0]) === 'Opens the goal.' && notificationOpensLabel(budget) === 'Opens budgets.' && notificationOpensLabel({ type: 'system' }) === '');
+  const focus = resolveGoalFocus(target?.params?.goal, after.goals);
+  check('the Goals tab finds the goal and says which tab it is on (active)', focus.kind === 'goal' && focus.goalId === laptop.goal.id && focus.tab === 'active');
+  check('a completed goal is found on the Completed tab', (() => { const done = resolveGoalFocus(laptop.goal.id, after.goals.map((g) => (g.id === laptop.goal.id ? { ...g, status: 'completed' as const } : g))); return done.kind === 'goal' && done.tab === 'completed'; })());
+  check('no param, an empty param (cleared after use) and an empty list mean "do nothing"', resolveGoalFocus(undefined, after.goals).kind === 'none' && resolveGoalFocus('', after.goals).kind === 'none' && resolveGoalFocus([], after.goals).kind === 'none');
+  check('a repeated param uses the first value', (() => { const r = resolveGoalFocus([laptop.goal.id, 'x'], after.goals); return r.kind === 'goal' && r.goalId === laptop.goal.id; })());
+
+  // ---- the goal is gone: deleted (its notifications go with it) or missing from a restored backup (the fallback message) ----
+  const withoutCar = planDeleteGoal(after, car.goal.id);
+  check('deleting a goal removes its saved notifications; the other goal keeps its own', withoutCar.notifications.length === 1 && withoutCar.notifications[0].goalId === laptop.goal.id && after.notifications.length === 2);
+  // A restored backup can still carry a notification whose goal is not in it: the fallback below.
+  const goneItems = goalNotificationItems(after.notifications, withoutCar.goals, {});
+  check('a notification whose goal is missing (a restored backup) still reads sensibly', goneItems.length === 2 && goneItems[0].description === 'ETB 20,000.00 reserved for a goal was used.', goneItems[0].description);
+  check('...and tapping it still goes to the Goals tab, with the missing goal\'s id', notificationTarget(goneItems[0])?.pathname === '/goals' && notificationTarget(goneItems[0])?.params?.goal === car.goal.id);
+  const missing = resolveGoalFocus(car.goal.id, withoutCar.goals);
+  check('...where the tab says "That goal no longer exists." instead of failing', missing.kind === 'missing' && GOAL_MISSING_MESSAGE === 'That goal no longer exists.');
+  check('the other goal\'s notification still finds its goal', resolveGoalFocus(laptop.goal.id, withoutCar.goals).kind === 'goal');
+  check('a goal notification with no goal id at all still opens the Goals tab (nothing to find)', notificationTarget({ type: 'goal', goalId: null })?.pathname === '/goals' && notificationTarget({ type: 'goal', goalId: null })?.params === undefined);
+}
+{
+  // ---- the same behaviour when an EDIT or a DELETE breaks the reserved rule, and the Add-form warning before saving ----
+  const f = newFixture(RATES);
+  const cbe = f.account('CBE', 'bank', 'ETB', 30000, '2026-01-01');
+  f.add({ type: 'income', accountId: cbe, amount: 70000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2026-01-02' });
+  const goal = planCreateGoal(f.state(), { name: 'Laptop', targetAmount: 90000, heldInAccountId: cbe }, f.ctx);
+  f.setState(planAddToGoal(goal.state, goal.goal.id, 60000, f.ctx).state);
+  const base = f.state();
+  const incomeId = base.entries.find((e) => e.type === 'income')!.id;
+
+  const warn = planAddEntry(base, { type: 'expense', accountId: cbe, amount: 50000, currency: 'ETB', category: 'Food', date: '2026-01-03' }, f.ctx);
+  check('before saving: an expense of 50,000 reports it uses 10,000 of the 60,000 reserved (the warning under the amount)', warn.reserveUsed.length === 1 && warn.reserveUsed[0].shortfall === 10000 && warn.reserveUsed[0].reservedBefore === 60000);
+  check('...planning it saved nothing: no notification exists yet and the badge stays at 0', base.notifications.length === 0 && unreadCount(goalNotificationItems(base.notifications, base.goals, {})) === 0);
+  check('after saving it: the goal shrank by 10,000 and one notification exists (badge 1)', warn.notifications.length === 1 && unreadCount(goalNotificationItems(warn.state.notifications, warn.state.goals, {})) === 1 && getGoalAmount(warn.state.allocations, goal.goal.id) === 50000);
+
+  const edited = planEditEntry(base, incomeId, { type: 'income', accountId: cbe, amount: 20000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2026-01-02' }, f.ctx);
+  check('editing the income down behaves the same: the goal shrinks and one notification is listed', edited.notifications.length === 1 && goalNotificationItems(edited.state.notifications, edited.state.goals, {})[0].description === 'ETB 10,000.00 reserved for Laptop was used. Laptop is now ETB 50,000.00 of ETB 90,000.00.');
+  const deleted = planDeleteEntry(base, incomeId, f.ctx);
+  const deletedItems = goalNotificationItems(deleted.state.notifications, deleted.state.goals, {});
+  check('deleting the income behaves the same: 30,000 used, one notification', deleted.reserveUsed[0]?.shortfall === 30000 && deletedItems.length === 1 && deletedItems[0].description === 'ETB 30,000.00 reserved for Laptop was used. Laptop is now ETB 30,000.00 of ETB 90,000.00.');
+  check('an edit that does not touch reserved money lists nothing', planEditEntry(base, incomeId, { type: 'income', accountId: cbe, amount: 80000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2026-01-02' }, f.ctx).notifications.length === 0);
+  const second = planAddEntry(edited.state, { type: 'expense', accountId: cbe, amount: 20000, currency: 'ETB', category: 'Food', date: '2026-01-04' }, f.ctx);
+  const both = goalNotificationItems(second.state.notifications, second.state.goals, {});
+  check('a second overspend later adds a second item (two in the list, newest first, badge 2)', both.length === 2 && sortNewestFirst(both)[0].id === second.notifications[0].id && unreadCount(both) === 2);
+}
+{
+  // ---- the screens really use these rules (a page with its own hard-coded text or order would drift) ----
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string };
+  const source = (file: string): string => fs.readFileSync(`${process.cwd()}/${file}`, 'utf8');
+  const page = source('app/notifications.tsx');
+  check('the Notifications page sorts newest first and takes its link text and target from the shared rules', page.includes('sortNewestFirst(') && page.includes('notificationActionLabel(') && page.includes('notificationTarget(') && page.includes('notificationOpensLabel('));
+  check('the page no longer hard-codes "Review budgets" or "Opens budgets" for every item', !page.includes('Review budgets') && !page.includes('Opens budgets'));
+  check('the page saves the goal notifications as read as well as the seen-state', page.includes('markReserveNotificationsRead'));
+  const store = source('store/finance.ts');
+  check('the store shows saved goal notifications after loading AND after every ledger write', (store.match(/syncReserveNotifications\(\);/g) ?? []).length >= 2 && store.includes('goalNotificationItems('));
+  const goalsScreen = source('app/(tabs)/goals.tsx');
+  check('the Goals tab reads the goal route param, resolves it with the shared rule and shows the shared message', goalsScreen.includes('useLocalSearchParams') && goalsScreen.includes('resolveGoalFocus(') && goalsScreen.includes('GOAL_MISSING_MESSAGE'));
+  check('the Goals tab scrolls to the goal and clears the param so the same tap works again', goalsScreen.includes('scrollTo(') && goalsScreen.includes("router.setParams({ goal: '' })"));
+  check('the bell badge counts the shared notification list (so goal items reach it)', source('components/AppHeader.tsx').includes('state.notifications.filter((notification) => !notification.isRead).length'));
+}
+
+console.log('\nNotifications page: unread look, read on tap and on leave, badge timing, goal deleted, Clear all');
+{
+  const f = newFixture(RATES);
+  const cbe = f.account('CBE', 'bank', 'ETB', 100000, '2026-01-01');
+  const laptop = planCreateGoal(f.state(), { name: 'Laptop', targetAmount: 50000, heldInAccountId: cbe }, f.ctx);
+  const car = planCreateGoal(laptop.state, { name: 'Car', targetAmount: 20000, heldInAccountId: cbe }, f.ctx);
+  f.setState(planAddToGoal(planAddToGoal(car.state, laptop.goal.id, 30000, f.ctx).state, car.goal.id, 20000, f.ctx).state);
+  const after = f.add({ type: 'expense', accountId: cbe, amount: 80000, currency: 'ETB', category: 'Food', date: '2026-01-10' }).state;
+  const goalItems = goalNotificationItems(after.notifications, after.goals, {});
+  const budget: AppNotification = { id: 'budget-Food-2026-01', title: 'Over budget', description: 'Food is over.', isRead: false, type: 'budget', route: '/budgets' };
+  const list = mergeNotifications([], [budget, ...goalItems], {}, '2026-01-12T08:00:00.000Z');
+
+  // ---- the unread look: a dot, a slightly stronger background and "Unread." - for budget alerts AND goal notifications ----
+  const unreadLook = { dot: true, tinted: true, accessibilityPrefix: 'Unread. ' };
+  check('an unread budget alert shows the dot, the stronger background and "Unread."', JSON.stringify(notificationVisualState(list.find((n) => n.type === 'budget')!)) === JSON.stringify(unreadLook));
+  check('an unread goal notification looks the same', list.filter((n) => n.type === 'goal').every((n) => JSON.stringify(notificationVisualState(n)) === JSON.stringify(unreadLook)));
+  check('a read one has none of the three', JSON.stringify(notificationVisualState({ isRead: true })) === JSON.stringify({ dot: false, tinted: false, accessibilityPrefix: '' }));
+  check('the unread look is never colour alone (the spoken prefix is always there with the dot)', list.every((n) => notificationVisualState(n).dot === (notificationVisualState(n).accessibilityPrefix !== '')));
+
+  // ---- opening the page marks nothing; a tap marks that item; leaving marks the rest; the badge follows ----
+  check('on arrival nothing has changed: the badge still counts all three and every row is unread', unreadCount(list) === 3 && list.every((n) => notificationVisualState(n).dot));
+  const afterTap = markListRead(list, [goalItems[1].id]);
+  check('tapping one marks only that one read: badge 2, the others still look unread', unreadCount(afterTap) === 2 && notificationVisualState(afterTap.find((n) => n.id === goalItems[1].id)!).dot === false && afterTap.filter((n) => n.id !== goalItems[1].id).every((n) => notificationVisualState(n).dot));
+  const afterLeave = markAllRead(afterTap);
+  check('leaving the page marks all the rest read: the badge drops to 0 only now', unreadCount(afterLeave) === 0 && afterLeave.every((n) => !notificationVisualState(n).dot));
+  check('tapping a budget alert marks it read too', unreadCount(markListRead(list, [budget.id])) === 2 && markListRead(list, [budget.id]).find((n) => n.id === budget.id)!.isRead);
+  check('read stays read when the same items are merged again (a later load or ledger write)', unreadCount(mergeNotifications(afterLeave, [budget, ...goalItems], {}, '2026-02-01T00:00:00.000Z')) === 0);
+
+  // the saved flag on the goal notifications (the one a backup keeps)
+  const saved = markReserveRead(after.notifications, [after.notifications[0].id]);
+  check('the saved read flag: a tap saves just that notification as read', saved[0].read && !saved[1].read && saved[1] === after.notifications[1]);
+  check('...and leaving saves all of them (no ids = all); already-read ones are left as they are', markReserveRead(saved).every((n) => n.read) && markReserveRead(saved)[0] === saved[0]);
+
+  // the page really works that way (a mount-time "mark all read" is what hid the unread items before)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string };
+  const page = fs.readFileSync(`${process.cwd()}/app/notifications.tsx`, 'utf8');
+  check('the page does not mark anything read when it opens (no effect that marks all)', !/useEffect\([\s\S]{0,200}markAllNotificationsAsRead/.test(page) && !page.includes('useEffect'));
+  check('the page marks the rest read when it is LEFT (the cleanup of a focus effect)', page.includes('useFocusEffect') && /\(\)\s*=>\s*\(\)\s*=>\s*\{[\s\S]{0,200}markAllNotificationsAsRead\(\)/.test(page));
+  check('the page marks a notification read on tap, and its saved flag for goal items', page.includes('markNotificationAsRead(notification.id)') && page.includes('markReserveNotificationsRead([notification.id])'));
+  check('the page draws unread rows from the shared state (dot, stronger background, spoken prefix)', page.includes('notificationVisualState(') && page.includes('visual.dot') && page.includes('visual.tinted') && page.includes('visual.accessibilityPrefix'));
+
+  // ---- deleting a goal: its notifications go, and their read records ----
+  const gone = planDeleteGoal(after, car.goal.id);
+  check('deleting a goal deletes its saved notifications only', gone.notifications.length === 1 && gone.notifications.every((n) => n.goalId !== car.goal.id));
+  check('...and the page\'s list loses that goal item (the replace rule) but keeps the budget alert and the other goal\'s item', (() => {
+    const next = replaceGoalItems(list, goalNotificationItems(gone.notifications, gone.goals, {}), {}, '2026-01-13T00:00:00.000Z');
+    return next.length === 2 && next.some((n) => n.id === budget.id) && next.every((n) => n.goalId !== car.goal.id);
+  })());
+  const readRecords = { [goalItems[0].id]: true as const, [goalItems[1].id]: true as const, [budget.id]: true as const };
+  check('their read records are forgotten; others stay', JSON.stringify(Object.keys(forgetReadIds(readRecords, [goalItems[0].id])).sort()) === JSON.stringify([goalItems[1].id, budget.id].sort()));
+  {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => { exec(sql: string): void; prepare(sql: string): { all(...p: unknown[]): unknown[]; run(...p: unknown[]): unknown } } };
+    const db = new DatabaseSync(':memory:');
+    db.exec(SCHEMA_DDL);
+    const runner: SqlRunner = { exec: (sql) => db.exec(sql), all: <T,>(sql: string, ...params: unknown[]) => db.prepare(sql).all(...params) as T[], run: (sql, ...params) => { db.prepare(sql).run(...params); } };
+    markRead(runner, ['a', 'b', 'c'], '2026-01-10T00:00:00.000Z');
+    forgetReads(runner, ['a', 'c']);
+    check('in the database the read records of deleted notifications are removed (the rest stay)', JSON.stringify(getReadIds(runner)) === JSON.stringify(['b']));
+    forgetReads(runner, []);
+    check('forgetting nothing is harmless', getReadIds(runner).length === 1);
+  }
+  const store = fs.readFileSync(`${process.cwd()}/store/finance.ts`, 'utf8');
+  check('the store deletes the notifications, their read records and the list copies when a goal is deleted', /deleteGoal: async[\s\S]{0,500}deleteReserveNotifications\(gone\)[\s\S]{0,120}forgetReadIds\(gone\)/.test(store));
+  check('...and removes expired ones when the app loads, with their read records', store.includes('expiredIds(ledger.notifications') && /deleteReserveNotifications\(\[\.\.\.expired\]\)/.test(store));
+  check('the goal-gone message is still the fallback for a notification whose goal is missing', resolveGoalFocus(car.goal.id, gone.goals).kind === 'missing' && GOAL_MISSING_MESSAGE === 'That goal no longer exists.');
+
+  // ---- Clear all ----
+  const cleared = clearAllNotifications(list);
+  check('Clear all removes every goal notification from the list', cleared.every((n) => n.type !== 'goal') && cleared.length === 1);
+  check('...a budget alert cannot be deleted (it is recomputed), so it stays and is marked read', cleared[0].id === budget.id && cleared[0].isRead && unreadCount(cleared) === 0);
+  check('...so the badge is 0 and the list is just the read budget alert', unreadCount(cleared) === 0);
+  check('...and after it the saved goal notifications are none', replaceGoalItems(list, [], {}, '2026-01-13T00:00:00.000Z').filter((n) => n.type === 'goal').length === 0);
+  check('Clear all on an empty list is harmless', clearAllNotifications([]).length === 0);
+  check('the page asks first, and names what it does', page.includes('Alert.alert(') && page.includes("'Clear all notifications?'") && page.includes('clearReserveNotifications') && page.includes('marked as read instead'));
+  check('the store clears the saved rows (an empty list), their read records, and marks budget alerts read', /clearReserveNotifications: async[\s\S]{0,600}notifications: \[\][\s\S]{0,300}clearAllNotifications\(\)/.test(store));
+}
+{
+  // ---- expiry (the rule itself is in verify-accounts; here, how it is used) ----
+  const NOW_X = new Date(2026, 2, 1, 12);
+  const mk = (id: string, daysAgo: number, read: boolean) => ({ id, kind: 'goal_reserve_used' as const, goalId: 'g', accountId: 'a', amount: 1, amountAfter: 0, createdAt: new Date(NOW_X.getTime() - daysAgo * 86_400_000).toISOString(), read });
+  const saved = [mk('d29', 29, false), mk('d30', 30, true), mk('d31', 31, false), mk('d31r', 31, true)];
+  check('app load: day 29 stays, day 31 goes, read or not', pruneExpired(saved, NOW_X).map((n) => n.id).join() === 'd29,d30' && expiredIds(saved, NOW_X).join() === 'd31,d31r');
+  check('budget alerts are not touched by expiry (it only handles saved goal notifications)', replaceGoalItems([{ id: 'budget-x', title: 't', description: 'd', isRead: false, type: 'budget' }], [], {}, '2026-03-01T00:00:00.000Z').length === 1);
 }
 
 console.log('\nTransactions search: merchant / category / note / transfer / amount');
 {
-  const lg = [{ id: 'laptop', name: 'Laptop', targetAmount: 1, deadline: null, status: 'active' as const, createdAt: '', updatedAt: '' }];
-  let rows: Transaction[] = ledgerOf(income(10000000, 'available', '2025-12-01'));
-  const put = (input: TransactionInput) => { rows = [...rows, planAdd(rows, input, RATES, GOALS)]; return rows[rows.length - 1].id; };
-  const t1 = put({ type: 'expense', amount: 1250.5, currency: 'ETB', category: 'Food', source: 'Bole Taxi', note: 'airport run', account: 'available', date: '2026-01-02' });
-  const t2 = put({ type: 'expense', amount: 300, currency: 'ETB', category: 'Transport', source: 'Ride', account: 'available', date: '2026-01-03' });
-  const t3 = put({ type: 'income', amount: 75000, currency: 'ETB', category: 'Salary', source: 'Acme Ltd', account: 'available', date: '2026-01-04' });
-  const t4 = put({ type: 'transfer', amount: 5000, currency: 'ETB', fromAccount: 'available', toAccount: 'goal', toGoalId: 'laptop', date: '2026-01-05' });
-  const t5 = put({ type: 'expense', amount: 10, currency: 'USD', category: 'Coffee', source: 'Café Moka', note: 'meeting', account: 'available', date: '2026-01-06' });
-  const t6 = put({ type: 'expense', amount: 12500, currency: 'ETB', category: 'Rent', source: 'Landlord', account: 'available', date: '2026-01-07' });
-  const salary0 = rows[0].id;
-  const find = (query: string): string[] => filterTransactions(rows, query, lg).map((r) => r.id);
+  const f = newFixture(RATES);
+  const cash = f.account('Cash', 'cash');
+  const savings = f.account('Savings', 'bank');
+  const put = (input: EntryInput): string => {
+    const result = f.add(input);
+    return result.state.entries[result.state.entries.length - 1].id;
+  };
+  const salary0 = put({ type: 'income', accountId: cash, amount: 10000000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2025-12-01' });
+  const t1 = put({ type: 'expense', accountId: cash, amount: 1250.5, currency: 'ETB', category: 'Food', source: 'Bole Taxi', note: 'airport run', date: '2026-01-02' });
+  const t2 = put({ type: 'expense', accountId: cash, amount: 300, currency: 'ETB', category: 'Transport', source: 'Ride', date: '2026-01-03' });
+  const t3 = put({ type: 'income', accountId: cash, amount: 75000, currency: 'ETB', category: 'Salary', source: 'Acme Ltd', date: '2026-01-04' });
+  const t4 = put({ type: 'transfer', fromAccountId: cash, toAccountId: savings, fromAmount: 5000, toAmount: 5000, date: '2026-01-05' });
+  const t5 = put({ type: 'expense', accountId: cash, amount: 10, currency: 'USD', category: 'Coffee', source: 'Café Moka', note: 'meeting', date: '2026-01-06' });
+  const t6 = put({ type: 'expense', accountId: cash, amount: 12500, currency: 'ETB', category: 'Rent', source: 'Landlord', date: '2026-01-07' });
+  const rows = f.state().entries;
+  const accounts = f.state().accounts;
+  const find = (query: string): string[] => filterTransactions(rows, query, accounts).map((r) => r.id);
   const same = (got: string[], want: string[]) => JSON.stringify([...got].sort()) === JSON.stringify([...want].sort());
 
   check('empty or whitespace-only query returns everything, in the original order', find('').length === rows.length && find('   ').length === rows.length && JSON.stringify(find('')) === JSON.stringify(rows.map((r) => r.id)));
@@ -743,7 +801,8 @@ console.log('\nTransactions search: merchant / category / note / transfer / amou
   check('category name', same(find('food'), [t1]) && same(find('transport'), [t2]) && same(find('salary'), [salary0, t3]));
   check('note text', same(find('airport'), [t1]) && same(find('meeting'), [t5]));
   check('accent-insensitive: "cafe" finds Café Moka, and "café" does too', same(find('cafe'), [t5]) && same(find('café'), [t5]));
-  check('a transfer is found by its destination goal and by its From -> To labels', same(find('laptop'), [t4]) && find('available').includes(t4));
+  check('a transfer is found by its destination account and by its From -> To labels', same(find('savings'), [t4]) && find('cash').includes(t4));
+  check('an entry is found by the name of its account ("cash" finds the Cash entries)', same(find('cash'), rows.map((r) => r.id)));
   check('every word must match (AND): "food bole" -> the taxi; "food acme" -> nothing', same(find('food bole'), [t1]) && find('food acme').length === 0);
   check('words can match different fields (category + note)', same(find('coffee meeting'), [t5]));
   check('amount: exact value, with or without thousands separators', same(find('1250.50'), [t1]) && same(find('1,250.50'), [t1]) && same(find('1250.5'), [t1]));
@@ -753,12 +812,12 @@ console.log('\nTransactions search: merchant / category / note / transfer / amou
   check('amount with a currency prefix ("etb300") works', same(find('etb300'), [t2]));
   check('type words match the type: "income" and a 3-letter prefix "inc"', find('income').includes(t3) && find('inc').includes(t3) && !find('income').includes(t1));
   check('currency is matched as a whole word: "usd" -> the USD entry only; "etb" -> every ETB entry', same(find('usd'), [t5]) && find('etb').length === rows.length - 1);
-  check('single letters do not match every entry through the currency/type labels', filterTransactions(rows, 'q', lg).length === 0);
+  check('single letters do not match every entry through the currency/type labels', filterTransactions(rows, 'q', accounts).length === 0);
   check('no match returns an empty list; regex characters in the query are harmless', find('zzz').length === 0 && find('(').length === 0 && find('[a-z]+').length === 0 && find('.*').length === 0);
   check('filtering thousands of entries is fast (5,000 rows, 3-word query)', (() => {
-    const many: Transaction[] = Array.from({ length: 5000 }, (_, i) => ({ ...rows[1], id: `m${i}`, source: i % 7 === 0 ? 'Bole Taxi' : 'Ride', note: i % 11 === 0 ? 'airport' : null }));
+    const many: AccountEntry[] = Array.from({ length: 5000 }, (_, i) => ({ ...rows[1], id: `m${i}`, accountId: 'x', source: i % 7 === 0 ? 'Bole Taxi' : 'Ride', note: i % 11 === 0 ? 'airport' : null }));
     const start = Date.now();
-    const out = filterTransactions(many, 'bole airport food', lg);
+    const out = filterTransactions(many, 'bole airport food', accounts);
     // i divisible by both 7 and 11 -> 65 of 5,000 carry the merchant, the note AND the Food category
     return Date.now() - start < 250 && out.length === 65;
   })());
@@ -766,27 +825,40 @@ console.log('\nTransactions search: merchant / category / note / transfer / amou
 
 console.log('\nTransactions type tabs combined with search');
 {
-  let rows: Transaction[] = ledgerOf(income(10000000, 'available', '2025-12-01'));
-  const put = (input: TransactionInput) => { rows = [...rows, planAdd(rows, input, RATES, GOALS)]; return rows[rows.length - 1].id; };
-  const e1 = put({ type: 'expense', amount: 120, currency: 'ETB', category: 'Food', source: 'Bole Cafe', account: 'available', date: '2026-01-02' });
-  const e2 = put({ type: 'expense', amount: 80, currency: 'ETB', category: 'Transport', source: 'Ride', account: 'available', date: '2026-01-02' });
-  const i1 = put({ type: 'income', amount: 5000, currency: 'ETB', category: 'Food', source: 'Food stall sale', account: 'available', date: '2026-01-03' });
-  const t1 = put({ type: 'transfer', amount: 1000, currency: 'ETB', fromAccount: 'available', toAccount: 'saved', date: '2026-01-04', note: 'food fund' });
-  const salary0 = rows[0].id;
-  const none: Goal[] = [];
-  const ids = (list: Transaction[]) => list.map((r) => r.id).sort();
-  const tab = (type: TypeFilter, query = '') => ids(filterTransactions(filterByType(rows, type), query, none));
+  const f = newFixture(RATES);
+  const cash = f.account('Cash', 'cash');
+  const savings = f.account('Savings', 'bank');
+  const put = (input: EntryInput): string => {
+    const result = f.add(input);
+    return result.state.entries[result.state.entries.length - 1].id;
+  };
+  const salary0 = put({ type: 'income', accountId: cash, amount: 10000000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2025-12-01' });
+  const e1 = put({ type: 'expense', accountId: cash, amount: 120, currency: 'ETB', category: 'Food', source: 'Bole Cafe', date: '2026-01-02' });
+  const e2 = put({ type: 'expense', accountId: cash, amount: 80, currency: 'ETB', category: 'Transport', source: 'Ride', date: '2026-01-02' });
+  const i1 = put({ type: 'income', accountId: cash, amount: 5000, currency: 'ETB', category: 'Food', source: 'Food stall sale', date: '2026-01-03' });
+  const t1 = put({ type: 'transfer', fromAccountId: cash, toAccountId: savings, fromAmount: 1000, toAmount: 1000, date: '2026-01-04', note: 'food fund' });
+  const rows = f.state().entries;
+  const accounts = f.state().accounts;
+  const ids = (list: AccountEntry[]) => list.map((r) => r.id).sort();
+  const tab = (type: TypeFilter, query = '') => ids(filterTransactions(filterByType(rows, type), query, accounts));
 
   check('All is the identity: every entry, original order', JSON.stringify(filterByType(rows, 'all').map((r) => r.id)) === JSON.stringify(rows.map((r) => r.id)));
   check('Income tab: only income', JSON.stringify(tab('income')) === JSON.stringify(ids(rows.filter((r) => r.type === 'income'))) && !tab('income').includes(e1));
   check('Expense tab: only expenses', JSON.stringify(tab('expense')) === JSON.stringify([e1, e2].sort()));
   check('Transfer tab: only transfers', JSON.stringify(tab('transfer')) === JSON.stringify([t1]));
   check('the tabs partition the ledger (every entry is in exactly one non-All tab)', tab('income').length + tab('expense').length + tab('transfer').length === rows.length);
-  check('"food" on All finds expense + income + the transfer note; on Expense ONLY the expense; on Income ONLY the income', JSON.stringify(tab('all', 'food')) === JSON.stringify([e1, i1, t1].sort().filter((id) => tab('all', 'food').includes(id))) && tab('all', 'food').length === 3 && JSON.stringify(tab('expense', 'food')) === JSON.stringify([e1]) && JSON.stringify(tab('income', 'food')) === JSON.stringify([i1]));
+  check('"food" on All finds expense + income + the transfer note; on Expense ONLY the expense; on Income ONLY the income', tab('all', 'food').length === 3 && JSON.stringify(tab('expense', 'food')) === JSON.stringify([e1]) && JSON.stringify(tab('income', 'food')) === JSON.stringify([i1]));
   check('searching inside a tab never reaches outside it ("food" on Transfer finds only the transfer whose note says food)', JSON.stringify(tab('transfer', 'food')) === JSON.stringify([t1]) && !tab('transfer', 'ride').includes(e2) && tab('transfer', 'ride').length === 0);
   check('search + tab can be empty even when the word exists elsewhere', tab('income', 'ride').length === 0 && tab('expense', 'stall').length === 0);
   check('switching tabs keeps the query: the same word gives each tab its own result', tab('expense', 'bole').length === 1 && tab('income', 'bole').length === 0 && tab('all', 'bole').length === 1);
   check('the Salary income from setup is only on Income/All', tab('income').includes(salary0) && !tab('expense').includes(salary0));
+  check('the opening balance and adjustments are on All only (no type tab)', (() => {
+    const g = newFixture(RATES);
+    const id = g.account('Cash', 'cash', 'ETB', 100, '2026-01-01');
+    g.add({ type: 'adjustment', accountId: id, amount: 5, date: '2026-01-02' });
+    const list = g.state().entries;
+    return filterByType(list, 'all').length === 2 && filterByType(list, 'income').length === 0 && filterByType(list, 'expense').length === 0 && filterByType(list, 'transfer').length === 0;
+  })());
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

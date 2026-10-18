@@ -4,7 +4,8 @@
 // Run: npx tsx scripts/verify-contrast.ts
 import { CATEGORY_PALETTE, CHART_PALETTE, categoryColor, OTHERS_COLOR } from '../theme/chartPalette';
 import { BREAKDOWN_PALETTE } from '../utils/reports';
-import { brandFills, palettes, ThemeColors, ThemeScheme } from '../theme/tokens';
+import { accountColour } from '../constants/accounts';
+import { accountColors, accountFills, accountHeroDots, brandFills, palettes, ThemeColors, ThemeScheme, withAlpha } from '../theme/tokens';
 
 let passed = 0;
 let failed = 0;
@@ -460,6 +461,37 @@ const sample = Array.from({ length: 70 }, (_, i) => categoryColor(`category-${i}
 check('ids spread over the category palette (every colour used)', new Set(sample).size === CATEGORY_PALETTE.length);
 check('no category ever gets the Others grey', sample.every((hex) => hex !== OTHERS_COLOR));
 
+
+// ---- 1g. Accounts (Phase 5B) -------------------------------------------------------------------------------------------------
+// Account type colours (Cash gold, Wallet orange, Bank teal). The icon is a glyph on a pale disc (graphic, 3:1); the dot beside a name is
+// decorative (the name says it all) but still held to 3:1 on the card; on the navy Total Balance card the dots use the lightened hero set.
+// The "reserved for goals" pill is primaryText on the pale orange disc over the card. Account names, balances, the type label and the
+// "Rate last updated" note are the ordinary text pairs checked at the top (text / textMuted on surface and bg).
+console.log('\nAccounts: type glyph on its pale disc, type dots, hero dots, the reserved pill');
+for (const scheme of ['light', 'dark'] as ThemeScheme[]) {
+  const c = palettes[scheme];
+  for (const type of ['cash', 'wallet', 'bank'] as const) {
+    const tokens = accountColors(c, type);
+    const disc = solid(tokens.disc, c.surface);
+    const glyph = contrast(tokens.glyph, disc);
+    console.log(`  ${scheme.padEnd(5)} ${(type + ' glyph on its disc').padEnd(28)} ${glyph.toFixed(2).padStart(6)}  (>= 3)${glyph >= 3 ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: ${type} glyph on its disc`, glyph >= LARGE, glyph.toFixed(2));
+    for (const against of ['surface', 'bg'] as const) {
+      const dot = contrast(tokens.dot, c[against]);
+      console.log(`  ${scheme.padEnd(5)} ${(type + ' dot on ' + against).padEnd(28)} ${dot.toFixed(2).padStart(6)}  (>= 3)${dot >= 3 ? '' : '   <-- FAIL'}`);
+      check(`${scheme}: ${type} dot on ${against}`, dot >= LARGE, dot.toFixed(2));
+    }
+    const heroDot = contrast(accountHeroDots[type], c.heroBg);
+    console.log(`  ${scheme.padEnd(5)} ${(type + ' dot on the hero card').padEnd(28)} ${heroDot.toFixed(2).padStart(6)}  (>= 3)${heroDot >= 3 ? '' : '   <-- FAIL'}`);
+    check(`${scheme}: ${type} dot on the hero card`, heroDot >= LARGE, heroDot.toFixed(2));
+    check(`${scheme}: the stored ${type} colour is the brand fill`, accountFills[type] === accountColour(type));
+  }
+  const reservedPill = contrast(c.primaryText, solid(withAlpha('#F47C20', 0.14), c.surface));
+  console.log(`  ${scheme.padEnd(5)} reserved pill text on its tint      ${reservedPill.toFixed(2).padStart(6)}  (>= ${BODY})${reservedPill >= BODY ? '' : '   <-- FAIL'}`);
+  check(`${scheme}: "reserved for goals" pill text on its tint`, reservedPill >= BODY, reservedPill.toFixed(2));
+}
+check('the three account types have three different colours', new Set(Object.values(accountFills)).size === 3);
+check('light and dark glyph colours differ per type (each tuned to its own surface)', (['cash', 'wallet', 'bank'] as const).every((t) => accountColors(palettes.light, t).glyph !== accountColors(palettes.dark, t).glyph));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

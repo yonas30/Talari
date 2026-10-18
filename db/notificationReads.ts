@@ -14,6 +14,13 @@ export function markRead(db: SqlRunner, ids: string[], nowIso: string): void {
   }
 }
 
+// A deleted, expired or cleared notification has no use for its read record.
+export function forgetReads(db: SqlRunner, ids: string[]): void {
+  for (const id of ids) {
+    db.run('DELETE FROM notification_reads WHERE id = ?', id);
+  }
+}
+
 // Read flags for notifications that stopped existing months ago are just clutter.
 export function pruneReads(db: SqlRunner, olderThanIso: string): void {
   db.run('DELETE FROM notification_reads WHERE read_at < ?', olderThanIso);

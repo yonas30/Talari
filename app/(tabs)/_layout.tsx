@@ -1,8 +1,9 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useFinanceStore } from '../../store/finance';
 import { useTheme } from '../../theme/ThemeProvider';
 import { getTabBarMetrics, TAB_LABEL_FONT_SIZE, TAB_LABEL_MAX_SCALE } from '../../utils/layout';
 import AppText from '../../components/AppText';
@@ -16,6 +17,14 @@ export default function TabsLayout() {
   // label overflows into the navigation-bar area at large system font sizes (see utils/layout.ts).
   const { fontScale } = useWindowDimensions();
   const bar = getTabBarMetrics(fontScale, insets.bottom);
+  const isReady = useFinanceStore((state) => state.isReady);
+  const hasAccounts = useFinanceStore((state) => state.accounts.some((account) => !account.archived));
+
+  // Nothing can be recorded without an account, so until one exists every tab sends the owner to "Add your first account" (and nobody
+  // is left on an empty Home).
+  if (isReady && !hasAccounts) {
+    return <Redirect href="/first-account" />;
+  }
 
   return (
     <Tabs

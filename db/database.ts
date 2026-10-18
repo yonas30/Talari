@@ -1,18 +1,14 @@
 import { openDatabaseSync } from 'expo-sqlite';
-import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
 
 import { defaultCategories } from '../constants/categories';
 import {
-  Account,
   Budget,
   BudgetInput,
   Category,
   CategoryType,
   Currency,
   CurrencyCode,
-  Goal,
-  GoalInput,
   ExchangeRate,
   Milestone,
   MilestoneInput,
@@ -23,18 +19,19 @@ import {
   RecurringTransaction,
   RecurringTransactionInput,
   RecurringType,
-  Transaction,
-  TransferEndpoint,
   UserOrigin,
   UserOriginInput,
 } from '../types';
-import { assertValidLedger, LedgerError, validateLedger } from '../utils/balances';
+import { AccountEntry, AccountsState } from '../types/accounts';
+import { BackupV3, createBackupV3, restoreBackup } from '../utils/accounts/backup';
+import { defaultCtx } from '../utils/accounts/context';
+import { AccountsError } from '../utils/accounts/errors';
+import { planAddEntry } from '../utils/accounts/entries';
 import { parseDateKey, toLocalDateKey } from '../utils/dates';
 import { advanceDate, getNextDueDate, planRecurringEdit } from '../utils/recurring';
-import { buildTransaction } from '../utils/transactions';
-import { getReadIds, markRead, pruneReads } from './notificationReads';
+import { AccountsData, deleteNotifications, readAccountsData, saveAccountsDiff, writeAccountsData } from './accountsRepo';
+import { forgetReads, getReadIds, markRead, pruneReads } from './notificationReads';
 import { runMigrations, SqlRunner } from './migrations';
-import { budgets, categories, currencies, exchangeRates, goals, milestones, monthlySnapshots, recurringTransactions, transactions, userOrigin } from './schema';
 
 export const database = openDatabaseSync('my-finances.db');
 export const db = drizzle(database);
@@ -60,6 +57,15 @@ export function getReadNotificationIds(): string[] {
 
 export function markNotificationsRead(ids: string[]): void {
   markRead(sqlRunner, ids, nowIso());
+}
+
+// Notifications that no longer exist (goal deleted, expired, cleared) lose their saved row and their read record together.
+export function deleteReserveNotifications(ids: string[]): void {
+  if (ids.length === 0) {
+    return;
+  }
+  deleteNotifications(sqlRunner, ids);
+  forgetReads(sqlRunner, ids);
 }
 
 export async function initializeDatabase(): Promise<void> {
@@ -134,60 +140,6 @@ export async function getCategories(): Promise<Category[]> {
   }));
 }
 
-type TransactionRow = {
-  id: string;
-  type: Transaction['type'];
-  amount: number;
-  currency: CurrencyCode;
-  amount_etb: number;
-  exchange_rate: number;
-  category: string;
-  source: string;
-  account: Account | null;
-  from_account: TransferEndpoint | null;
-  from_goal_id: string | null;
-  to_account: TransferEndpoint | null;
-  to_goal_id: string | null;
-  date: string;
-  timestamp: string;
-  note: string | null;
-  is_automatic: number;
-  created_at: string;
-  updated_at: string;
-};
-
-function mapTransactionRow(row: TransactionRow): Transaction {
-  return {
-    id: row.id,
-    type: row.type,
-    amount: Number(row.amount),
-    currency: row.currency,
-    amountETB: Number(row.amount_etb),
-    exchangeRate: Number(row.exchange_rate),
-    category: row.category,
-    source: row.source,
-    account: row.account,
-    fromAccount: row.from_account,
-    fromGoalId: row.from_goal_id,
-    toAccount: row.to_account,
-    toGoalId: row.to_goal_id,
-    date: row.date,
-    timestamp: row.timestamp,
-    note: row.note,
-    isAutomatic: Boolean(row.is_automatic),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-export async function getTransactions(): Promise<Transaction[]> {
-  const rows = database.getAllSync(
-    'SELECT * FROM transactions ORDER BY date DESC, timestamp DESC',
-  ) as TransactionRow[];
-
-  return rows.map(mapTransactionRow);
-}
-
 export async function getExchangeRates(): Promise<ExchangeRate[]> {
   const rows = database.getAllSync(
     'SELECT id, from_currency AS fromCurrency, to_currency AS toCurrency, rate, updated_at AS updatedAt FROM exchange_rates',
@@ -208,66 +160,15 @@ export async function getExchangeRates(): Promise<ExchangeRate[]> {
   }));
 }
 
-// Raw ledger writes. Callers are responsible for validating the resulting ledger first
-// (see commitTransaction in store/finance.ts and generateDueRecurringTransactions below).
-export async function insertTransaction(transaction: Transaction): Promise<void> {
-  database.runSync(
-    `INSERT INTO transactions
-      (id, type, amount, currency, amount_etb, exchange_rate, category, source, account,
-       from_account, from_goal_id, to_account, to_goal_id, date, timestamp, note, is_automatic, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    transaction.id,
-    transaction.type,
-    transaction.amount,
-    transaction.currency,
-    transaction.amountETB,
-    transaction.exchangeRate,
-    transaction.category,
-    transaction.source,
-    transaction.account,
-    transaction.fromAccount,
-    transaction.fromGoalId,
-    transaction.toAccount,
-    transaction.toGoalId,
-    transaction.date,
-    transaction.timestamp,
-    transaction.note,
-    // Backups made before this column existed have no value.
-    transaction.isAutomatic ? 1 : 0,
-    transaction.createdAt,
-    transaction.updatedAt,
-  );
+// ---- the ledger (accounts model) ------------------------------------------------------------------------------------------------
+// Everything about accounts, transactions, goals, allocations and reserve notifications is read and written through
+// db/accountsRepo.ts. A write is planned as a pure function first (utils/accounts), and only then saved as one SQL transaction.
+export function readLedger(): AccountsData {
+  return readAccountsData(sqlRunner);
 }
 
-// Editing a ledger row is just overwriting that row (V2 Part G) - no reverse/re-apply step.
-export async function updateTransaction(transaction: Transaction): Promise<void> {
-  database.runSync(
-    `UPDATE transactions
-      SET type = ?, amount = ?, currency = ?, amount_etb = ?, exchange_rate = ?, category = ?, source = ?,
-          account = ?, from_account = ?, from_goal_id = ?, to_account = ?, to_goal_id = ?,
-          date = ?, note = ?, updated_at = ?
-      WHERE id = ?`,
-    transaction.type,
-    transaction.amount,
-    transaction.currency,
-    transaction.amountETB,
-    transaction.exchangeRate,
-    transaction.category,
-    transaction.source,
-    transaction.account,
-    transaction.fromAccount,
-    transaction.fromGoalId,
-    transaction.toAccount,
-    transaction.toGoalId,
-    transaction.date,
-    transaction.note,
-    transaction.updatedAt,
-    transaction.id,
-  );
-}
-
-export async function deleteTransaction(id: string): Promise<void> {
-  database.runSync('DELETE FROM transactions WHERE id = ?', id);
+export function saveLedgerDiff(before: AccountsState, after: AccountsState): void {
+  saveAccountsDiff(sqlRunner, before, after);
 }
 
 export async function addCategory(input: Omit<Category, 'id' | 'isDefault'>): Promise<Category> {
@@ -372,96 +273,6 @@ export async function upsertExchangeRate(
   return entry;
 }
 
-export async function insertDefaultCategorySeed(): Promise<void> {
-  const currentCategories = await getCategories();
-  if (currentCategories.length > 0) {
-    return;
-  }
-
-  database.execSync('BEGIN');
-  for (const category of defaultCategories) {
-    database.runSync(
-      'INSERT INTO categories (id, name, type, icon, color, is_default) VALUES (?, ?, ?, ?, ?, ?)',
-      category.id,
-      category.name,
-      category.type,
-      category.icon,
-      category.color,
-      category.isDefault ? 1 : 0,
-    );
-  }
-  database.execSync('COMMIT');
-}
-
-export async function getGoals(): Promise<Goal[]> {
-  const rows = database.getAllSync(
-    'SELECT id, name, target_amount AS targetAmount, deadline, status, created_at AS createdAt, updated_at AS updatedAt FROM goals ORDER BY created_at ASC',
-  ) as Array<{
-    id: string;
-    name: string;
-    targetAmount: number;
-    deadline: string | null;
-    status: Goal['status'];
-    createdAt: string;
-    updatedAt: string;
-  }>;
-
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    targetAmount: Number(row.targetAmount),
-    deadline: row.deadline,
-    status: row.status,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  }));
-}
-
-export async function addGoal(input: GoalInput): Promise<Goal> {
-  const now = nowIso();
-  const goal: Goal = {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    name: input.name.trim(),
-    targetAmount: Number(input.targetAmount),
-    deadline: input.deadline ?? null,
-    status: 'active',
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  database.runSync(
-    'INSERT INTO goals (id, name, target_amount, deadline, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    goal.id,
-    goal.name,
-    goal.targetAmount,
-    goal.deadline,
-    goal.status,
-    goal.createdAt,
-    goal.updatedAt,
-  );
-
-  return goal;
-}
-
-export async function setGoalStatus(id: string, status: Goal['status']): Promise<void> {
-  database.runSync('UPDATE goals SET status = ?, updated_at = ? WHERE id = ?', status, nowIso(), id);
-}
-
-export async function updateGoal(id: string, input: GoalInput): Promise<void> {
-  database.runSync(
-    'UPDATE goals SET name = ?, target_amount = ?, deadline = ?, updated_at = ? WHERE id = ?',
-    input.name.trim(),
-    Number(input.targetAmount),
-    input.deadline ?? null,
-    nowIso(),
-    id,
-  );
-}
-
-export async function deleteGoal(id: string): Promise<void> {
-  database.runSync('DELETE FROM goals WHERE id = ?', id);
-}
-
 export async function getBudgets(): Promise<Budget[]> {
   const rows = database.getAllSync(
     'SELECT id, category, monthly_limit AS monthlyLimit, currency, created_at AS createdAt, updated_at AS updatedAt FROM budgets ORDER BY category ASC',
@@ -519,119 +330,10 @@ export async function deleteBudget(id: string): Promise<void> {
   database.runSync('DELETE FROM budgets WHERE id = ?', id);
 }
 
-export interface BackupPayload {
-  version: 2;
-  exportedAt: string;
-  categories: Category[];
-  transactions: Transaction[];
-  exchangeRates: ExchangeRate[];
-  goals: Goal[];
-  budgets: Budget[];
-}
-
-export async function exportAllData(): Promise<BackupPayload> {
-  const [categoriesData, transactionsData, exchangeRatesData, goalsData, budgetsData] = await Promise.all([
-    getCategories(),
-    getTransactions(),
-    getExchangeRates(),
-    getGoals(),
-    getBudgets(),
-  ]);
-
-  return {
-    version: 2,
-    exportedAt: nowIso(),
-    categories: categoriesData,
-    transactions: transactionsData,
-    exchangeRates: exchangeRatesData,
-    goals: goalsData,
-    budgets: budgetsData,
-  };
-}
-
-export async function importAllData(payload: BackupPayload): Promise<void> {
-  // V1 backups have no amountETB / transfer model and cannot be turned into a valid V2 ledger.
-  if (payload.version !== 2) {
-    throw new Error('This backup was made by an older version of the app and cannot be restored.');
-  }
-
-  // Never import a ledger that would show a negative balance.
-  const goalNames = Object.fromEntries(payload.goals.map((goal) => [goal.id, goal.name]));
-  assertValidLedger(payload.transactions, goalNames);
-
-  database.execSync('BEGIN');
-  try {
-    database.execSync('DELETE FROM transactions');
-    database.execSync('DELETE FROM categories');
-    database.execSync('DELETE FROM exchange_rates');
-    database.execSync('DELETE FROM goals');
-    database.execSync('DELETE FROM budgets');
-
-    // A backup taken before the V1-leftover cleanup may still carry the legacy savings classification, which has no
-    // meaning in V2 - do not restore it.
-    for (const category of payload.categories.filter((item) => item.type !== 'savings')) {
-      database.runSync(
-        'INSERT INTO categories (id, name, type, icon, color, is_default) VALUES (?, ?, ?, ?, ?, ?)',
-        category.id,
-        category.name,
-        category.type,
-        category.icon,
-        category.color,
-        category.isDefault ? 1 : 0,
-      );
-    }
-
-    for (const transaction of payload.transactions) {
-      await insertTransaction(transaction);
-    }
-
-    for (const rate of payload.exchangeRates) {
-      database.runSync(
-        'INSERT INTO exchange_rates (id, from_currency, to_currency, rate, updated_at) VALUES (?, ?, ?, ?, ?)',
-        rate.id,
-        rate.fromCurrency,
-        rate.toCurrency,
-        rate.rate,
-        rate.updatedAt,
-      );
-    }
-
-    for (const goal of payload.goals) {
-      database.runSync(
-        'INSERT INTO goals (id, name, target_amount, deadline, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        goal.id,
-        goal.name,
-        goal.targetAmount,
-        goal.deadline ?? null,
-        goal.status ?? 'active',
-        goal.createdAt,
-        goal.updatedAt,
-      );
-    }
-
-    for (const budget of payload.budgets) {
-      database.runSync(
-        'INSERT INTO budgets (id, category, monthly_limit, currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-        budget.id,
-        budget.category,
-        budget.monthlyLimit,
-        budget.currency,
-        budget.createdAt,
-        budget.updatedAt,
-      );
-    }
-
-    database.execSync('COMMIT');
-  } catch (error) {
-    database.execSync('ROLLBACK');
-    throw error;
-  }
-}
-
 function mapRecurringRow(row: {
   id: string;
   type: RecurringType;
-  account: Account;
+  accountId: string;
   amount: number;
   currency: CurrencyCode;
   category: string;
@@ -647,7 +349,7 @@ function mapRecurringRow(row: {
   return {
     id: row.id,
     type: row.type,
-    account: row.account,
+    accountId: row.accountId,
     amount: Number(row.amount),
     currency: row.currency,
     category: row.category,
@@ -664,7 +366,7 @@ function mapRecurringRow(row: {
 
 export async function getRecurringTransactions(): Promise<RecurringTransaction[]> {
   const rows = database.getAllSync(
-    `SELECT id, type, account, amount, currency, category, source, note, frequency,
+    `SELECT id, type, account_id AS accountId, amount, currency, category, source, note, frequency,
       start_date AS startDate, last_generated_date AS lastGeneratedDate, is_active AS isActive,
       created_at AS createdAt, updated_at AS updatedAt
      FROM recurring_transactions ORDER BY created_at DESC`,
@@ -678,7 +380,7 @@ export async function addRecurringTransaction(input: RecurringTransactionInput):
   const recurring: RecurringTransaction = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     type: input.type,
-    account: input.account,
+    accountId: input.accountId,
     amount: Number(input.amount),
     currency: input.currency,
     category: input.category,
@@ -694,11 +396,11 @@ export async function addRecurringTransaction(input: RecurringTransactionInput):
 
   database.runSync(
     `INSERT INTO recurring_transactions
-      (id, type, account, amount, currency, category, source, note, frequency, start_date, last_generated_date, is_active, created_at, updated_at)
+      (id, type, account_id, amount, currency, category, source, note, frequency, start_date, last_generated_date, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     recurring.id,
     recurring.type,
-    recurring.account,
+    recurring.accountId,
     recurring.amount,
     recurring.currency,
     recurring.category,
@@ -738,7 +440,7 @@ export async function updateRecurringTransaction(
   const updated: RecurringTransaction = {
     ...existing,
     type: input.type,
-    account: input.account,
+    accountId: input.accountId,
     amount: Number(input.amount),
     currency: input.currency,
     category: input.category,
@@ -752,11 +454,11 @@ export async function updateRecurringTransaction(
 
   database.runSync(
     `UPDATE recurring_transactions
-      SET type = ?, account = ?, amount = ?, currency = ?, category = ?, source = ?, note = ?, frequency = ?,
+      SET type = ?, account_id = ?, amount = ?, currency = ?, category = ?, source = ?, note = ?, frequency = ?,
           start_date = ?, last_generated_date = ?, updated_at = ?
       WHERE id = ?`,
     updated.type,
-    updated.account,
+    updated.accountId,
     updated.amount,
     updated.currency,
     updated.category,
@@ -776,21 +478,21 @@ export async function deleteRecurringTransaction(id: string): Promise<void> {
   database.runSync('DELETE FROM recurring_transactions WHERE id = ?', id);
 }
 
-// Posts every occurrence that has come due. Each one goes through the same ledger validation as a
-// manual entry; an occurrence that can't be posted (it would overdraw Available/Saved, or its
-// currency has no rate) is skipped and reported back so the UI can notify - never a crash, and
-// never a negative balance. A skipped occurrence is not retried: the rule moves on to its next date.
+// Posts every occurrence that has come due. Each one goes through the same planner as a manual entry (utils/accounts/entries.ts); an
+// occurrence that can't be posted (it would overdraw its account, its currency has no rate, its account was archived) is skipped and
+// reported back so the UI can notify - never a crash, and never a negative balance. A skipped occurrence is not retried: the rule moves
+// on to its next date. Reserved goal money never blocks a rule: if it is used, the goals shrink like for any other entry.
 export async function generateDueRecurringTransactions(): Promise<{
-  generated: Transaction[];
+  generated: AccountEntry[];
   failures: RecurringFailure[];
 }> {
   const rules = await getRecurringTransactions();
   const rates = await getExchangeRates();
-  const goalNames = Object.fromEntries((await getGoals()).map((goal) => [goal.id, goal.name]));
-  const ledger = await getTransactions();
+  const currencyCodes = (await getCurrencies()).map((currency) => currency.code);
+  let state: AccountsState = { ...readAccountsData(sqlRunner), rates, currencies: currencyCodes };
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const generated: Transaction[] = [];
+  const generated: AccountEntry[] = [];
   const failures: RecurringFailure[] = [];
 
   for (const rule of rules) {
@@ -809,10 +511,11 @@ export async function generateDueRecurringTransactions(): Promise<{
       const dateString = toLocalDateKey(nextDue);
 
       try {
-        const transaction = buildTransaction(
+        const result = planAddEntry(
+          state,
           {
             type: rule.type,
-            account: rule.account,
+            accountId: rule.accountId,
             amount: rule.amount,
             currency: rule.currency,
             category: rule.category,
@@ -821,18 +524,13 @@ export async function generateDueRecurringTransactions(): Promise<{
             note: rule.note,
             isAutomatic: true,
           },
-          rates,
+          defaultCtx,
         );
-        const problem = validateLedger([...ledger, transaction], goalNames);
-        if (problem) {
-          throw problem;
-        }
-
-        await insertTransaction(transaction);
-        ledger.push(transaction);
-        generated.push(transaction);
+        saveAccountsDiff(sqlRunner, state, result.state);
+        generated.push(result.state.entries[result.state.entries.length - 1]);
+        state = result.state;
       } catch (error) {
-        if (!(error instanceof LedgerError)) {
+        if (!(error instanceof AccountsError)) {
           throw error;
         }
         failures.push({ ruleId: rule.id, category: rule.category, date: dateString, reason: error.message });
@@ -998,4 +696,91 @@ export async function addMonthlySnapshotIfMissing(
   return snapshot;
 }
 
-export { categories, currencies, transactions, exchangeRates, goals, budgets, recurringTransactions, userOrigin, milestones, monthlySnapshots, eq };
+// ---- backup and restore (version 3) ---------------------------------------------------------------------------------------------
+export async function exportBackup(): Promise<BackupV3> {
+  const [categoriesData, budgetsData, ratesData] = await Promise.all([getCategories(), getBudgets(), getExchangeRates()]);
+  const data = readAccountsData(sqlRunner);
+  return createBackupV3({
+    categories: categoriesData,
+    budgets: budgetsData,
+    state: { ...data, rates: ratesData, currencies: [] },
+  });
+}
+
+// Replaces the accounts, ledger, goals, categories, budgets and rates with the backup's, all or nothing. Recurring rules are not part of
+// a backup and point at accounts by id, so they are cleared (the returned count says how many). A currency the restored accounts or
+// rates use that is not on this device's list is added to it, so no account is left in a currency the app does not know.
+function applyBackup(backup: BackupV3): number {
+  const known = new Set((database.getAllSync('SELECT code FROM currencies') as Array<{ code: string }>).map((row) => row.code));
+  const needed = new Set<string>([...backup.accounts.map((account) => account.currency), ...backup.exchangeRates.map((rate) => rate.fromCurrency)]);
+  const clearedRules = Number((database.getFirstSync('SELECT COUNT(*) AS c FROM recurring_transactions') as { c: number } | null)?.c ?? 0);
+
+  database.execSync('BEGIN');
+  try {
+    writeAccountsData(sqlRunner, {
+      accounts: backup.accounts,
+      entries: backup.transactions,
+      goals: backup.goals,
+      allocations: backup.goalAllocations,
+      notifications: backup.notifications,
+    });
+    database.execSync('DELETE FROM recurring_transactions');
+    database.execSync('DELETE FROM categories');
+    database.execSync('DELETE FROM exchange_rates');
+    database.execSync('DELETE FROM budgets');
+
+    for (const category of backup.categories) {
+      database.runSync(
+        'INSERT INTO categories (id, name, type, icon, color, is_default) VALUES (?, ?, ?, ?, ?, ?)',
+        category.id,
+        category.name,
+        category.type,
+        category.icon,
+        category.color,
+        category.isDefault ? 1 : 0,
+      );
+    }
+    for (const rate of backup.exchangeRates) {
+      database.runSync(
+        'INSERT INTO exchange_rates (id, from_currency, to_currency, rate, updated_at) VALUES (?, ?, ?, ?, ?)',
+        rate.id,
+        rate.fromCurrency,
+        rate.toCurrency,
+        rate.rate,
+        rate.updatedAt,
+      );
+    }
+    for (const budget of backup.budgets) {
+      database.runSync(
+        'INSERT INTO budgets (id, category, monthly_limit, currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        budget.id,
+        budget.category,
+        budget.monthlyLimit,
+        budget.currency,
+        budget.createdAt,
+        budget.updatedAt,
+      );
+    }
+    for (const code of needed) {
+      if (!known.has(code)) {
+        database.runSync('INSERT INTO currencies (code, name, is_default) VALUES (?, ?, 0)', code, code);
+      }
+    }
+
+    database.execSync('COMMIT');
+    return clearedRules;
+  } catch (error) {
+    database.execSync('ROLLBACK');
+    throw error;
+  }
+}
+
+// Reads any backup this app has written (version 3, or an old version 2 which lands in one "Cash" account), checks it, and replaces
+// the data with it. Returns the message to show the owner. Throws AccountsError('RESTORE_FAILED') when it cannot be restored, with nothing changed.
+export async function restoreBackupPayload(payload: unknown): Promise<string> {
+  const { backup, message } = restoreBackup(payload);
+  const clearedRules = applyBackup(backup);
+  return clearedRules > 0
+    ? `${message} Your ${clearedRules} recurring ${clearedRules === 1 ? 'rule was' : 'rules were'} cleared, because they belong to accounts and are not part of a backup.`
+    : message;
+}

@@ -60,9 +60,11 @@ function RootLayoutContent() {
     if (!isReady || onboardingResolved) {
       return;
     }
-    const { transactions, goals, origin } = useFinanceStore.getState();
+    const { accounts, transactions, goals, origin } = useFinanceStore.getState();
     const hasOrigin = Boolean(origin && (origin.storyText.trim() || origin.startingPoint.trim() || origin.whyBuilding.trim()));
-    void resolveOnboarding(transactions.length > 0 || goals.length > 0 || hasOrigin);
+    // An account counts as existing data. Someone with none (a fresh install, or the reset to accounts) is not stranded by a skipped Welcome:
+    // the tabs send them to "Add your first account" until they have one (app/(tabs)/_layout.tsx).
+    void resolveOnboarding(accounts.length > 0 || transactions.length > 0 || goals.length > 0 || hasOrigin);
   }, [isReady, onboardingResolved, resolveOnboarding]);
 
   // app.json paints the root view orange so the first frame has no white edge. Once the splash is gone, the root view takes

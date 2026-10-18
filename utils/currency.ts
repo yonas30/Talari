@@ -1,151 +1,69 @@
-import { Budget, CurrencyCode, ExchangeRate, Goal, Transaction } from '../types';
-import { getBalances, getNetSavingsChange, LedgerError, roundETB } from './balances';
+import { BASE_CURRENCY } from '../constants/accounts';
+import { Budget, CurrencyCode, ExchangeRate } from '../types';
+import { AccountEntry, AccountGoal, GoalAllocation } from '../types/accounts';
+import { getGoalAmount } from './accounts/reserve';
+import { getNetSavingsChange, getPeriodSummary } from './accounts/totals';
+import { round2 } from './accounts/money';
+import { getRateToETB } from './accounts/rates';
 import { parseDateKey, toLocalDateKey } from './dates';
 
-export const BASE_CURRENCY = 'ETB';
+export { BASE_CURRENCY, getRateToETB };
 
-// The stored default rate (X -> ETB). Only a direct row counts: no reverse/triangulated guesses,
-// and no silent 1:1 fallback - a missing rate must block entry (V2 Part D).
-export function getRateToETB(currency: CurrencyCode, rates: ExchangeRate[]): number | null {
-  if (currency === BASE_CURRENCY) {
-    return 1;
-  }
-  const direct = rates.find((rate) => rate.fromCurrency === currency && rate.toCurrency === BASE_CURRENCY);
-  return direct && Number.isFinite(direct.rate) && direct.rate > 0 ? direct.rate : null;
+function sumETB(entries: AccountEntry[]): number {
+  return entries.reduce((cents, item) => cents + Math.round(item.amountETB * 100), 0) / 100;
 }
 
-// Converts an entered amount to ETB once, at entry time. The result is stored as amountETB and is
-// the only value later used in any sum, so later rate changes never rewrite history.
-// `rateOverride` applies to this single conversion only; it is never written to the rate table.
-export function toETB(
-  amount: number,
-  currency: CurrencyCode,
-  rates: ExchangeRate[],
-  rateOverride?: number | null,
-): { amountETB: number; rate: number } {
-  if (currency === BASE_CURRENCY) {
-    return { amountETB: roundETB(amount), rate: 1 };
-  }
-
-  let rate: number | null;
-  if (rateOverride !== undefined && rateOverride !== null) {
-    if (!Number.isFinite(rateOverride) || rateOverride <= 0) {
-      throw new LedgerError('INVALID_RATE', 'Exchange rate must be a number greater than zero.');
-    }
-    rate = rateOverride;
-  } else {
-    rate = getRateToETB(currency, rates);
-  }
-
-  if (rate === null) {
-    throw new LedgerError('MISSING_RATE', `Set an exchange rate for ${currency} → ETB before adding this transaction.`);
-  }
-
-  return { amountETB: roundETB(amount * rate), rate };
-}
-
-function sumETB(transactions: Transaction[]): number {
-  return transactions.reduce((cents, item) => cents + Math.round(item.amountETB * 100), 0) / 100;
-}
-
-export function getCurrentPeriodSummary(transactions: Transaction[], referenceDate = new Date()) {
+// This month's figures. Income and expenses use amountETB only and exclude opening / adjustment / transfer rows; `savings` is the net
+// change in reserved goal money this month (V2_SPEC Part R), not a balance.
+export function getCurrentPeriodSummary(entries: AccountEntry[], allocations: GoalAllocation[], referenceDate = new Date()) {
   const monthPrefix = toLocalDateKey(referenceDate).slice(0, 7);
-  const periodTransactions = transactions.filter((transaction) => transaction.date.startsWith(monthPrefix));
-
-  const income = sumETB(periodTransactions.filter((transaction) => transaction.type === 'income'));
-  const expenses = sumETB(periodTransactions.filter((transaction) => transaction.type === 'expense'));
-
-  return {
-    income,
-    expenses,
-    // Net change in Saved + Goals this month (income->Saved, transfers in, minus what left).
-    savings: getNetSavingsChange(periodTransactions),
-    net: roundETB(income - expenses),
-    transactions: periodTransactions,
-  };
+  const { income, expenses, net } = getPeriodSummary(entries, monthPrefix);
+  return { income, expenses, net, savings: getNetSavingsChange(allocations, monthPrefix) };
 }
 
-// Any financial activity the user records (income, expense, transfer, goal contribution) counts for
-// its calendar day. Rows generated automatically by recurring rules do not: the user must actually
-// record something (V2 Part N). Day keys are local - see utils/dates.ts for the UTC bug this replaces.
-export function calculateBuilderStreak(transactions: Transaction[], today = new Date()): number {
-  const recorded = transactions.filter((transaction) => !transaction.isAutomatic);
-  if (recorded.length === 0) {
-    return 0;
-  }
-
-  const activeDays = new Set(recorded.map((transaction) => transaction.date));
-  const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
-  // Today may not be logged yet; the streak is still alive if yesterday was.
-  if (!activeDays.has(toLocalDateKey(cursor))) {
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  let streak = 0;
-  while (activeDays.has(toLocalDateKey(cursor))) {
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  return streak;
-}
-
-export function getMotivationalMessage(recentSavings: number, dayIndex = new Date().getDate()): string {
-  const lines = [
-    'Your money story is still being written — one consistent decision at a time.',
-    'Small wins stack into a stronger financial future.',
-    'You are not behind; you are building momentum.',
-    'Consistency beats intensity when the goal is long-term freedom.',
-  ];
-
-  if (recentSavings > 0) {
-    return lines[dayIndex % lines.length];
-  }
-
-  return lines[(dayIndex + Math.abs(Math.round(recentSavings)) + 1) % lines.length];
-}
-
-// A goal's amount is whatever the ledger says was transferred in minus out (V2 Part C).
+// A goal's amount is the sum of its allocation rows (V2_SPEC Part C).
 export function getGoalProgress(
-  goal: Goal,
-  transactions: Transaction[],
+  goal: Pick<AccountGoal, 'id' | 'targetAmount'>,
+  allocations: GoalAllocation[],
 ): { savedAmount: number; percent: number } {
-  const savedAmount = Math.max(getBalances(transactions).goals[goal.id] ?? 0, 0);
+  const savedAmount = Math.max(getGoalAmount(allocations, goal.id), 0);
   const percent = goal.targetAmount > 0 ? Math.min((savedAmount / goal.targetAmount) * 100, 100) : 0;
 
   return { savedAmount, percent };
 }
 
-// What a goal's status should become given what the ledger says it holds: reaching the target
-// completes it; falling back below the target (a withdrawal, or a raised target) reopens it. Returns
-// null when nothing changes. Abandoned goals are never touched.
-export function nextGoalStatus(goal: Goal, transactions: Transaction[]): 'completed' | 'active' | null {
+// What a goal's status should become given what it holds: reaching the target completes it; falling back below the target (a
+// withdrawal, a raised target, or reserved money being spent) reopens it. Returns null when nothing changes. Abandoned goals are
+// never touched.
+export function nextGoalStatus(
+  goal: Pick<AccountGoal, 'id' | 'targetAmount' | 'status'>,
+  allocations: GoalAllocation[],
+): 'completed' | 'active' | null {
   if (goal.status === 'abandoned') {
     return null;
   }
-  const { percent } = getGoalProgress(goal, transactions);
+  const { percent } = getGoalProgress(goal, allocations);
   if (percent >= 100) {
     return goal.status === 'completed' ? null : 'completed';
   }
   return goal.status === 'completed' ? 'active' : null;
 }
 
-// Projects a completion date from the average monthly pace of money moved into the goal so far.
+// Projects a completion date from the average monthly pace of money the owner has put into the goal so far (manual additions only).
 export function getProjectedCompletionDate(
-  goal: Goal,
-  transactions: Transaction[],
+  goal: Pick<AccountGoal, 'id' | 'targetAmount'>,
+  allocations: GoalAllocation[],
   referenceDate = new Date(),
 ): Date | null {
-  const contributions = transactions
-    .filter((transaction) => transaction.type === 'transfer' && transaction.toAccount === 'goal' && transaction.toGoalId === goal.id)
+  const contributions = allocations
+    .filter((row) => row.goalId === goal.id && row.kind === 'manual' && row.amount > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (contributions.length === 0) {
     return null;
   }
 
-  const { savedAmount } = getGoalProgress(goal, transactions);
+  const { savedAmount } = getGoalProgress(goal, allocations);
   const remaining = goal.targetAmount - savedAmount;
   if (remaining <= 0) {
     return referenceDate;
@@ -172,23 +90,18 @@ export function getProjectedCompletionDate(
 // at the current stored rate; a limit with no rate can't be compared and is reported as such.
 export function getBudgetProgress(
   budget: Budget,
-  transactions: Transaction[],
+  entries: AccountEntry[],
   rates: ExchangeRate[],
   referenceDate = new Date(),
 ): { spentAmount: number; limitETB: number | null; percent: number; isOverBudget: boolean } {
   const monthPrefix = toLocalDateKey(referenceDate).slice(0, 7);
 
   const spentAmount = sumETB(
-    transactions.filter(
-      (transaction) =>
-        transaction.type === 'expense' &&
-        transaction.category === budget.category &&
-        transaction.date.startsWith(monthPrefix),
-    ),
+    entries.filter((entry) => entry.type === 'expense' && entry.category === budget.category && entry.date.startsWith(monthPrefix)),
   );
 
   const rate = getRateToETB(budget.currency, rates);
-  const limitETB = rate === null ? null : roundETB(budget.monthlyLimit * rate);
+  const limitETB = rate === null ? null : round2(budget.monthlyLimit * rate);
 
   if (limitETB === null || limitETB <= 0) {
     return { spentAmount, limitETB, percent: 0, isOverBudget: false };

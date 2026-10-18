@@ -1,4 +1,4 @@
-import { Transaction } from '../types';
+import { AccountEntry } from '../types/accounts';
 import { parseDateKey, toLocalDateKey } from './dates';
 
 export type RangePreset = 'weekly' | 'monthly' | 'custom';
@@ -72,10 +72,10 @@ export function getRangeDates(range: RangePreset, referenceDate = new Date()) {
 // Inclusive on both ends. Day keys are 'YYYY-MM-DD', so plain string comparison is exact and
 // timezone-free.
 export function getFilteredTransactionsByRange(
-  transactions: Transaction[],
+  transactions: AccountEntry[],
   startDate: string,
   endDate: string,
-): Transaction[] {
+): AccountEntry[] {
   return transactions.filter((transaction) => transaction.date >= startDate && transaction.date <= endDate);
 }
 
@@ -83,7 +83,7 @@ export function getFilteredTransactionsByRange(
 // read them from getCategoryBreakdown, so a category has the same colour on both.
 export const BREAKDOWN_PALETTE = ['#f97316', '#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6', '#10b981', '#14b8a6'] as const;
 
-export function getCategoryBreakdown(transactions: Transaction[]): BarDatum[] {
+export function getCategoryBreakdown(transactions: AccountEntry[]): BarDatum[] {
   const totals = new Map<string, number>();
 
   for (const transaction of transactions) {
@@ -104,7 +104,7 @@ export function getCategoryBreakdown(transactions: Transaction[]): BarDatum[] {
     .sort((a, b) => b.amount - a.amount);
 }
 
-export function getSourceBreakdown(transactions: Transaction[]): BarDatum[] {
+export function getSourceBreakdown(transactions: AccountEntry[]): BarDatum[] {
   const totals = new Map<string, number>();
 
   for (const transaction of transactions) {
@@ -165,7 +165,7 @@ export interface PeriodTotals {
 }
 
 // Income / Expenses / Net for a set of transactions, ETB only (V2 Part D). Transfers are neither.
-export function getPeriodTotals(transactions: Transaction[]): PeriodTotals {
+export function getPeriodTotals(transactions: AccountEntry[]): PeriodTotals {
   let incomeCents = 0;
   let expenseCents = 0;
   for (const transaction of transactions) {
@@ -203,7 +203,7 @@ function nextBucket(date: Date, granularity: TrendGranularity): Date {
   return next;
 }
 
-export function getTrendSeries(transactions: Transaction[], startDate: string, endDate: string): TrendPoint[] {
+export function getTrendSeries(transactions: AccountEntry[], startDate: string, endDate: string): TrendPoint[] {
   const granularity = getTrendGranularity(startDate, endDate);
   const end = parseDateKey(endDate);
   const points = new Map<string, { label: string; income: number; expense: number }>();
@@ -222,7 +222,8 @@ export function getTrendSeries(transactions: Transaction[], startDate: string, e
   }
 
   for (const transaction of transactions) {
-    if (transaction.type === 'transfer' || transaction.date < startDate || transaction.date > endDate) {
+    // Only income and expense are plotted: transfers, opening balances and adjustments are neither (V2_SPEC Part B section 4).
+    if ((transaction.type !== 'income' && transaction.type !== 'expense') || transaction.date < startDate || transaction.date > endDate) {
       continue;
     }
     const point = points.get(toISODate(bucketStart(parseDateKey(transaction.date), granularity)));
@@ -243,7 +244,7 @@ export function getTrendSeries(transactions: Transaction[], startDate: string, e
   }));
 }
 
-export function getBiggestSpendingCategory(transactions: Transaction[]) {
+export function getBiggestSpendingCategory(transactions: AccountEntry[]) {
   const categories = getCategoryBreakdown(transactions);
   if (categories.length === 0) {
     return null;

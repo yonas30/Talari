@@ -11,12 +11,14 @@ import RecentList from '../../components/home/RecentList';
 import SpendingCard from '../../components/home/SpendingCard';
 import StreakCard from '../../components/home/StreakCard';
 import NameSheet from '../../components/NameSheet';
-import { useFinanceStore } from '../../store/finance';
+import { useFinanceStore, useTotals } from '../../store/finance';
 import { useProfileStore } from '../../store/profile';
 import { NO_DEV_HOME_PREVIEW, useUiStore } from '../../store/ui';
 import { useTheme } from '../../theme/ThemeProvider';
-import { getBalances } from '../../utils/balances';
-import { calculateBuilderStreak, getCurrentPeriodSummary } from '../../utils/currency';
+import { accountsRouteFor, groupAccounts, staleRateNote, unvaluedNote } from '../../utils/accounts/groups';
+import { getGoalAmounts } from '../../utils/accounts/reserve';
+import { calculateStreak } from '../../utils/accounts/totals';
+import { getCurrentPeriodSummary } from '../../utils/currency';
 import { formatETB } from '../../utils/format';
 import { buildSpendingSlices, goalsTotal } from '../../utils/homeModel';
 import { getBudgetAlerts, getBudgetWarnings } from '../../utils/notifications';
@@ -27,7 +29,8 @@ import { getCategoryBreakdown, getFilteredTransactionsByRange, getRangeDates } f
 export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { transactions, exchangeRates, goals, categories, origin, isReady, budgets } = useFinanceStore();
+  const { transactions, allocations, accounts, exchangeRates, categories, origin, isReady, budgets } = useFinanceStore();
+  const totals = useTotals();
   const isBalanceHidden = useUiStore((state) => state.isBalanceHidden);
   const isSplashDone = useUiStore((state) => state.isSplashDone);
   const isDrawerOpen = useUiStore((state) => state.isDrawerOpen);
@@ -113,12 +116,13 @@ export default function HomeScreen() {
 
   // Every figure below is derived from the ledger on each render (V2 Part C) - nothing is cached. The redesign changes how the
   // numbers are drawn, not where they come from.
-  const balances = useMemo(() => getBalances(transactions), [transactions]);
-  const periodSummary = useMemo(() => getCurrentPeriodSummary(transactions), [transactions]);
-  const realStreak = useMemo(() => calculateBuilderStreak(transactions), [transactions]);
+  const goalAmounts = useMemo(() => getGoalAmounts(allocations), [allocations]);
+  const periodSummary = useMemo(() => getCurrentPeriodSummary(transactions, allocations), [transactions, allocations]);
+  const realStreak = useMemo(() => calculateStreak(transactions, allocations), [transactions, allocations]);
   const builderStreak = devPreview.noStreak ? 0 : realStreak;
-  const motivationalMessage = getDashboardMessage(origin, balances.saved);
-  const goalsAmount = devPreview.noGoals ? 0 : goalsTotal(balances.goals);
+  const reservedAmount = devPreview.noGoals ? 0 : goalsTotal(goalAmounts);
+  const motivationalMessage = getDashboardMessage(origin, reservedAmount);
+  const groups = useMemo(() => groupAccounts(totals.accounts), [totals.accounts]);
 
   const spending = useMemo(() => {
     const dates = getRangeDates('monthly');
@@ -129,7 +133,10 @@ export default function HomeScreen() {
   // By category NAME (what transactions store): the icon is the emoji the category stores.
   const categoryIcons = useMemo(() => Object.fromEntries(categories.map((category) => [category.name, category.icon])), [categories]);
 
-  const recentTransactions = devPreview.noTransactions ? [] : transactions.slice(0, 3);
+  // The opening balance, adjustments and transfer fees are not what the owner recorded here, so they are not in this short list.
+  const recentTransactions = devPreview.noTransactions
+    ? []
+    : transactions.filter((entry) => (entry.type === 'income' || entry.type === 'expense' || entry.type === 'transfer') && entry.linkedTransferId === null).slice(0, 3);
   const shownSpending = devPreview.noSpending ? { slices: [], total: 0 } : spending;
   const monthName = new Date().toLocaleString('default', { month: 'long' });
 
@@ -155,12 +162,15 @@ export default function HomeScreen() {
         )}
 
         <HeroCard
-          total={balances.total}
-          available={balances.available}
-          saved={balances.saved}
-          goalsAmount={goalsAmount}
+          total={totals.total}
+          groups={groups}
+          reservedAmount={reservedAmount}
+          rateNote={staleRateNote(totals)}
+          unvaluedNote={unvaluedNote(totals)}
           hidden={isBalanceHidden}
           onToggleHidden={toggleBalanceVisibility}
+          // The tiles are the way into the accounts (the side menu has an "Accounts" link too): Accounts opens on the type that was tapped.
+          onOpenType={(type) => router.push(accountsRouteFor(type))}
         />
 
         <MonthCard monthName={monthName} income={periodSummary.income} expenses={periodSummary.expenses} net={periodSummary.net} />
@@ -177,7 +187,7 @@ export default function HomeScreen() {
 
         <RecentList
           transactions={recentTransactions}
-          goals={goals}
+          accounts={accounts}
           categoryIcons={categoryIcons}
           onSeeAll={() => router.navigate('/transactions')}
           // Before the redesign these rows did nothing; they now open the same edit screen the Transactions list opens.

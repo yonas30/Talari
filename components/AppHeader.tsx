@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { typography } from '../constants/theme';
 import { useThemeColors } from '../theme/ThemeProvider';
 import { useUiStore } from '../store/ui';
+import { balanceToggleLabel } from '../utils/balanceVisibility';
 import AppText from './AppText';
 
 interface AppHeaderProps {
@@ -14,14 +15,18 @@ interface AppHeaderProps {
   hideTitle?: boolean;
   /** The Notifications screen itself has no bell. */
   hideBell?: boolean;
+  /** An eye button beside the bell that shows or hides balances. It is the same switch as Home's: one shared flag. */
+  showBalanceToggle?: boolean;
 }
 
 // The one header of the app: menu (or back arrow) on the left, the title, and the bell with its unread badge on the right. The
 // unread count comes from the store, so every screen shows the same badge without being handed it.
-export default function AppHeader({ title, hideTitle = false, hideBell = false }: AppHeaderProps) {
+export default function AppHeader({ title, hideTitle = false, hideBell = false, showBalanceToggle = false }: AppHeaderProps) {
   const colors = useThemeColors();
   const openDrawer = useUiStore((state) => state.openDrawer);
   const notificationCount = useUiStore((state) => state.notifications.filter((notification) => !notification.isRead).length);
+  const isBalanceHidden = useUiStore((state) => state.isBalanceHidden);
+  const toggleBalanceVisibility = useUiStore((state) => state.toggleBalanceVisibility);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const segments = useSegments();
@@ -52,6 +57,17 @@ export default function AppHeader({ title, hideTitle = false, hideBell = false }
       )}
       {hideTitle ? <View style={styles.titleSpace} /> : <AppText style={[styles.title, { color: colors.text }]}>{title}</AppText>}
       <View style={styles.rightArea}>
+        {showBalanceToggle ? (
+          <Pressable
+            onPress={toggleBalanceVisibility}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={balanceToggleLabel(isBalanceHidden)}
+            style={({ pressed }) => (pressed ? { opacity: 0.6 } : null)}
+          >
+            <Ionicons name={isBalanceHidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.text} />
+          </Pressable>
+        ) : null}
         {!hideBell ? (
           <Pressable
             onPress={() => router.push('/notifications')}
@@ -94,9 +110,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rightArea: {
-    width: 28,
+    minWidth: 28,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
+    gap: 16,
   },
   notificationButton: {
     position: 'relative',

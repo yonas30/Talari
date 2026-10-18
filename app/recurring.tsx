@@ -3,6 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import AccountChips from '../components/accounts/AccountChips';
 import AppHeader from '../components/AppHeader';
 import AppText from '../components/AppText';
 import Button from '../components/Button';
@@ -16,7 +17,9 @@ import { defaultCategories } from '../constants/categories';
 import { radius, spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { useTheme } from '../theme/ThemeProvider';
-import { Account, CurrencyCode, RecurringFrequency, RecurringTransaction, RecurringType } from '../types';
+import { CurrencyCode, RecurringFrequency, RecurringTransaction, RecurringType } from '../types';
+import { AccountsError } from '../utils/accounts/errors';
+import { accountName } from '../utils/format';
 import { todayKey } from '../utils/dates';
 import { CONTROL_LABEL_MAX_SCALE } from '../utils/layout';
 import { getNextDueDate } from '../utils/recurring';
@@ -24,10 +27,6 @@ import { getNextDueDate } from '../utils/recurring';
 const TYPE_OPTIONS: SegmentOption<RecurringType>[] = [
   { key: 'expense', label: 'Expense' },
   { key: 'income', label: 'Income' },
-];
-const ACCOUNT_OPTIONS: SegmentOption<Account>[] = [
-  { key: 'available', label: 'Available' },
-  { key: 'saved', label: 'Saved' },
 ];
 const FREQUENCY_OPTIONS: SegmentOption<RecurringFrequency>[] = [
   { key: 'daily', label: 'Daily' },
@@ -44,6 +43,7 @@ export default function RecurringScreen() {
   const { colors } = useTheme();
   const {
     recurringTransactions,
+    accounts,
     categories,
     addRecurringTransaction,
     updateRecurringTransaction,
@@ -62,12 +62,29 @@ export default function RecurringScreen() {
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   // The rule being edited, or null when creating a new one.
   const [editing, setEditing] = useState<RecurringTransaction | null>(null);
-  const [account, setAccount] = useState<Account>('available');
+  // The account a rule posts into. Its currency is the rule's currency when the account is foreign (a USD account takes USD only); an ETB
+  // account also takes a foreign amount, converted at the rate of the day it posts.
+  const [accountId, setAccountIdState] = useState<string | null>(null);
   // New rules start active; editing only changes this if the switch is flipped.
   const [isActive, setIsActive] = useState(true);
   const [tab, setTab] = useState<'upcoming' | 'all'>('upcoming');
   // A validation message shown inside the sheet (it used to be a native alert).
   const [error, setError] = useState<string | null>(null);
+
+  const usableAccounts = useMemo(() => accounts.filter((item) => !item.archived), [accounts]);
+  const account = accounts.find((item) => item.id === accountId);
+  const isForeignAccount = account !== undefined && account.currency !== 'ETB';
+
+  const setAccountId = (id: string) => {
+    setError(null);
+    setAccountIdState(id);
+    const next = accounts.find((item) => item.id === id);
+    if (next && next.currency !== 'ETB') {
+      setCurrency(next.currency);
+    } else if (account && account.currency !== 'ETB' && currency === account.currency) {
+      setCurrency('ETB');
+    }
+  };
 
   const resetForm = () => {
     setType('expense');
@@ -77,7 +94,7 @@ export default function RecurringScreen() {
     setSource('');
     setFrequency('monthly');
     setStartDate(todayKey());
-    setAccount('available');
+    setAccountIdState(usableAccounts[0]?.id ?? null);
     setIsActive(true);
     setEditing(null);
     setIsCategoryOpen(false);
@@ -94,7 +111,7 @@ export default function RecurringScreen() {
     setSource(rule.source === 'Recurring' ? '' : rule.source);
     setFrequency(rule.frequency);
     setStartDate(rule.startDate);
-    setAccount(rule.account);
+    setAccountIdState(rule.accountId);
     setIsActive(rule.isActive);
     setError(null);
     setIsFormOpen(true);
@@ -139,29 +156,41 @@ export default function RecurringScreen() {
       setError('Enter a valid amount and choose a category.');
       return;
     }
+    if (!accountId) {
+      setError('Choose the account this posts into.');
+      return;
+    }
 
     const input = {
       type,
-      account,
+      accountId,
       amount: numericAmount,
-      currency,
+      currency: isForeignAccount && account ? account.currency : currency,
       category,
       source: source.trim() || 'Recurring',
       frequency,
       startDate,
     };
 
-    // Editing changes the rule going forward only; entries it already posted are untouched.
-    if (editing) {
-      await updateRecurringTransaction(editing.id, input);
-      if (isActive !== editing.isActive) {
-        await toggleRecurringTransaction(editing.id, isActive);
+    try {
+      // Editing changes the rule going forward only; entries it already posted are untouched.
+      if (editing) {
+        await updateRecurringTransaction(editing.id, input);
+        if (isActive !== editing.isActive) {
+          await toggleRecurringTransaction(editing.id, isActive);
+        }
+      } else {
+        const created = await addRecurringTransaction(input);
+        if (!isActive) {
+          await toggleRecurringTransaction(created.id, false);
+        }
       }
-    } else {
-      const created = await addRecurringTransaction(input);
-      if (!isActive) {
-        await toggleRecurringTransaction(created.id, false);
+    } catch (reason) {
+      if (reason instanceof AccountsError) {
+        setError(reason.message);
+        return;
       }
+      throw reason;
     }
 
     resetForm();
@@ -241,7 +270,7 @@ export default function RecurringScreen() {
                     </AppText>
                   </View>
                   <AppText style={[styles.ruleMeta, { color: colors.textMuted }]} numberOfLines={1}>
-                    {getFrequencyLabel(rule.frequency)} ·{' '}
+                    {accountName(rule.accountId, accounts)} · {getFrequencyLabel(rule.frequency)} ·{' '}
                     {rule.isActive
                       ? `Next: ${nextDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
                       : 'Paused'}
@@ -312,7 +341,13 @@ export default function RecurringScreen() {
                   accessibilityLabel="Amount"
                   invalid={amountInvalid}
                 />
-                <CurrencyPicker value={currency} onChange={setCurrency} />
+                {isForeignAccount && account ? (
+                  <View style={[styles.currencyPill, { backgroundColor: colors.bg, borderColor: colors.inputBorder }]}>
+                    <AppText style={[styles.currencyPillText, { color: colors.text }]}>{account.currency}</AppText>
+                  </View>
+                ) : (
+                  <CurrencyPicker value={currency} onChange={setCurrency} />
+                )}
               </View>
 
               <AppText style={label}>Category</AppText>
@@ -356,8 +391,12 @@ export default function RecurringScreen() {
 
               <FormInput value={source} onChangeText={setSource} placeholder="Source / place" accessibilityLabel="Source or place" />
 
-              <AppText style={label}>{type === 'income' ? 'Into' : 'Pay from'}</AppText>
-              <SegmentedControl options={ACCOUNT_OPTIONS} value={account} onChange={setAccount} />
+              <AppText style={label}>{type === 'income' ? 'Received in' : 'Paid from'}</AppText>
+              {usableAccounts.length === 0 ? (
+                <AppText style={[styles.ruleMeta, { color: colors.textMuted }]}>Add an account first: every rule posts into one.</AppText>
+              ) : (
+                <AccountChips accounts={usableAccounts} value={accountId} onChange={setAccountId} />
+              )}
 
               <AppText style={label}>Frequency</AppText>
               <SegmentedControl options={FREQUENCY_OPTIONS} value={frequency} onChange={setFrequency} />
@@ -392,6 +431,16 @@ export default function RecurringScreen() {
 }
 
 const styles = StyleSheet.create({
+  currencyPill: {
+    borderWidth: 1,
+    borderRadius: radius.button,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  currencyPillText: {
+    fontWeight: '700',
+    fontSize: 14,
+  },
   screen: {
     flex: 1,
   },

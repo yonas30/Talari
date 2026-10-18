@@ -1,7 +1,9 @@
 // Pure-function checks for the budget 80% warning: the threshold, the one-per-month id, the "seen" de-duplication, and that the
 // warning and the existing "over budget" alert never overlap. Reads the budget figures from getBudgetProgress; changes none of them.
 // Run: npx tsx scripts/verify-budget-alerts.ts
-import { Budget, ExchangeRate, Transaction, TransactionInput } from '../types';
+import { Budget, ExchangeRate } from '../types';
+import { AccountEntry } from '../types/accounts';
+import { EntryInput } from '../utils/accounts/entries';
 import { getBudgetProgress } from '../utils/currency';
 import {
   BUDGET_WARNING_PERCENT,
@@ -12,7 +14,7 @@ import {
   getBudgetAlerts,
   getBudgetWarnings,
 } from '../utils/notifications';
-import { planAdd } from '../utils/transactions';
+import { newFixture } from './support/fixture';
 
 let passed = 0;
 let failed = 0;
@@ -30,17 +32,20 @@ const jan = new Date(2026, 0, 15);
 const feb = new Date(2026, 1, 15);
 const budget = (category: string, limit: number, currency = 'ETB'): Budget => ({ id: `b-${category}`, category, monthlyLimit: limit, currency, createdAt: '', updatedAt: '' });
 
-function ledger(...inputs: TransactionInput[]): Transaction[] {
-  const rows: Transaction[] = [];
-  for (const input of inputs) rows.push(planAdd(rows, input, RATES, {}));
-  return rows;
+// Every entry is recorded in one Cash account through the real ledger rules; a step is built once the account's id is known.
+type Step = (accountId: string) => EntryInput;
+function ledger(...steps: Step[]): AccountEntry[] {
+  const f = newFixture(RATES);
+  const cash = f.account('Cash', 'cash');
+  for (const step of steps) f.add(step(cash));
+  return f.state().entries;
 }
-const salary: TransactionInput = { type: 'income', amount: 100000, currency: 'ETB', category: 'Salary', source: 'Job', account: 'available', date: '2025-12-01' };
-const spend = (amount: number, category = 'Food', date = '2026-01-05'): TransactionInput => ({
-  type: 'expense', amount, currency: 'ETB', category, account: 'available', date,
+const salary: Step = (accountId) => ({ type: 'income', accountId, amount: 100000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2025-12-01' });
+const spend = (amount: number, category = 'Food', date = '2026-01-05'): Step => (accountId) => ({
+  type: 'expense', accountId, amount, currency: 'ETB', category, date,
 });
-const warnings = (limit: number, rows: Transaction[], today = jan, currency = 'ETB') => getBudgetWarnings([budget('Food', limit, currency)], rows, RATES, today);
-const alerts = (limit: number, rows: Transaction[], today = jan) => getBudgetAlerts([budget('Food', limit)], rows, RATES, today);
+const warnings = (limit: number, rows: AccountEntry[], today = jan, currency = 'ETB') => getBudgetWarnings([budget('Food', limit, currency)], rows, RATES, today);
+const alerts = (limit: number, rows: AccountEntry[], today = jan) => getBudgetAlerts([budget('Food', limit)], rows, RATES, today);
 
 console.log('Budget 80% warning');
 

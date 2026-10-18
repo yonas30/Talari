@@ -1,20 +1,19 @@
 import { create } from 'zustand';
 
 import { markNotificationsRead } from '../db/database';
+import { AppNotification } from '../types/notifications';
+import { INITIAL_BALANCES_HIDDEN, toggleBalancesHidden } from '../utils/balanceVisibility';
+import {
+  clearAllNotifications as clearAllItems,
+  forgetReadIds as withoutReadIds,
+  markAllRead,
+  markRead,
+  mergeNotifications,
+  replaceGoalItems,
+} from '../utils/notificationList';
 
-export interface AppNotification {
-  id: string;
-  title: string;
-  description: string;
-  isRead: boolean;
-  type: 'budget' | 'system';
-  // Where tapping the notification goes (e.g. '/budgets'); none for purely informational ones.
-  route?: string;
-  // 'warning' = a budget at 80% or more (an alert icon, not the "over budget" wallet icon).
-  level?: 'warning';
-  // Read out instead of "title. description" when the plain text is not the best thing to say.
-  accessibilityLabel?: string;
-}
+// The shape lives in types/notifications.ts (goal notifications joined the budget alerts in Phase 5D).
+export type { AppNotification };
 
 export interface DevHomePreview {
   noSpending: boolean;
@@ -43,6 +42,12 @@ interface UiState {
   toggleBalanceVisibility: () => void;
   hydrateReadIds: (ids: string[]) => void;
   upsertNotifications: (items: AppNotification[]) => void;
+  // The saved goal notifications as they are now: the list gains the new ones and loses any that were deleted, expired or cleared.
+  replaceGoalNotifications: (items: AppNotification[]) => void;
+  // Their read records go when the notifications do.
+  forgetReadIds: (ids: string[]) => void;
+  // "Clear all": goal notifications leave the list, the (recomputed) budget alerts are marked read.
+  clearAllNotifications: () => void;
   removeNotificationsWhere: (predicate: (item: AppNotification) => boolean) => void;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
@@ -55,31 +60,33 @@ export const useUiStore = create<UiState>((set, get) => ({
   devHomePreview: NO_DEV_HOME_PREVIEW,
   setDevHomePreview: (patch) => set((state) => ({ devHomePreview: { ...state.devHomePreview, ...patch } })),
   // Balances start hidden every launch; the eye button reveals them (V2 Part I).
-  isBalanceHidden: true,
+  isBalanceHidden: INITIAL_BALANCES_HIDDEN,
   notifications: [],
   readIds: {},
   openDrawer: () => set({ isDrawerOpen: true }),
   closeDrawer: () => set({ isDrawerOpen: false }),
-  toggleBalanceVisibility: () => set((state) => ({ isBalanceHidden: !state.isBalanceHidden })),
+  toggleBalanceVisibility: () => set((state) => ({ isBalanceHidden: toggleBalancesHidden(state.isBalanceHidden) })),
   hydrateReadIds: (ids) =>
     set((state) => ({
       readIds: { ...state.readIds, ...Object.fromEntries(ids.map((id) => [id, true as const])) },
       notifications: state.notifications.map((item) => (ids.includes(item.id) ? { ...item, isRead: true } : item)),
     })),
+  // Seen once (this session or an earlier one) stays seen while the notification keeps existing (utils/notificationList.ts).
   upsertNotifications: (items) =>
-    set((state) => {
-      const existing = new Map(state.notifications.map((item) => [item.id, item]));
-      for (const item of items) {
-        const previous = existing.get(item.id);
-        existing.set(item.id, {
-          ...previous,
-          ...item,
-          // Seen once (this session or an earlier one) stays seen while the notification keeps existing.
-          isRead: Boolean(state.readIds[item.id]) || (previous?.isRead ?? item.isRead),
-        });
-      }
-      return { notifications: Array.from(existing.values()) };
-    }),
+    set((state) => ({ notifications: mergeNotifications(state.notifications, items, state.readIds, new Date().toISOString()) })),
+  replaceGoalNotifications: (items) =>
+    set((state) => ({ notifications: replaceGoalItems(state.notifications, items, state.readIds, new Date().toISOString()) })),
+  forgetReadIds: (ids) => set((state) => ({ readIds: withoutReadIds(state.readIds, ids) })),
+  clearAllNotifications: () => {
+    const unread = get().notifications.filter((item) => item.type !== 'goal' && !item.isRead).map((item) => item.id);
+    set((state) => ({
+      readIds: { ...state.readIds, ...Object.fromEntries(unread.map((id) => [id, true as const])) },
+      notifications: clearAllItems(state.notifications),
+    }));
+    if (unread.length > 0) {
+      markNotificationsRead(unread);
+    }
+  },
   removeNotificationsWhere: (predicate) =>
     set((state) => {
       const kept = state.notifications.filter((item) => !predicate(item));
@@ -92,7 +99,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     set((state) => ({
       readIds: { ...state.readIds, [id]: true },
-      notifications: state.notifications.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)),
+      notifications: markRead(state.notifications, [id]),
     }));
     markNotificationsRead([id]);
   },
@@ -103,7 +110,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     set((state) => ({
       readIds: { ...state.readIds, ...Object.fromEntries(unread.map((id) => [id, true as const])) },
-      notifications: state.notifications.map((notification) => ({ ...notification, isRead: true })),
+      notifications: markAllRead(state.notifications),
     }));
     markNotificationsRead(unread);
   },

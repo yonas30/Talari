@@ -7,7 +7,7 @@ import AppText from '../components/AppText';
 import Card from '../components/Card';
 import { useFinanceStore } from '../store/finance';
 import { useTheme } from '../theme/ThemeProvider';
-import { calculateBuilderStreak } from '../utils/currency';
+import { calculateStreak } from '../utils/accounts/totals';
 import { formatDateKey, formatNumber } from '../utils/format';
 
 // 'YYYY-MM' -> 'September 2026'
@@ -18,9 +18,9 @@ function formatMonthKey(key: string): string {
 
 export default function JourneyScreen() {
   const { colors } = useTheme();
-  const { milestones, monthlySnapshots, transactions } = useFinanceStore();
+  const { milestones, monthlySnapshots, transactions, allocations } = useFinanceStore();
 
-  const longestStreak = useMemo(() => calculateBuilderStreak(transactions), [transactions]);
+  const longestStreak = useMemo(() => calculateStreak(transactions, allocations), [transactions, allocations]);
 
   const incomeGrowth = useMemo(() => {
     if (monthlySnapshots.length < 2) {

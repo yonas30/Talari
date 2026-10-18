@@ -9,7 +9,7 @@ import AppHeader from '../components/AppHeader';
 import AppText from '../components/AppText';
 import Button from '../components/Button';
 import Card from '../components/Card';
-import { exportAllData, importAllData, BackupPayload } from '../db/database';
+import { exportBackup, restoreBackupPayload } from '../db/database';
 import { useFinanceStore } from '../store/finance';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -17,12 +17,13 @@ export default function ExportDataScreen() {
   const { colors } = useTheme();
   const loadData = useFinanceStore((state) => state.loadData);
   const transactions = useFinanceStore((state) => state.transactions);
+  const accounts = useFinanceStore((state) => state.accounts);
   const [isBusy, setIsBusy] = useState(false);
 
   const onExport = async () => {
     setIsBusy(true);
     try {
-      const payload = await exportAllData();
+      const payload = await exportBackup();
       const file = new File(Paths.cache, `talari-backup-${Date.now()}.json`);
       if (file.exists) {
         file.delete();
@@ -46,15 +47,35 @@ export default function ExportDataScreen() {
   const onExportCsv = async () => {
     setIsBusy(true);
     try {
-      // amount/currency are what was entered; amount_etb is the value every balance and report uses.
-      const header = 'date,type,category,amount,currency,amount_etb,exchange_rate,account,from,to,source,note';
+      // amount/currency are the amount in the account's currency (or what was entered, for a foreign amount on an ETB account); amount_etb is
+      // the value reports use. A transfer has two legs: account / amount is the one it leaves, to_account / to_amount / to_currency the one
+      // it arrives in. fee_of_transfer is set on a transfer's fee row and holds the id of that transfer. Opening balances and adjustments are
+      // included (type opening / adjustment): they count in an account's balance.
+      const quote = (value: string) => `"${value.replace(/"/g, '""')}"`;
+      const nameOf = (id: string | null) => accounts.find((account) => account.id === id)?.name ?? '';
+      const currencyOf = (id: string | null) => accounts.find((account) => account.id === id)?.currency ?? '';
+      const header = 'date,type,category,account,amount,currency,amount_etb,exchange_rate,to_account,to_amount,to_currency,fee_of_transfer,source,note';
       const rows = transactions.map((item) => {
-        const note = (item.note ?? '').replace(/"/g, '""');
-        const source = item.source.replace(/"/g, '""');
-        const category = item.category.replace(/"/g, '""');
-        const endpoint = (account: string | null, goalId: string | null) =>
-          account === 'goal' ? `goal:${goalId ?? ''}` : (account ?? '');
-        return `${item.date},${item.type},"${category}",${item.amount},${item.currency},${item.amountETB},${item.exchangeRate},${item.account ?? ''},${endpoint(item.fromAccount, item.fromGoalId)},${endpoint(item.toAccount, item.toGoalId)},"${source}","${note}"`;
+        const account = item.type === 'transfer' ? nameOf(item.fromAccountId) : nameOf(item.accountId);
+        const toAccount = item.type === 'transfer' ? nameOf(item.toAccountId) : '';
+        const toAmount = item.type === 'transfer' && item.toAmount !== null ? item.toAmount : '';
+        const toCurrency = item.type === 'transfer' ? currencyOf(item.toAccountId) : '';
+        return [
+          item.date,
+          item.type,
+          quote(item.category),
+          quote(account),
+          item.amount,
+          item.currency,
+          item.amountETB,
+          item.exchangeRate,
+          quote(toAccount),
+          toAmount,
+          toCurrency,
+          item.linkedTransferId ?? '',
+          quote(item.source),
+          quote(item.note ?? ''),
+        ].join(',');
       });
       const csv = [header, ...rows].join('\n');
 
@@ -92,15 +113,13 @@ export default function ExportDataScreen() {
 
       const file = new File(result.assets[0].uri);
       const contents = await file.text();
-      const payload = JSON.parse(contents) as BackupPayload;
+      const payload: unknown = JSON.parse(contents);
 
-      if (!payload || !Array.isArray(payload.transactions)) {
-        throw new Error('This file does not look like a valid backup.');
-      }
-
-      await importAllData(payload);
+      // Reads a version 3 backup, or an older one (which lands in one "Cash" account); refuses anything that would break the ledger, with
+      // nothing changed. The message says exactly what was done.
+      const message = await restoreBackupPayload(payload);
       await loadData();
-      Alert.alert('Import complete', 'Your data has been restored from the backup.');
+      Alert.alert('Import complete', message);
     } catch (error) {
       Alert.alert('Import failed', error instanceof Error ? error.message : 'Unknown error');
     } finally {
@@ -122,7 +141,7 @@ export default function ExportDataScreen() {
             </AppText>
           </View>
           <AppText style={[styles.description, { color: colors.textMuted }]}>
-            Save a copy of all your transactions, categories, goals, and budgets as a JSON file you can keep safe or move to another device.
+            Save a copy of all your accounts, transactions, categories, goals, and budgets as a JSON file you can keep safe or move to another device.
           </AppText>
           <Button title="Export backup (JSON)" variant="primary" onPress={() => void onExport()} disabled={isBusy} />
           <Button title="Export transactions (CSV)" variant="secondary" onPress={() => void onExportCsv()} disabled={isBusy} />

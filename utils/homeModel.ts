@@ -1,8 +1,9 @@
 import { TransactionType } from '../types';
+import { AccountEntry } from '../types/accounts';
 import { formatETB, formatNumber } from './format';
 
 // Pure presentation rules for the Home screen. Nothing here calculates money: balances, monthly totals and the category
-// breakdown still come from the existing selectors (utils/balances, utils/currency, utils/reports); this file only decides how
+// breakdown come from the selectors (utils/accounts/totals, utils/currency, utils/reports); this file only decides how
 // those numbers are grouped, rounded for display, signed and when a line is shown. Kept free of React Native so
 // scripts/verify-home.ts can check it.
 
@@ -117,6 +118,22 @@ export function formatTransactionAmount(type: TransactionType, amountETB: number
   return role === 'expense' ? `${MINUS}${text}` : role === 'income' ? `+${text}` : text;
 }
 
+/** How a ledger row is drawn: income green, expense red, everything else (transfer, opening balance, adjustment) neutral. */
+export function entryAmountRole(entry: Pick<AccountEntry, 'type'>): AmountRole {
+  return entry.type === 'income' || entry.type === 'expense' || entry.type === 'transfer' ? transactionAmountRole(entry.type) : 'transfer';
+}
+
+/** The signed ETB amount of a ledger row for a list: opening "+", adjustment by its own sign, the rest as formatTransactionAmount. */
+export function formatEntryAmount(entry: Pick<AccountEntry, 'type' | 'amountETB'>): string {
+  if (entry.type === 'opening') {
+    return `+${formatETB(Math.abs(entry.amountETB))}`;
+  }
+  if (entry.type === 'adjustment') {
+    return `${entry.amountETB < 0 ? MINUS : '+'}${formatETB(Math.abs(entry.amountETB))}`;
+  }
+  return formatTransactionAmount(entry.type, entry.amountETB);
+}
+
 /** This month's Net with an explicit sign. It is always drawn in the Net (blue) colour; the sign carries the meaning. */
 export function formatNet(net: number): string {
   const rounded = Math.round(net * 100) / 100;
@@ -126,19 +143,19 @@ export function formatNet(net: number): string {
 }
 
 // ---- hero card ----------------------------------------------------------------------------------------------------------
-/** Money held in goals, from the per-goal balances the ledger already derives. Rounded to cents. */
+/** Money reserved for goals, from the per-goal amounts the allocations already derive. Rounded to cents. */
 export function goalsTotal(goals: Record<string, number>): number {
   const cents = Object.values(goals).reduce((sum, value) => sum + Math.round(value * 100), 0);
   return cents / 100;
 }
 
-/** The "Includes ETB x in goals" caption: only when goals hold money AND balances are visible. */
+/** The "Includes ETB x reserved for goals" caption: only when goals hold money AND balances are visible. */
 export function shouldShowGoalsLine(goalsAmount: number, balancesHidden: boolean): boolean {
   return goalsAmount > 0 && !balancesHidden;
 }
 
 export function goalsLineText(goalsAmount: number): string {
-  return `Includes ${formatETB(goalsAmount)} in goals`;
+  return `Includes ${formatETB(goalsAmount)} reserved for goals`;
 }
 
 // ---- the shared spending donut ----------------------------------------------------------------------------------------------

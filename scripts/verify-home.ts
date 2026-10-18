@@ -1,13 +1,20 @@
 // Checks the pure rules behind the redesigned Home screen. Run: npx tsx scripts/verify-home.ts
-import { ExchangeRate, Transaction, TransactionInput } from '../types';
-import { getBalances } from '../utils/balances';
+import { planAddToGoal, planCreateGoal } from '../utils/accounts/goals';
+import { accountsRouteFor, accountSubtitle, groupAccounts, parseTypeFilter, reservedLabel, staleRateNote, tileAccessibilityLabel, typeSubtotals, unvaluedNote } from '../utils/accounts/groups';
+import { getGoalAmounts } from '../utils/accounts/reserve';
+import { getTotals } from '../utils/accounts/totals';
 import { getCurrentPeriodSummary } from '../utils/currency';
+import { balanceToggleLabel, INITIAL_BALANCES_HIDDEN, toggleBalancesHidden } from '../utils/balanceVisibility';
+import { formatETB, formatMoney, formatNumber, HIDDEN_AMOUNT, maskAmount } from '../utils/format';
+import { newFixture } from './support/fixture';
 import {
   AMOUNT_COLUMN_MIN_LEGEND_WIDTH,
   buildSpendingSlices,
   DONUT_SLICE_GAP,
   DONUT_STROKE_SHARE,
   donutSizeFor,
+  entryAmountRole,
+  formatEntryAmount,
   HOME_DONUT_RULE,
   showAmountColumn,
   formatNet,
@@ -19,7 +26,6 @@ import {
   spendingAccessibilityLabel,
   transactionAmountRole,
 } from '../utils/homeModel';
-import { planAdd } from '../utils/transactions';
 
 let passed = 0;
 let failed = 0;
@@ -94,52 +100,123 @@ check('Net negative: explicit minus (and it stays the Net role, see below)', for
 check('Net zero: no sign', formatNet(0) === '0.00' && formatNet(-0) === '0.00' && formatNet(0.004) === '0.00');
 check('Net small negative rounds before signing', formatNet(-0.006) === '−0.01');
 
-// ---- hero: Total = Available + Saved + goals, and the goals line ----------------------------------------------------------
-const RATES: ExchangeRate[] = [{ id: 'USD-ETB', fromCurrency: 'USD', toCurrency: 'ETB', rate: 55, updatedAt: '2026-01-01T00:00:00Z' }];
-const GOAL_NAMES = { laptop: 'Laptop', trip: 'Trip' };
-function ledgerOf(...inputs: TransactionInput[]): Transaction[] {
-  const ledger: Transaction[] = [];
-  for (const input of inputs) {
-    ledger.push(planAdd(ledger, input, RATES, GOAL_NAMES));
-  }
-  return ledger;
+// ---- hero: Total = the sum of the accounts, the Cash / Wallet / Bank tiles, the notes -----------------------------------------------
+const NOW = new Date(2026, 0, 20);
+function rich() {
+  const f = newFixture();
+  const cash = f.account('Cash', 'cash', 'ETB', 1200, '2026-01-01');
+  const tele = f.account('Telebirr', 'wallet', 'ETB', 8160, '2026-01-01');
+  const paypal = f.account('PayPal', 'wallet', 'USD', 45, '2026-01-01');
+  const cbe = f.account('CBE', 'bank', 'ETB', 78123, '2026-01-01');
+  const boa = f.account('BOA', 'bank', 'ETB', 12400, '2026-01-01');
+  return { f, cash, tele, paypal, cbe, boa };
 }
-const inc = (amount: number, account: 'available' | 'saved', date = '2026-01-01', currency = 'ETB'): TransactionInput => ({
-  type: 'income', amount, currency, category: 'Salary', source: 'Job', account, date,
-});
-const exp = (amount: number, date = '2026-01-02'): TransactionInput => ({ type: 'expense', amount, currency: 'ETB', category: 'Food', account: 'available', date });
-const move = (amount: number, from: 'available' | 'saved' | 'goal', to: 'available' | 'saved' | 'goal', goalId = 'laptop', date = '2026-01-03'): TransactionInput => ({
-  type: 'transfer', amount, currency: 'ETB', fromAccount: from, toAccount: to,
-  fromGoalId: from === 'goal' ? goalId : null, toGoalId: to === 'goal' ? goalId : null, date,
-});
+{
+  const { f, cbe } = rich();
+  const totals = getTotals(f.state(), NOW);
+  const subs = typeSubtotals(totals.accounts);
+  check('Total = the sum of the Cash / Wallet / Bank tiles (every account counted once)', Math.round(totals.total * 100) === Math.round((subs.cash + subs.wallet + subs.bank) * 100), `${totals.total}`);
+  check('tiles: Cash 1,200; Wallet 8,160 + 45 USD x 55 = 10,635; Bank 78,123 + 12,400 = 90,523', subs.cash === 1200 && subs.wallet === 10635 && subs.bank === 90523);
+  check('Total = 102,358', totals.total === 102358);
+  check('groups come in the order Cash, Wallet, Bank, each with its accounts', groupAccounts(totals.accounts).map((g) => `${g.label}:${g.accounts.length}`).join() === 'Cash:1,Wallet:2,Bank:2');
+  const onlyCash = newFixture();
+  onlyCash.account('Cash', 'cash', 'ETB', 50, '2026-01-01');
+  const oneGroup = groupAccounts(getTotals(onlyCash.state(), NOW).accounts);
+  check('a type with no accounts is left out of the tiles; its subtotal is 0', oneGroup.length === 1 && oneGroup[0].type === 'cash' && typeSubtotals(getTotals(onlyCash.state(), NOW).accounts).bank === 0);
+  const empty = getTotals(newFixture().state(), NOW);
+  check('no accounts: Total 0, no groups, no notes', empty.total === 0 && groupAccounts(empty.accounts).length === 0 && staleRateNote(empty) === null && unvaluedNote(empty) === null);
 
-const scenarios: [string, Transaction[]][] = [
-  ['empty ledger', []],
-  ['income only', ledgerOf(inc(70000, 'available'), inc(30000, 'saved'))],
-  ['with a goal holding money', ledgerOf(inc(70000, 'available'), inc(30000, 'saved'), move(5000, 'saved', 'goal'))],
-  ['two goals, an expense and a foreign-currency income', ledgerOf(inc(100000, 'available'), inc(100, 'saved', '2026-01-01', 'USD'), move(2500.5, 'available', 'goal', 'laptop'), move(1000, 'available', 'goal', 'trip'), exp(333.33))],
-  ['goal money moved back out', ledgerOf(inc(10000, 'available'), move(4000, 'available', 'goal'), move(1500, 'goal', 'saved'))],
-  ['cents', ledgerOf(inc(0.1, 'available'), inc(0.2, 'saved'), move(0.05, 'available', 'goal'))],
-];
-for (const [name, ledger] of scenarios) {
-  const balances = getBalances(ledger);
-  const goalsAmount = goalsTotal(balances.goals);
-  const lhs = Math.round(balances.total * 100);
-  const rhs = Math.round(balances.available * 100) + Math.round(balances.saved * 100) + Math.round(goalsAmount * 100);
-  check(`Total = Available + Saved + goals (${name})`, lhs === rhs, `${lhs} vs ${rhs}`);
+  // reserved money: part of the Total, never added again
+  const withGoal = planCreateGoal(f.state(), { name: 'Car', targetAmount: 20000, heldInAccountId: cbe }, f.ctx);
+  const reserved = planAddToGoal(withGoal.state, withGoal.goal.id, 4500, f.ctx).state;
+  const after = getTotals(reserved, NOW);
+  const goalAmounts = getGoalAmounts(reserved.allocations);
+  check('reserving 4,500 for a goal leaves the Total at 102,358 (it is still in the account)', after.total === 102358);
+  check('goalsTotal reads the per-goal amounts: 4,500', goalsTotal(goalAmounts) === 4500);
+  check('the reserved pill names the goal when one goal holds it', reservedLabel(cbe, 4500, reserved.goals, goalAmounts, formatNumber) === '4,500.00 reserved for Car');
+  const second = planCreateGoal(reserved, { name: 'Trip', targetAmount: 100, heldInAccountId: cbe }, f.ctx);
+  const both = planAddToGoal(second.state, second.goal.id, 50, f.ctx).state;
+  check('...and says "goals" when more than one holds money there', reservedLabel(cbe, 4550, both.goals, getGoalAmounts(both.allocations), formatNumber) === '4,550.00 reserved for goals');
+  check('nothing reserved: no pill', reservedLabel(cbe, 0, reserved.goals, goalAmounts, formatNumber) === null);
+
+  // the notes under the total
+  const old = getTotals({ ...f.state(), rates: [{ id: 'USD-ETB', fromCurrency: 'USD', toCurrency: 'ETB', rate: 55, updatedAt: new Date(2026, 0, 10).toISOString() }] }, NOW);
+  check('a foreign rate 10 days old shows "Rate last updated 10 days ago"', staleRateNote(old) === 'Rate last updated 10 days ago');
+  check('a fresh rate shows no note', staleRateNote(getTotals(f.state(), new Date(2026, 0, 2))) === null);
+  check('several old rates say so in one line', staleRateNote({ staleRates: [{ currency: 'USD', ageDays: 9 }, { currency: 'EUR', ageDays: 14 }] }) === 'Exchange rates last updated up to 14 days ago');
+  const noRate = getTotals({ ...f.state(), rates: [] }, NOW);
+  check('an account that cannot be valued is named and left out of the Total', unvaluedNote(noRate) === 'Not in the total (no exchange rate): PayPal' && noRate.total === 102358 - 2475);
+  check('account lines: ETB shows its type, a foreign account its own balance', accountSubtitle(totals.accounts[0], formatMoney) === 'Cash' && accountSubtitle(totals.accounts.find((x) => x.account.currency === 'USD')!, formatMoney) === 'Wallet · USD 45.00');
 }
-const withGoal = getBalances(scenarios[2][1]);
-check('goalsTotal reads the per-goal balances', goalsTotal(withGoal.goals) === 5000 && withGoal.saved === 25000 && withGoal.total === 100000);
+// ---- the Home tiles are the way into the accounts (there is no separate accounts card) ------------------------------------------------
+check('each tile leads to the Accounts screen on its own type', (['cash', 'wallet', 'bank'] as const).every((type) => accountsRouteFor(type).pathname === '/accounts' && accountsRouteFor(type).params.type === type));
+check('the type a tile passes is read back as the same filter (round trip for all three)', (['cash', 'wallet', 'bank'] as const).every((type) => parseTypeFilter(accountsRouteFor(type).params.type) === type));
+check('no filter, an empty param (the "Show all" link), a wrong case or an unknown type all mean "show every account"', parseTypeFilter(undefined) === null && parseTypeFilter('') === null && parseTypeFilter('Bank') === null && parseTypeFilter('savings') === null && parseTypeFilter('goal') === null);
+check('a repeated param uses the first value', parseTypeFilter(['wallet', 'cash']) === 'wallet' && parseTypeFilter([]) === null);
+check('tile label: name, subtotal and where it leads', tileAccessibilityLabel({ label: 'Bank', subtotalETB: 90523 }, false, formatETB) === 'Bank, ETB 90,523.00. Opens your bank accounts.');
+check('tile label with balances hidden does not read the amount out', tileAccessibilityLabel({ label: 'Cash', subtotalETB: 1200 }, true, formatETB) === 'Cash, amount hidden. Opens your cash accounts.' && !tileAccessibilityLabel({ label: 'Cash', subtotalETB: 1200 }, true, formatETB).includes('1,200'));
+check('the tiles are still exactly the account groups that exist (one tile per type that has an account)', (() => {
+  const { f } = rich();
+  return groupAccounts(getTotals(f.state(), NOW).accounts).map((g) => g.type).join() === 'cash,wallet,bank';
+})());
+// ---- hidden balances: ONE shared flag, so Home and the Accounts screens always agree -------------------------------------------------
+console.log('Hidden balances: the shared flag');
+check('balances start hidden (every launch)', INITIAL_BALANCES_HIDDEN === true);
+check('the eye flips it, and flips it back', toggleBalancesHidden(true) === false && toggleBalancesHidden(false) === true && toggleBalancesHidden(toggleBalancesHidden(true)) === true);
+check('the eye button says what it will do: "Show balances" while hidden, "Hide balances" while shown', balanceToggleLabel(true) === 'Show balances' && balanceToggleLabel(false) === 'Hide balances');
+check('hidden: an amount becomes the mask and none of its digits survive; shown: the text is untouched', maskAmount('ETB 1,200.00', true) === HIDDEN_AMOUNT && !/\d/.test(maskAmount('ETB 1,200.00', true)) && maskAmount('ETB 1,200.00', false) === 'ETB 1,200.00');
+check('opening an account from a Home tile cannot change the flag: the route carries only the type', (['cash', 'wallet', 'bank'] as const).every((type) => Object.keys(accountsRouteFor(type).params).join() === 'type'));
+
+// The screens must really use that one flag and one masking helper (a screen with its own copy of the state, or its own mask, would drift).
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const fs = require('node:fs') as { readFileSync(path: string, encoding: 'utf8'): string };
+const source = (file: string): string => fs.readFileSync(`${process.cwd()}/${file}`, 'utf8');
+const readsSharedFlag = /useUiStore\(\((\w+)\) => \1\.isBalanceHidden\)/;
+const hasOwnHiddenState = /useState(<boolean>)?\([^)]*\)[^\n]*[Hh]idden|[Hh]idden[^\n]*useState/;
+for (const file of ['app/(tabs)/index.tsx', 'app/accounts.tsx', 'app/account/[id].tsx']) {
+  const text = source(file);
+  check(`${file}: reads the shared hidden flag from the UI store`, readsSharedFlag.test(text));
+  check(`${file}: has no hidden-balances state of its own`, !hasOwnHiddenState.test(text));
+}
+for (const file of ['components/home/HeroCard.tsx', 'components/accounts/AccountRow.tsx', 'app/accounts.tsx', 'app/account/[id].tsx']) {
+  const text = source(file);
+  check(`${file}: masks amounts with the shared maskAmount (no private mask)`, text.includes('maskAmount(') && !text.includes('HIDDEN_AMOUNT'));
+}
+const ui = source('store/ui.ts');
+check('the UI store holds the flag with the shared start value and toggle rule', ui.includes('isBalanceHidden: INITIAL_BALANCES_HIDDEN') && ui.includes('toggleBalancesHidden(state.isBalanceHidden)'));
+check('the Accounts screen has the eye in its header', /<AppHeader[^>]*title="Accounts"[^>]*showBalanceToggle/.test(source('app/accounts.tsx')));
+const header = source('components/AppHeader.tsx');
+check('the header eye toggles the shared flag and is labelled by the shared rule', header.includes('onPress={toggleBalanceVisibility}') && header.includes('accessibilityLabel={balanceToggleLabel(isBalanceHidden)}') && header.includes('state.isBalanceHidden'));
+check('Home keeps its own eye on the same flag', source('app/(tabs)/index.tsx').includes('onToggleHidden={toggleBalanceVisibility}'));
+check('what is hidden is unchanged: the Accounts total, the group subtotals and every row amount go through the mask', (() => {
+  const text = source('app/accounts.tsx');
+  return text.includes('mask(formatETB(totals.total))') && text.includes('mask(formatNumber(group.subtotalETB))') && text.includes('hidden={isBalanceHidden}');
+})());
+check('transaction lists are untouched: their amounts do not read the hidden flag', !source('components/home/RecentList.tsx').includes('isBalanceHidden') && !source('app/(tabs)/transactions.tsx').includes('isBalanceHidden'));
+
 check('goalsTotal of nothing is 0', goalsTotal({}) === 0);
 check('goalsTotal sums in cents (no float drift)', goalsTotal({ a: 0.1, b: 0.2 }) === 0.3);
 check('goals line: shown only when goals > 0 AND balances visible', shouldShowGoalsLine(5000, false) && !shouldShowGoalsLine(5000, true) && !shouldShowGoalsLine(0, false) && !shouldShowGoalsLine(0, true));
-check('goals line text', goalsLineText(5000) === 'Includes ETB 5,000.00 in goals' && goalsLineText(2500.5) === 'Includes ETB 2,500.50 in goals');
+check('goals line text', goalsLineText(5000) === 'Includes ETB 5,000.00 reserved for goals' && goalsLineText(2500.5) === 'Includes ETB 2,500.50 reserved for goals');
+
+// ---- list rows: the system rows are neutral and signed ----------------------------------------------------------------------------
+check('opening balance: neutral colour, plus sign', entryAmountRole({ type: 'opening' }) === 'transfer' && formatEntryAmount({ type: 'opening', amountETB: 100 }) === '+ETB 100.00');
+check('adjustment: neutral colour, its own sign', entryAmountRole({ type: 'adjustment' }) === 'transfer' && formatEntryAmount({ type: 'adjustment', amountETB: -5 }) === '−ETB 5.00' && formatEntryAmount({ type: 'adjustment', amountETB: 5 }) === '+ETB 5.00');
+check('income / expense / transfer rows are drawn as before', formatEntryAmount({ type: 'income', amountETB: 1234.5 }) === '+ETB 1,234.50' && formatEntryAmount({ type: 'expense', amountETB: 200 }) === '−ETB 200.00' && formatEntryAmount({ type: 'transfer', amountETB: 50 }) === 'ETB 50.00' && entryAmountRole({ type: 'income' }) === 'income' && entryAmountRole({ type: 'expense' }) === 'expense');
 
 // ---- this month: Net = Income - Expenses --------------------------------------------------------------------------------
-const now = new Date(2026, 0, 20);
-const month = getCurrentPeriodSummary(ledgerOf(inc(5000, 'available', '2025-12-01'), inc(1000, 'available', '2026-01-05'), exp(1200, '2026-01-06')), now);
-check('Net comes from the existing summary and is negative here', month.net === -200 && formatNet(month.net) === '−200.00');
-const calm = getCurrentPeriodSummary(ledgerOf(inc(5000, 'available', '2025-12-01'), inc(1000, 'available', '2026-01-05'), exp(400, '2026-01-06')), now);
+function monthOf(expense: number) {
+  const f = newFixture();
+  const id = f.account('Cash', 'cash', 'ETB', 0);
+  f.add({ type: 'income', accountId: id, amount: 5000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2025-12-01' });
+  f.add({ type: 'income', accountId: id, amount: 1000, currency: 'ETB', category: 'Salary', source: 'Job', date: '2026-01-05' });
+  f.add({ type: 'expense', accountId: id, amount: expense, currency: 'ETB', category: 'Food', date: '2026-01-06' });
+  f.add({ type: 'adjustment', accountId: id, amount: -300, date: '2026-01-07' });
+  return getCurrentPeriodSummary(f.state().entries, f.state().allocations, NOW);
+}
+const month = monthOf(1200);
+check('Net is negative here, and an adjustment is not an expense', month.net === -200 && month.income === 1000 && month.expenses === 1200 && formatNet(month.net) === '−200.00');
+const calm = monthOf(400);
 check('Net positive here', calm.net === 600 && formatNet(calm.net) === '+600.00');
 
 // ---- the shared donut: Home keeps exactly today's numbers (before/after) ---------------------------------------------------

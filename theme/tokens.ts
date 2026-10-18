@@ -81,7 +81,22 @@ export interface ThemeColors {
   /** Disc behind the flame (solid orange in Light, none in Dark) and the colour of the subtitle on the streak card. */
   streakDisc: string;
   streakMuted: string;
+  /**
+   * Account types (Cash gold, Wallet orange, Bank teal). Disc = the pale 16% tint behind an account's icon; Glyph = the icon drawn on it
+   * (graphics need 3:1); Dot = the small colour dot beside an account name on a card or a chip. Read them by type with accountColors().
+   */
+  cashDisc: string;
+  cashGlyph: string;
+  cashDot: string;
+  walletDisc: string;
+  walletGlyph: string;
+  walletDot: string;
+  bankDisc: string;
+  bankGlyph: string;
+  bankDot: string;
 }
+
+import type { AccountType } from '../types/accounts';
 
 // Brand fills: icon circles, chart slices, dots. Same in both schemes (they are never text).
 export const brandFills = {
@@ -92,6 +107,13 @@ export const brandFills = {
   transfer: '#7A6AA8',
   goals: '#71805A',
 } as const;
+
+// The brand colour of each account type. This is also the value stored in the `colour` column of a new account (saved data, like
+// storedCategoryColors below); screens draw accounts from the per-scheme tokens, not from this.
+export const accountFills = { cash: '#D4A72C', wallet: '#F47C20', bank: '#2A9D9D' } as const satisfies Record<AccountType, string>;
+
+// The same three colours as dots on the navy Total Balance card (navy in both schemes), lightened to read there (3:1 or more).
+export const accountHeroDots = { cash: '#E0B84A', wallet: '#F47C20', bank: '#4CC2C2' } as const satisfies Record<AccountType, string>;
 
 // The colour stored with a NEW category (the `color` column of the categories table). It is saved data, not a display colour: the app now
 // draws category discs from the tokens above, but the stored values stay exactly what they were so no saved or backed-up data changes.
@@ -161,6 +183,15 @@ export const lightColors: ThemeColors = {
   streakAccent: '#17233C',
   streakDisc: '#F47C20',
   streakMuted: '#17233C',
+  cashDisc: withAlpha(accountFills.cash, DISC_ALPHA),
+  cashGlyph: '#A8800F',
+  cashDot: '#A8800F',
+  walletDisc: withAlpha(accountFills.wallet, DISC_ALPHA),
+  walletGlyph: '#D9660A',
+  walletDot: '#D9660A',
+  bankDisc: withAlpha(accountFills.bank, DISC_ALPHA),
+  bankGlyph: '#1F7F7F',
+  bankDot: '#1F7F7F',
 };
 
 export const darkColors: ThemeColors = {
@@ -216,6 +247,26 @@ export const darkColors: ThemeColors = {
   streakAccent: '#F47C20',
   streakDisc: 'transparent',
   streakMuted: '#AEB5C2',
+  cashDisc: withAlpha(accountFills.cash, DISC_ALPHA),
+  cashGlyph: '#E0B84A',
+  cashDot: '#E0B84A',
+  walletDisc: withAlpha(accountFills.wallet, DISC_ALPHA),
+  walletGlyph: '#F58A3A',
+  walletDot: '#F58A3A',
+  bankDisc: withAlpha(accountFills.bank, DISC_ALPHA),
+  bankGlyph: '#4CC2C2',
+  bankDot: '#4CC2C2',
 };
 
 export const palettes: Record<ThemeScheme, ThemeColors> = { light: lightColors, dark: darkColors };
+
+// The three colours of one account type, in the given scheme.
+export function accountColors(colors: ThemeColors, type: AccountType): { disc: string; glyph: string; dot: string } {
+  if (type === 'cash') {
+    return { disc: colors.cashDisc, glyph: colors.cashGlyph, dot: colors.cashDot };
+  }
+  if (type === 'wallet') {
+    return { disc: colors.walletDisc, glyph: colors.walletGlyph, dot: colors.walletDot };
+  }
+  return { disc: colors.bankDisc, glyph: colors.bankGlyph, dot: colors.bankDot };
+}

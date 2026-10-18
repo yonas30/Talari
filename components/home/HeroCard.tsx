@@ -2,27 +2,38 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '../../theme/ThemeProvider';
-import { formatETB, HIDDEN_AMOUNT } from '../../utils/format';
+import { accountHeroDots } from '../../theme/tokens';
+import { balanceToggleLabel } from '../../utils/balanceVisibility';
+import { AccountType } from '../../types/accounts';
+import { AccountGroup, tileAccessibilityLabel } from '../../utils/accounts/groups';
+import { formatETB, formatNumber, maskAmount } from '../../utils/format';
 import { goalsLineText, shouldShowGoalsLine } from '../../utils/homeModel';
 import AppText from '../AppText';
 import Card from '../Card';
 
 interface HeroCardProps {
   total: number;
-  available: number;
-  saved: number;
-  /** Money held in goals (already part of the total). */
-  goalsAmount: number;
+  // Cash / Wallet / Bank, only the types that have accounts, each with its ETB subtotal.
+  groups: Pick<AccountGroup, 'type' | 'label' | 'subtotalETB'>[];
+  /** Money reserved for goals (already part of the total). */
+  reservedAmount: number;
+  /** "Rate last updated X days ago": shown when a foreign rate is more than 7 days old. */
+  rateNote: string | null;
+  /** Accounts left out of the total because they have no exchange rate. */
+  unvaluedNote: string | null;
   hidden: boolean;
   onToggleHidden: () => void;
+  /** A tap on a tile opens the Accounts screen on that type. */
+  onOpenType: (type: AccountType) => void;
 }
 
-// The navy Total Balance card: the total, then Available and Saved side by side. Goals are not a column here; when they hold money a
-// small line says how much of the total they account for. Hidden balances mask every amount, that line included.
-// Sizes: total 30 sp, columns 16 sp, padding 16 dp - about 160 dp tall without the goals line.
-export default function HeroCard({ total, available, saved, goalsAmount, hidden, onToggleHidden }: HeroCardProps) {
+// The navy Total Balance card: the total, then a tile per account type (Cash / Wallet / Bank) with its subtotal; tapping a tile opens the
+// Accounts screen on that type, so this card is also the way into the accounts. Goals are not a tile; when
+// money is reserved for them a small line says how much of the total that is. Hidden balances mask every amount, that line included.
+// The two notes (an old exchange rate, an account that cannot be valued) are not amounts, so they stay visible.
+export default function HeroCard({ total, groups, reservedAmount, rateNote, unvaluedNote, hidden, onToggleHidden, onOpenType }: HeroCardProps) {
   const { colors } = useTheme();
-  const mask = (value: number) => (hidden ? HIDDEN_AMOUNT : formatETB(value));
+  const mask = (value: number) => maskAmount(formatETB(value), hidden);
 
   return (
     <Card variant="hero" style={styles.card}>
@@ -32,7 +43,7 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
           onPress={onToggleHidden}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel={hidden ? 'Show balances' : 'Hide balances'}
+          accessibilityLabel={balanceToggleLabel(hidden)}
           style={({ pressed }) => (pressed ? { opacity: 0.6 } : null)}
         >
           <Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.heroText} />
@@ -50,38 +61,54 @@ export default function HeroCard({ total, available, saved, goalsAmount, hidden,
         {mask(total)}
       </AppText>
 
-      <View style={[styles.divider, { backgroundColor: colors.heroDivider }]} />
+      {rateNote ? (
+        <AppText style={[styles.note, { color: colors.heroTextMuted }]} numberOfLines={2}>
+          {rateNote}
+        </AppText>
+      ) : null}
 
-      <View style={styles.columns}>
-        <View style={styles.column}>
-          <AppText style={[styles.columnLabel, { color: colors.heroTextMuted }]}>Available</AppText>
-          <AppText
-            variant="number"
-            style={[styles.columnValue, { color: colors.heroText }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.5}
-          >
-            {mask(available)}
-          </AppText>
-        </View>
-        <View style={styles.column}>
-          <AppText style={[styles.columnLabel, { color: colors.heroTextMuted }]}>Saved</AppText>
-          <AppText
-            variant="number"
-            style={[styles.columnValue, { color: colors.heroText }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.5}
-          >
-            {mask(saved)}
-          </AppText>
-        </View>
-      </View>
+      {groups.length > 0 ? (
+        <>
+          <View style={[styles.divider, { backgroundColor: colors.heroDivider }]} />
+          <View style={styles.tiles}>
+            {groups.map((group) => (
+              <Pressable
+                key={group.type}
+                onPress={() => onOpenType(group.type)}
+                accessibilityRole="button"
+                accessibilityLabel={tileAccessibilityLabel(group, hidden, formatETB)}
+                style={({ pressed }) => [styles.tile, { backgroundColor: colors.heroDivider }, pressed && styles.tilePressed]}
+              >
+                <View style={styles.tileLabelRow}>
+                  <View style={[styles.dot, { backgroundColor: accountHeroDots[group.type] }]} />
+                  <AppText style={[styles.tileLabel, { color: colors.heroTextMuted }]} numberOfLines={1}>
+                    {group.label}
+                  </AppText>
+                </View>
+                <AppText
+                  variant="number"
+                  style={[styles.tileValue, { color: colors.heroText }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.5}
+                >
+                  {maskAmount(formatNumber(group.subtotalETB, 0), hidden)}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : null}
 
-      {shouldShowGoalsLine(goalsAmount, hidden) ? (
-        <AppText style={[styles.goalsLine, { color: colors.heroTextMuted }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-          {goalsLineText(goalsAmount)}
+      {shouldShowGoalsLine(reservedAmount, hidden) ? (
+        <AppText style={[styles.note, styles.centered, { color: colors.heroTextMuted }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+          {goalsLineText(reservedAmount)}
+        </AppText>
+      ) : null}
+
+      {unvaluedNote ? (
+        <AppText style={[styles.note, styles.centered, { color: colors.heroTextMuted }]} numberOfLines={2}>
+          {unvaluedNote}
         </AppText>
       ) : null}
     </Card>
@@ -113,30 +140,46 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 12,
   },
-  columns: {
+  tiles: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
-  column: {
+  tile: {
     flex: 1,
     minWidth: 0,
+    borderRadius: 14,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  tilePressed: {
+    opacity: 0.7,
+  },
+  tileLabelRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 5,
   },
-  columnLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
-  columnValue: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '600',
-    marginTop: 2,
-    alignSelf: 'stretch',
-    textAlign: 'center',
-  },
-  goalsLine: {
+  tileLabel: {
+    flexShrink: 1,
     fontSize: 12,
-    textAlign: 'center',
+    fontWeight: '600',
+  },
+  tileValue: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  note: {
+    fontSize: 12,
     marginTop: 10,
+  },
+  centered: {
+    textAlign: 'center',
   },
 });

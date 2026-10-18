@@ -1,63 +1,207 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 
 import {
   addCategory,
   addCurrency,
-  addGoal,
   addMilestone,
   addMonthlySnapshotIfMissing,
   addRecurringTransaction,
+  deleteBudget,
   deleteCategory,
   deleteCurrency,
-  deleteGoal,
-  deleteBudget,
   deleteRecurringTransaction,
-  deleteTransaction,
   generateDueRecurringTransactions,
   getBudgets,
   getCategories,
-  getReadNotificationIds,
   getCurrencies,
   getExchangeRates,
-  getGoals,
   getMilestones,
   getMonthlySnapshots,
   getOrigin,
+  getReadNotificationIds,
   getRecurringTransactions,
-  getTransactions,
+  deleteReserveNotifications,
   initializeDatabase,
-  insertTransaction,
+  readLedger,
+  saveLedgerDiff,
   toggleRecurringTransaction,
-  updateRecurringTransaction,
   updateCategory,
-  updateGoal,
-  updateTransaction,
+  updateRecurringTransaction,
   upsertBudget,
   upsertExchangeRate,
   upsertOrigin,
-  setGoalStatus,
 } from '../db/database';
-import { Account, Category, CurrencyCode, FinanceStoreState, Goal, Transaction, TransactionInput } from '../types';
-import { getBalances, LedgerError } from '../utils/balances';
-import { getCurrentPeriodSummary, getGoalProgress, nextGoalStatus } from '../utils/currency';
+import {
+  Budget,
+  BudgetInput,
+  Category,
+  Currency,
+  CurrencyCode,
+  ExchangeRate,
+  GoalStatus,
+  Milestone,
+  MilestoneInput,
+  MonthlySnapshot,
+  RecurringTransaction,
+  RecurringTransactionInput,
+  UserOrigin,
+  UserOriginInput,
+} from '../types';
+import { AccountEntry, AccountGoal, AccountsState, GoalAllocation, MoneyAccount, ReserveNotification } from '../types/accounts';
+import { defaultCtx } from '../utils/accounts/context';
+import { EntryInput, planAddEntry, planDeleteEntry, planEditEntry } from '../utils/accounts/entries';
+import { GoalInput, planAddToGoal, planCreateGoal, planDeleteGoal, planMoveGoal, planWithdrawFromGoal } from '../utils/accounts/goals';
+import {
+  AccountInput,
+  checkCurrencyRemovable,
+  planArchiveAccount,
+  planChangeAccountCurrency,
+  planCreateAccount,
+  planDeleteAccount,
+  planRenameAccount,
+} from '../utils/accounts/manage';
+import { expiredIds, markReserveRead } from '../utils/accounts/notificationRetention';
+import { WriteResult } from '../utils/accounts/reserve';
+import { getNetSavingsChange, getPeriodSummary, getTotals, TotalsSummary } from '../utils/accounts/totals';
+import { getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { todayKey } from '../utils/dates';
 import { hasCompletionMilestone } from '../utils/milestones';
-import { planAdd, planDelete, planEdit } from '../utils/transactions';
+import { goalNotificationItems } from '../utils/notificationList';
 import { useUiStore } from './ui';
 
-function goalNameMap(goals: Goal[]): Record<string, string> {
-  return Object.fromEntries(goals.map((goal) => [goal.id, goal.name]));
+export interface FinanceStoreState {
+  accounts: MoneyAccount[];
+  // The whole ledger, newest first: income, expense, transfer, and the system rows (opening balance, adjustment) and transfer fees.
+  transactions: AccountEntry[];
+  goals: AccountGoal[];
+  // Append-only; a goal's amount and an account's reserved money are sums over these rows (V2_SPEC Part C).
+  allocations: GoalAllocation[];
+  // "Reserved money was used" events. Saved here; the notifications page shows them from Phase 5D.
+  reserveNotifications: ReserveNotification[];
+  categories: Category[];
+  exchangeRates: ExchangeRate[];
+  budgets: Budget[];
+  recurringTransactions: RecurringTransaction[];
+  milestones: Milestone[];
+  origin: UserOrigin | null;
+  monthlySnapshots: MonthlySnapshot[];
+  currencies: Currency[];
+  homeCurrency: CurrencyCode;
+  isReady: boolean;
+  loadData: () => Promise<void>;
+
+  addAccount: (input: AccountInput) => Promise<MoneyAccount>;
+  archiveAccount: (id: string) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
+  changeAccountCurrency: (id: string, currency: CurrencyCode) => Promise<void>;
+  renameAccount: (id: string, name: string) => Promise<void>;
+
+  addTransaction: (input: EntryInput) => Promise<WriteResult>;
+  updateTransaction: (id: string, input: EntryInput) => Promise<WriteResult>;
+  deleteTransaction: (id: string) => Promise<WriteResult>;
+
+  addCategory: (input: Omit<Category, 'id' | 'isDefault'>) => Promise<Category>;
+  updateCategory: (id: string, input: Omit<Category, 'id' | 'isDefault'>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  setHomeCurrency: (currency: CurrencyCode) => void;
+  upsertExchangeRate: (fromCurrency: CurrencyCode, toCurrency: CurrencyCode, rate: number) => Promise<ExchangeRate>;
+  addCurrency: (code: string, name: string) => Promise<Currency>;
+  deleteCurrency: (code: string) => Promise<void>;
+
+  addGoal: (input: GoalInput) => Promise<AccountGoal>;
+  updateGoal: (id: string, input: { name: string; targetAmount: number; deadline?: string | null }) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
+  moveGoal: (id: string, accountId: string) => Promise<void>;
+  setGoalStatus: (id: string, status: GoalStatus) => Promise<void>;
+  // Reserve money inside the goal's account, or free it again. Neither creates a ledger entry.
+  addToGoal: (goalId: string, amount: number) => Promise<void>;
+  withdrawFromGoal: (goalId: string, amount: number) => Promise<void>;
+
+  upsertBudget: (input: BudgetInput) => Promise<Budget>;
+  deleteBudget: (id: string) => Promise<void>;
+  addRecurringTransaction: (input: RecurringTransactionInput) => Promise<RecurringTransaction>;
+  updateRecurringTransaction: (id: string, input: RecurringTransactionInput) => Promise<RecurringTransaction>;
+  toggleRecurringTransaction: (id: string, isActive: boolean) => Promise<void>;
+  deleteRecurringTransaction: (id: string) => Promise<void>;
+  saveOrigin: (input: UserOriginInput) => Promise<UserOrigin>;
+  addMilestone: (input: MilestoneInput) => Promise<Milestone>;
+  // Marks saved "reserved money was used" notifications read (the given ones, or all), so a restored backup keeps them read too. (The page's own
+  // seen-state is marked by the page, as for budget alerts.)
+  markReserveNotificationsRead: (ids?: string[]) => Promise<void>;
+  // "Clear all": deletes the saved goal notifications (and their read records) and marks the current budget alerts read.
+  clearReserveNotifications: () => Promise<void>;
 }
 
-function byNewestFirst(a: Transaction, b: Transaction): number {
+function byNewestFirst(a: AccountEntry, b: AccountEntry): number {
   return a.date === b.date ? b.timestamp.localeCompare(a.timestamp) : b.date.localeCompare(a.date);
 }
 
+// The slice of the store the pure ledger functions read. Rates and the currency list come from the same store.
+export function getAccountsState(): AccountsState {
+  const state = useFinanceStore.getState();
+  return {
+    accounts: state.accounts,
+    entries: state.transactions,
+    goals: state.goals,
+    allocations: state.allocations,
+    notifications: state.reserveNotifications,
+    rates: state.exchangeRates,
+    currencies: state.currencies.map((currency) => currency.code),
+  };
+}
+
+// The same slice as a hook: memoised, so a screen re-renders only when one of the ledger arrays actually changed.
+export function useAccountsState(): AccountsState {
+  const accounts = useFinanceStore((state) => state.accounts);
+  const entries = useFinanceStore((state) => state.transactions);
+  const goals = useFinanceStore((state) => state.goals);
+  const allocations = useFinanceStore((state) => state.allocations);
+  const notifications = useFinanceStore((state) => state.reserveNotifications);
+  const rates = useFinanceStore((state) => state.exchangeRates);
+  const currencies = useFinanceStore((state) => state.currencies);
+  return useMemo(
+    () => ({ accounts, entries, goals, allocations, notifications, rates, currencies: currencies.map((currency) => currency.code) }),
+    [accounts, entries, goals, allocations, notifications, rates, currencies],
+  );
+}
+
+// Per-account balances, reserved money and the ETB total (V2_SPEC Part C) - always derived from the ledger, never stored.
+export function useTotals(): TotalsSummary {
+  const state = useAccountsState();
+  return useMemo(() => getTotals(state), [state]);
+}
+
+// Shows the saved goal notifications on the Notifications page and in the bell badge. Called whenever they may have changed: after the data
+// loads and after every ledger write (a write that used reserved money has just added some).
+function syncReserveNotifications(): void {
+  const { reserveNotifications, goals } = useFinanceStore.getState();
+  const ui = useUiStore.getState();
+  ui.replaceGoalNotifications(goalNotificationItems(reserveNotifications, goals, ui.readIds));
+}
+
+// Saves the difference to SQLite first (one transaction), and only then updates what the screens see, so a failed save leaves the screen
+// and the database in step.
+function saveLedger(next: AccountsState): void {
+  saveLedgerDiff(getAccountsState(), next);
+  useFinanceStore.setState({
+    accounts: next.accounts,
+    transactions: [...next.entries].sort(byNewestFirst),
+    goals: next.goals,
+    allocations: next.allocations,
+    reserveNotifications: next.notifications,
+  });
+  syncReserveNotifications();
+}
+
 export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
+  accounts: [],
   transactions: [],
+  goals: [],
+  allocations: [],
+  reserveNotifications: [],
   categories: [],
   exchangeRates: [],
-  goals: [],
   budgets: [],
   recurringTransactions: [],
   milestones: [],
@@ -83,25 +227,31 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
       );
     }
 
-    const [categories, transactions, exchangeRates, goals, budgets, recurringTransactions] = await Promise.all([
+    const [categories, exchangeRates, budgets, recurringTransactions] = await Promise.all([
       getCategories(),
-      getTransactions(),
       getExchangeRates(),
-      getGoals(),
       getBudgets(),
       getRecurringTransactions(),
     ]);
+    const ledger = readLedger();
+    // Saved goal notifications are kept for a fixed time after they were created, read or not; older ones go now, with their read records.
+    const expired = new Set(expiredIds(ledger.notifications, new Date()));
+    if (expired.size > 0) {
+      deleteReserveNotifications([...expired]);
+      useUiStore.getState().forgetReadIds([...expired]);
+    }
+    const reserveNotifications = ledger.notifications.filter((item) => !expired.has(item.id));
 
     const previousMonthDate = new Date();
     previousMonthDate.setDate(1);
     previousMonthDate.setMonth(previousMonthDate.getMonth() - 1);
-    const previousMonthSummary = getCurrentPeriodSummary(transactions, previousMonthDate);
     const monthKey = `${previousMonthDate.getFullYear()}-${String(previousMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const previousMonth = getPeriodSummary(ledger.entries, monthKey);
     await addMonthlySnapshotIfMissing(
       monthKey,
-      previousMonthSummary.income,
-      previousMonthSummary.expenses,
-      previousMonthSummary.savings,
+      previousMonth.income,
+      previousMonth.expenses,
+      getNetSavingsChange(ledger.allocations, monthKey),
       'ETB',
     );
 
@@ -113,10 +263,13 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
     ]);
 
     set({
+      accounts: ledger.accounts,
+      transactions: [...ledger.entries].sort(byNewestFirst),
+      goals: ledger.goals,
+      allocations: ledger.allocations,
+      reserveNotifications,
       categories,
-      transactions,
       exchangeRates,
-      goals,
       budgets,
       recurringTransactions,
       milestones,
@@ -126,39 +279,49 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
       homeCurrency: 'ETB',
       isReady: true,
     });
+    syncReserveNotifications();
   },
-  // Every write path validates the WHOLE resulting ledger first (date-ordered running balances), so
-  // a create, edit, delete or back-dated entry that would push Available/Saved/a goal below zero is
-  // rejected with a LedgerError and nothing is written.
-  addTransaction: async (input: TransactionInput) => {
-    const { exchangeRates, goals, transactions } = get();
-    const transaction = planAdd(transactions, input, exchangeRates, goalNameMap(goals));
 
-    await insertTransaction(transaction);
-    set((state) => ({
-      transactions: [transaction, ...state.transactions].sort(byNewestFirst),
-    }));
-    return transaction;
+  addAccount: async (input: AccountInput) => {
+    const { state, account } = planCreateAccount(getAccountsState(), input);
+    saveLedger(state);
+    return account;
   },
-  updateTransaction: async (id: string, input: TransactionInput) => {
-    const { exchangeRates, goals, transactions } = get();
-    const transaction = planEdit(transactions, id, input, exchangeRates, goalNameMap(goals));
+  archiveAccount: async (id: string) => {
+    saveLedger(planArchiveAccount(getAccountsState(), id));
+  },
+  deleteAccount: async (id: string) => {
+    saveLedger(planDeleteAccount(getAccountsState(), id));
+  },
+  changeAccountCurrency: async (id: string, currency: CurrencyCode) => {
+    saveLedger(planChangeAccountCurrency(getAccountsState(), id, currency));
+  },
+  renameAccount: async (id: string, name: string) => {
+    saveLedger(planRenameAccount(getAccountsState(), id, name));
+  },
 
-    await updateTransaction(transaction);
-    set((state) => ({
-      transactions: state.transactions.map((item) => (item.id === id ? transaction : item)).sort(byNewestFirst),
-    }));
-    return transaction;
+  // Every write validates the WHOLE resulting ledger first (date-ordered running balance of every account), so a create, edit, delete or
+  // back-dated entry that would push an account below zero is rejected with an AccountsError and nothing is written. If it uses money
+  // reserved for goals, the goals shrink and a notification is saved with it (V2_SPEC Part E).
+  addTransaction: async (input: EntryInput) => {
+    const result = planAddEntry(getAccountsState(), input, defaultCtx);
+    saveLedger(result.state);
+    await reconcileAllGoals();
+    return result;
+  },
+  updateTransaction: async (id: string, input: EntryInput) => {
+    const result = planEditEntry(getAccountsState(), id, input, defaultCtx);
+    saveLedger(result.state);
+    await reconcileAllGoals();
+    return result;
   },
   deleteTransaction: async (id: string) => {
-    const { goals, transactions } = get();
-    planDelete(transactions, id, goalNameMap(goals));
-
-    await deleteTransaction(id);
-    set((state) => ({
-      transactions: state.transactions.filter((item) => item.id !== id),
-    }));
+    const result = planDeleteEntry(getAccountsState(), id, defaultCtx);
+    saveLedger(result.state);
+    await reconcileAllGoals();
+    return result;
   },
+
   addCategory: async (input: Omit<Category, 'id' | 'isDefault'>) => {
     const category = await addCategory(input);
     set((state) => ({
@@ -214,80 +377,62 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
     }));
     return currency;
   },
+  // A currency a non-archived account is held in cannot be removed (utils/accounts/manage.ts: checkCurrencyRemovable has the reasoning).
   deleteCurrency: async (code: string) => {
+    const problem = checkCurrencyRemovable(get().accounts, code);
+    if (problem) {
+      throw problem;
+    }
     await deleteCurrency(code);
     set((state) => ({
       currencies: state.currencies.filter((item) => item.code !== code),
     }));
   },
-  addGoal: async (input) => {
-    const goal = await addGoal(input);
-    set((state) => ({
-      goals: [...state.goals, goal],
-    }));
+
+  addGoal: async (input: GoalInput) => {
+    const { state, goal } = planCreateGoal(getAccountsState(), input, defaultCtx);
+    saveLedger(state);
     return goal;
   },
   updateGoal: async (id: string, input) => {
-    await updateGoal(id, input);
-    set((state) => ({
-      goals: state.goals.map((goal) =>
+    const current = getAccountsState();
+    saveLedger({
+      ...current,
+      goals: current.goals.map((goal) =>
         goal.id === id
-          ? { ...goal, name: input.name, targetAmount: input.targetAmount, deadline: input.deadline ?? null }
+          ? { ...goal, name: input.name.trim(), targetAmount: input.targetAmount, deadline: input.deadline ?? null, updatedAt: new Date().toISOString() }
           : goal,
       ),
-    }));
+    });
     await reconcileGoal(id);
   },
+  // A goal can only be deleted while it holds nothing (utils/accounts/goals.ts): withdraw it first.
   deleteGoal: async (id: string) => {
-    // Deleting a goal that still holds money would make that money vanish from Total Balance.
-    // Goal money must be moved out by a transfer first (same philosophy as Goal -> Expense).
-    const held = getBalances(get().transactions).goals[id] ?? 0;
-    if (held > 0) {
-      throw new LedgerError(
-        'GOAL_HAS_FUNDS',
-        `This goal still holds ETB ${held.toFixed(2)}. Transfer it to Available or Saved before deleting the goal.`,
-      );
-    }
+    // Its saved notifications go with it (the planner removes the rows); so do their read records and any copy in the page's list.
+    const gone = getAccountsState().notifications.filter((item) => item.goalId === id).map((item) => item.id);
+    saveLedger(planDeleteGoal(getAccountsState(), id));
+    deleteReserveNotifications(gone);
+    useUiStore.getState().forgetReadIds(gone);
+  },
+  moveGoal: async (id: string, accountId: string) => {
+    saveLedger(planMoveGoal(getAccountsState(), id, accountId, defaultCtx));
+  },
+  setGoalStatus: async (id: string, status: GoalStatus) => {
+    const current = getAccountsState();
+    saveLedger({
+      ...current,
+      goals: current.goals.map((goal) => (goal.id === id ? { ...goal, status, updatedAt: new Date().toISOString() } : goal)),
+    });
+  },
+  addToGoal: async (goalId: string, amount: number) => {
+    saveLedger(planAddToGoal(getAccountsState(), goalId, amount, defaultCtx).state);
+    await reconcileGoal(goalId);
+  },
+  withdrawFromGoal: async (goalId: string, amount: number) => {
+    saveLedger(planWithdrawFromGoal(getAccountsState(), goalId, amount, defaultCtx).state);
+    await reconcileGoal(goalId);
+  },
 
-    await deleteGoal(id);
-    set((state) => ({
-      goals: state.goals.filter((goal) => goal.id !== id),
-    }));
-  },
-  setGoalStatus: async (id: string, status) => {
-    await setGoalStatus(id, status);
-    set((state) => ({
-      goals: state.goals.map((goal) => (goal.id === id ? { ...goal, status } : goal)),
-    }));
-  },
-  // A goal contribution is a Transfer (Available|Saved -> Goal), never income. Amount is ETB.
-  contributeToGoal: async (goalId: string, amount: number, from: Account) => {
-    const transaction = await get().addTransaction({
-      type: 'transfer',
-      amount,
-      currency: 'ETB',
-      fromAccount: from,
-      toAccount: 'goal',
-      toGoalId: goalId,
-      date: todayKey(),
-    });
-    await reconcileGoal(goalId);
-    return transaction;
-  },
-  // The reverse: Goal -> Available|Saved. This is the only way goal money becomes spendable.
-  withdrawFromGoal: async (goalId: string, amount: number, to: Account) => {
-    const transaction = await get().addTransaction({
-      type: 'transfer',
-      amount,
-      currency: 'ETB',
-      fromAccount: 'goal',
-      fromGoalId: goalId,
-      toAccount: to,
-      date: todayKey(),
-    });
-    await reconcileGoal(goalId);
-    return transaction;
-  },
   upsertBudget: async (input) => {
     const budget = await upsertBudget(input);
     set((state) => ({
@@ -341,11 +486,29 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
     }));
     return milestone;
   },
+  markReserveNotificationsRead: async (ids) => {
+    const current = getAccountsState();
+    const next = markReserveRead(current.notifications, ids);
+    if (next.every((item, index) => item === current.notifications[index])) {
+      return;
+    }
+    saveLedger({ ...current, notifications: next });
+  },
+  clearReserveNotifications: async () => {
+    const current = getAccountsState();
+    const gone = current.notifications.map((item) => item.id);
+    if (gone.length > 0) {
+      saveLedger({ ...current, notifications: [] });
+      deleteReserveNotifications(gone);
+      useUiStore.getState().forgetReadIds(gone);
+    }
+    // Budget alerts are worked out from the spending, so they stay; they are marked read.
+    useUiStore.getState().clearAllNotifications();
+  },
 }));
 
-// Keeps a goal's status in step with what the ledger says it holds: reaching the target completes it
-// (and records the milestone once); dropping back below the target - by withdrawing money or raising
-// the target - reopens it. Abandoned goals are left alone.
+// Keeps a goal's status in step with what it holds: reaching the target completes it (and records the milestone once); dropping back
+// below the target - by withdrawing, raising the target, or reserved money being spent - reopens it. Abandoned goals are left alone.
 async function reconcileGoal(goalId: string): Promise<void> {
   const state = useFinanceStore.getState();
   const goal = state.goals.find((item) => item.id === goalId);
@@ -353,14 +516,15 @@ async function reconcileGoal(goalId: string): Promise<void> {
     return;
   }
 
-  const { percent } = getGoalProgress(goal, state.transactions);
-  const nextStatus = nextGoalStatus(goal, state.transactions);
+  const { percent } = getGoalProgress(goal, state.allocations);
+  const nextStatus = nextGoalStatus(goal, state.allocations);
 
   if (nextStatus) {
-    await setGoalStatus(goal.id, nextStatus);
-    useFinanceStore.setState((prev) => ({
-      goals: prev.goals.map((item) => (item.id === goal.id ? { ...item, status: nextStatus } : item)),
-    }));
+    const current = getAccountsState();
+    saveLedger({
+      ...current,
+      goals: current.goals.map((item) => (item.id === goal.id ? { ...item, status: nextStatus, updatedAt: new Date().toISOString() } : item)),
+    });
   }
 
   if (percent >= 100) {
@@ -378,12 +542,9 @@ async function reconcileGoal(goalId: string): Promise<void> {
   }
 }
 
-export function getLatestTransactions(limit: number): Transaction[] {
-  return useFinanceStore.getState().transactions.slice(0, limit);
-}
-
-export function getExchangeRateMap(): Record<string, number> {
-  return Object.fromEntries(
-    useFinanceStore.getState().exchangeRates.map((rate) => [`${rate.fromCurrency}-${rate.toCurrency}`, rate.rate]),
-  );
+// After any ledger write a goal may have changed (reserved money used up, an entry edited): check them all.
+async function reconcileAllGoals(): Promise<void> {
+  for (const goal of useFinanceStore.getState().goals) {
+    await reconcileGoal(goal.id);
+  }
 }

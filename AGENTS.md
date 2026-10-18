@@ -42,7 +42,7 @@ Docs: https://docs.expo.dev/eas/index.md
 
 ---
 
-## Project: My Finances
+## Project: Talari (formerly My Finances)
 
 A personal finance mobile app, local-first, single-user, built incrementally through versioned phases. Not a tutorial project — a real app in active daily use by its owner.
 
@@ -52,26 +52,26 @@ A personal finance mobile app, local-first, single-user, built incrementally thr
 - SQLite via `expo-sqlite` + Drizzle ORM for local storage
 - Zustand for state
 - Local-first: no backend, no auth, no cloud sync unless a spec explicitly introduces it
-- Currency: single ETB-denominated Total Balance; non-ETB transactions store original amount+currency alongside a converted `amountETB` (see `V2_SPEC.md` Part D)
+- Money lives in **accounts** (cash, wallet, bank), each in ETB or one foreign currency. Total Balance is in ETB: the sum of the accounts, a foreign account valued at today's stored rate. Reports and income/expense maths use each entry's `amountETB`; account balances use the account's own amounts (see `V2_SPEC.md` Part D)
 
 ### Source of truth for current work
 
 **`V2_SPEC.md`** in this repo is the authoritative accounting and feature specification for the app's current version. Treat it as the source of truth — do not invent a different financial/accounting model, and do not change the accounting rules in it without discussing the change first.
 
-Key architectural rule from that spec, worth restating here because it's easy to default away from: **balances (`Total`, `Available`, `Saved`, each `Goal`) are never stored as mutable fields — they are always computed by summing the transaction/transfer ledger.** Editing or deleting a transaction never requires "reversing" a prior effect; it just changes that one row.
+Key architectural rule from that spec, worth restating here because it's easy to default away from: **balances (each account's balance, the money reserved in it, each goal's amount, the Total) are never stored as mutable fields — they are always computed from the transaction ledger and the append-only `goal_allocations` table.** Editing or deleting a transaction never requires "reversing" a prior effect; it just changes that one row. Goals are reservations inside an ETB account: adding to a goal writes an allocation row, not a transaction.
 
 ### Project-specific working conventions
 
 1. **Inspect before changing.** At the start of any non-trivial task, look at the existing code relevant to that area before writing anything. Report what you find before proceeding on anything architecturally significant.
 2. **Work phase by phase / spec section by spec section.** Don't pull in functionality from a future version (see `V2_SPEC.md` Part A for what's explicitly out of scope) or an unrelated part of the spec just because it seems easy to include while you're in there.
-3. **Test the accounting logic concretely.** When a spec includes numbered test cases (see `V2_SPEC.md` Part W), actually verify behavior against them before considering the work done — don't just assert it should work.
+3. **Test the accounting logic concretely.** When a spec includes numbered test cases (see `V2_SPEC.md` Part W), actually verify behavior against them before considering the work done — don't just assert it should work. The checks are `scripts/verify-*.ts` (run with `npx tsx`); keep logic that needs testing in pure modules (no React Native or Expo imports), because `store/` and `db/database.ts` import Expo and cannot be loaded by a script.
 4. **Ask before assuming on ambiguous financial logic.** Silent assumptions in money-handling code are the most expensive kind of mistake in this project.
 5. **Non-route file structure** (routes themselves live in `src/app/` per the Navigation section above):
    ```
    /components  → reusable UI components
    /db          → drizzle schema, migrations, queries
    /store       → zustand stores
-   /utils       → currency conversion, date helpers, streak calc, balance derivation
+   /utils       → currency conversion, date helpers, formatting, reports; /utils/accounts is the pure accounts ledger (balances, entries, transfers and fees, goals and reserved money, totals, backup, notification retention)
    /constants   → default categories, colors, theme
    /types       → shared TypeScript types
    ```
@@ -80,6 +80,6 @@ Key architectural rule from that spec, worth restating here because it's easy to
 
 ### Versioning note
 
-This project is mid-rewrite: V1 (original roadmap — local-first finance tracker with Builder Dashboard / Origin / Journey identity screens) is functionally complete. V2 (see `V2_SPEC.md`) introduces a corrected Available/Saved/Goals accounting model with ledger-derived balances, replacing V1's simpler goal-tracking approach. V2's data layer starts fresh — no migration from V1 test data is required or expected.
+This project is mid-rewrite: V1 (original roadmap — local-first finance tracker with Builder Dashboard / Origin / Journey identity screens) is functionally complete. V2 (see `V2_SPEC.md`) introduced ledger-derived balances, replacing V1's simpler goal-tracking approach, and Phase 5 then replaced V2's original Available/Saved split with named accounts and goals as reserved money inside an account (the spec was amended; it says where). The data layer was reset when each model arrived — no migration from earlier test data is required or expected, except that old (version 2) backups still restore into one "Cash" account.
 
 V3 (not in scope yet) will cover app identity/branding/onboarding and automatic transaction capture (SMS parsing). Do not pull V3 work into current sessions unless explicitly asked.

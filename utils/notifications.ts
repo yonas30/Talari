@@ -1,4 +1,5 @@
-import { Budget, ExchangeRate, Transaction } from '../types';
+import { Budget, ExchangeRate } from '../types';
+import { AccountEntry } from '../types/accounts';
 import { getBudgetProgress } from './currency';
 import { toLocalDateKey } from './dates';
 import { formatETB } from './format';
@@ -25,7 +26,7 @@ export function budgetNotificationId(category: string, monthKey: string): string
 // currency has no exchange rate are not alerted on - they show their own "set a rate" message on the Budgets screen.
 export function getBudgetAlerts(
   budgets: Budget[],
-  transactions: Transaction[],
+  transactions: AccountEntry[],
   rates: ExchangeRate[],
   today = new Date(),
 ): BudgetAlert[] {
@@ -120,7 +121,7 @@ export interface BudgetWarning {
 // of its own beyond the percentage shown in the text.
 export function getBudgetWarnings(
   budgets: Budget[],
-  transactions: Transaction[],
+  transactions: AccountEntry[],
   rates: ExchangeRate[],
   today = new Date(),
 ): BudgetWarning[] {

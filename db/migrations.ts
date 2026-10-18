@@ -2,6 +2,8 @@
 // SQLite engine (scripts/verify-accounting.ts runs them on node:sqlite). db/database.ts adapts expo-sqlite to
 // SqlRunner and calls runMigrations() once at start-up.
 
+import { AccountsMigrationResult, migrateToAccounts } from './accountsMigration';
+
 export interface SqlRunner {
   exec(sql: string): void;
   all<T>(sql: string, ...params: unknown[]): T[];
@@ -11,7 +13,13 @@ export interface SqlRunner {
 // 2: V2 ledger rebuild - the V1 ledger tables were dropped and recreated (Part V: no migration from V1).
 // 3: remove V1 leftovers the first rebuild kept (milestones, budgets, exchange rates, origin story, legacy
 //    savings categories) and link goal-completed milestones to their goal by id.
-export const SCHEMA_VERSION = 3;
+// 4: Phase 5 accounts model (db/accountsMigration.ts): accounts, goal allocations and notifications tables; transactions, goals and
+//    recurring rules are dropped and recreated; milestones and monthly snapshots are cleared.
+export const SCHEMA_VERSION = 4;
+
+// The schema this file's own step builds. SCHEMA_DDL below is the SCHEMA 3 base (it still creates the old ledger tables, which step 4
+// then replaces); the schema 4 tables are created by accountsMigration.ts.
+const SCHEMA_VERSION_V3 = 3;
 
 export const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS categories (
@@ -233,9 +241,23 @@ export function backfillMilestoneGoalIds(db: SqlRunner): number {
   return linked;
 }
 
-// Brings any database - fresh, V1, or V2 at any earlier version - to SCHEMA_VERSION. All-or-nothing: if any step
-// throws, nothing is changed and user_version stays put so the next launch retries.
-export function runMigrations(db: SqlRunner, fromVersion: number): PurgeResult | null {
+export interface MigrationResult {
+  // Set when this run performed the V1-leftover cleanup (schema 2 -> 3).
+  purged: PurgeResult | null;
+  // Set when this run performed the Phase 5 reset (schema 3 -> 4): what was dropped and cleared.
+  accounts: AccountsMigrationResult | null;
+}
+
+// Brings any database - fresh, V1, or V2 at any earlier version - to SCHEMA_VERSION. Each step is all-or-nothing: if it throws,
+// nothing it did is kept and user_version stays put so the next launch retries.
+export function runMigrations(db: SqlRunner, fromVersion: number): MigrationResult {
+  const purged = fromVersion < SCHEMA_VERSION_V3 ? migrateToSchema3(db, fromVersion) : null;
+  const accounts = migrateToAccounts(db, Math.max(fromVersion, SCHEMA_VERSION_V3));
+  return { purged, accounts };
+}
+
+// Exported so scripts/verify-accounting.ts can test this step on its own (runMigrations goes on to schema 4).
+export function migrateToSchema3(db: SqlRunner, fromVersion: number): PurgeResult | null {
   // Needed before the V1 -> V2 step drops monthly_snapshots.
   const cutoff = fromVersion === 2 ? findV2LaunchCutoff(db) : null;
 
@@ -266,7 +288,7 @@ export function runMigrations(db: SqlRunner, fromVersion: number): PurgeResult |
       backfillMilestoneGoalIds(db);
     }
 
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION_V3}`);
     db.exec('COMMIT');
     return purged;
   } catch (error) {

@@ -15,21 +15,38 @@ export const currencies = sqliteTable('currencies', {
   isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
 });
 
+// Schema 4 (Phase 5, the accounts model). The SQL that creates these tables is db/accountsMigration.ts; this mirrors it for Drizzle.
+export const accounts = sqliteTable('accounts', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  type: text('type', { enum: ['cash', 'wallet', 'bank'] }).notNull(),
+  currency: text('currency').notNull(),
+  colour: text('colour').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  smsSender: text('sms_sender'),
+  lastDigits: text('last_digits'),
+  createdAt: text('created_at').notNull(),
+});
+
+// One immutable ledger row. income / expense / opening / adjustment use account_id; a transfer uses from_account_id / to_account_id and
+// carries both legs (amount + to_amount); a transfer's fee is its own expense row with linked_transfer_id set.
 export const transactions = sqliteTable('transactions', {
   id: text('id').primaryKey(),
-  type: text('type', { enum: ['income', 'expense', 'transfer'] }).notNull(),
-  // amount/currency are display-only; amountETB is the only value ever summed (V2 Part D).
+  type: text('type', { enum: ['income', 'expense', 'transfer', 'opening', 'adjustment'] }).notNull(),
+  accountId: text('account_id'),
+  // The amount in the account's currency (or the original amount, for a foreign entry on an ETB account); amountETB is what reports use.
   amount: real('amount').notNull(),
   currency: text('currency').notNull(),
   amountETB: real('amount_etb').notNull(),
   exchangeRate: real('exchange_rate').notNull(),
   category: text('category').notNull().default(''),
   source: text('source').notNull().default(''),
-  account: text('account', { enum: ['available', 'saved'] }),
-  fromAccount: text('from_account', { enum: ['available', 'saved', 'goal'] }),
-  fromGoalId: text('from_goal_id'),
-  toAccount: text('to_account', { enum: ['available', 'saved', 'goal'] }),
-  toGoalId: text('to_goal_id'),
+  fromAccountId: text('from_account_id'),
+  toAccountId: text('to_account_id'),
+  toAmount: real('to_amount'),
+  toAmountETB: real('to_amount_etb'),
+  linkedTransferId: text('linked_transfer_id'),
   date: text('date').notNull(),
   timestamp: text('timestamp').notNull(),
   note: text('note'),
@@ -44,8 +61,31 @@ export const goals = sqliteTable('goals', {
   targetAmount: real('target_amount').notNull(),
   deadline: text('deadline'),
   status: text('status', { enum: ['active', 'completed', 'abandoned'] }).notNull().default('active'),
+  heldInAccountId: text('held_in_account_id').notNull(),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+});
+
+// Append-only: a goal's amount is the sum of its rows, an account's reserved money the sum of its rows.
+export const goalAllocations = sqliteTable('goal_allocations', {
+  id: text('id').primaryKey(),
+  goalId: text('goal_id').notNull(),
+  accountId: text('account_id').notNull(),
+  amount: real('amount').notNull(),
+  date: text('date').notNull(),
+  kind: text('kind', { enum: ['manual', 'auto_reduce'] }).notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+export const notifications = sqliteTable('notifications', {
+  id: text('id').primaryKey(),
+  kind: text('kind', { enum: ['goal_reserve_used'] }).notNull(),
+  goalId: text('goal_id').notNull(),
+  accountId: text('account_id').notNull(),
+  amount: real('amount').notNull(),
+  amountAfter: real('amount_after').notNull(),
+  createdAt: text('created_at').notNull(),
+  read: integer('read', { mode: 'boolean' }).notNull().default(false),
 });
 
 export const budgets = sqliteTable('budgets', {
@@ -68,7 +108,7 @@ export const exchangeRates = sqliteTable('exchange_rates', {
 export const recurringTransactions = sqliteTable('recurring_transactions', {
   id: text('id').primaryKey(),
   type: text('type', { enum: ['income', 'expense'] }).notNull(),
-  account: text('account', { enum: ['available', 'saved'] }).notNull().default('available'),
+  accountId: text('account_id').notNull(),
   amount: real('amount').notNull(),
   currency: text('currency').notNull(),
   category: text('category').notNull(),

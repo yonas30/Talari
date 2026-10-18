@@ -11,6 +11,7 @@ import InlineError from '../components/InlineError';
 import { spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { useTheme } from '../theme/ThemeProvider';
+import { alertLedgerError } from '../utils/alerts';
 
 export default function ExchangeRatesScreen() {
   const { colors } = useTheme();
@@ -58,7 +59,8 @@ export default function ExchangeRatesScreen() {
   const onDeleteCurrency = (code: string) => {
     Alert.alert('Remove currency', `Remove ${code} from your currency list?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => void deleteCurrency(code) },
+      // Refused while an account is held in that currency (the message names the account).
+      { text: 'Remove', style: 'destructive', onPress: () => void deleteCurrency(code).catch(alertLedgerError) },
     ]);
   };
 

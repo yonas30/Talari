@@ -2,9 +2,9 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '../../theme/ThemeProvider';
-import { Goal, Transaction } from '../../types';
-import { formatDateKey, formatNumber, transactionTitle } from '../../utils/format';
-import { formatTransactionAmount, transactionAmountRole } from '../../utils/homeModel';
+import { AccountEntry, MoneyAccount } from '../../types/accounts';
+import { accountName, formatDateKey, formatNumber, transactionTitle } from '../../utils/format';
+import { entryAmountRole, formatEntryAmount } from '../../utils/homeModel';
 import { CONTROL_LABEL_MAX_SCALE } from '../../utils/layout';
 import AppText from '../AppText';
 import Card from '../Card';
@@ -13,8 +13,8 @@ import Card from '../Card';
 const MONEY_MAX_FONT_SCALE = 1.3;
 
 interface RecentListProps {
-  transactions: Transaction[];
-  goals: Goal[];
+  transactions: AccountEntry[];
+  accounts: MoneyAccount[];
   /** The emoji a category stores, by category name. Missing / empty -> a neutral icon. */
   categoryIcons: Record<string, string>;
   onSeeAll: () => void;
@@ -22,7 +22,7 @@ interface RecentListProps {
   onOpen: (transactionId: string) => void;
 }
 
-export default function RecentList({ transactions, goals, categoryIcons, onSeeAll, onOpen }: RecentListProps) {
+export default function RecentList({ transactions, accounts, categoryIcons, onSeeAll, onOpen }: RecentListProps) {
   const { colors } = useTheme();
 
   return (
@@ -49,7 +49,7 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
       ) : (
         <View style={styles.list}>
           {transactions.map((transaction, index) => {
-            const role = transactionAmountRole(transaction.type);
+            const role = entryAmountRole(transaction);
             const textColor = role === 'expense' ? colors.expense : role === 'income' ? colors.income : colors.text;
             const iconTint = role === 'expense' ? colors.expenseDisc : role === 'income' ? colors.incomeDisc : colors.transferDisc;
             const iconColor = role === 'expense' ? colors.expenseGlyph : role === 'income' ? colors.incomeGlyph : colors.transferGlyph;
@@ -60,9 +60,9 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
               // The text column takes the remaining width and truncates; the amount shrinks to fit rather than overflowing.
               <Pressable
                 key={transaction.id}
-                onPress={() => onOpen(transaction.id)}
+                onPress={() => onOpen(transaction.linkedTransferId ?? transaction.id)}
                 accessibilityRole="button"
-                accessibilityLabel={`${transactionTitle(transaction, goals)}, ${formatTransactionAmount(transaction.type, transaction.amountETB)}, ${formatDateKey(transaction.date)}. Opens the transaction.`}
+                accessibilityLabel={`${transactionTitle(transaction, accounts)}, ${formatEntryAmount(transaction)}, ${formatDateKey(transaction.date)}. Opens the transaction.`}
                 style={({ pressed }) => [
                   styles.row,
                   index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
@@ -82,10 +82,10 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
                 </View>
                 <View style={styles.text}>
                   <AppText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-                    {transactionTitle(transaction, goals)}
+                    {transactionTitle(transaction, accounts)}
                   </AppText>
                   <AppText style={[styles.rowMeta, { color: colors.textMuted }]} numberOfLines={1}>
-                    {isTransfer ? '' : `${transaction.source} · `}
+                    {isTransfer ? '' : `${accountName(transaction.accountId, accounts)}${transaction.source ? ` · ${transaction.source}` : ''} · `}
                     {formatDateKey(transaction.date)}
                   </AppText>
                 </View>
@@ -99,9 +99,9 @@ export default function RecentList({ transactions, goals, categoryIcons, onSeeAl
                     minimumFontScale={0.5}
                     maxFontSizeMultiplier={MONEY_MAX_FONT_SCALE}
                   >
-                    {formatTransactionAmount(transaction.type, transaction.amountETB)}
+                    {formatEntryAmount(transaction)}
                   </AppText>
-                  {transaction.currency !== 'ETB' ? (
+                  {transaction.currency !== 'ETB' && !isTransfer ? (
                     <AppText
                       style={[styles.original, { color: colors.textMuted }]}
                       numberOfLines={1}

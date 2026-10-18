@@ -9,8 +9,8 @@ import AppTextInput from '../../components/AppTextInput';
 import SegmentedControl, { SegmentOption } from '../../components/SegmentedControl';
 import { useFinanceStore } from '../../store/finance';
 import { useTheme } from '../../theme/ThemeProvider';
-import { formatDateKey, formatNumber, transactionTitle } from '../../utils/format';
-import { formatTransactionAmount, transactionAmountRole } from '../../utils/homeModel';
+import { accountName, formatDateKey, formatMoney, formatNumber, transactionTitle } from '../../utils/format';
+import { entryAmountRole, formatEntryAmount } from '../../utils/homeModel';
 import { filterByType, filterTransactions, TypeFilter } from '../../utils/search';
 
 const TYPE_TABS: SegmentOption<TypeFilter>[] = [
@@ -37,7 +37,7 @@ function detailLine(source: string, note: string | null): string {
 export default function TransactionsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { transactions, goals, categories, isReady } = useFinanceStore();
+  const { transactions, accounts, categories, isReady } = useFinanceStore();
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -45,7 +45,7 @@ export default function TransactionsScreen() {
   // The tab narrows by type first; the search then looks only inside that tab ("food" on Expense searches expenses).
   // Filters live as you type: merchant/source, category, note, a transfer's From -> To, and amounts.
   const inTab = useMemo(() => filterByType(transactions, typeFilter), [transactions, typeFilter]);
-  const visible = useMemo(() => filterTransactions(inTab, query, goals), [inTab, query, goals]);
+  const visible = useMemo(() => filterTransactions(inTab, query, accounts), [inTab, query, accounts]);
   const isSearching = query.trim().length > 0;
   const noun = TAB_NOUNS[typeFilter];
   // The emoji a category stores, by category name (what transactions store).
@@ -126,16 +126,29 @@ export default function TransactionsScreen() {
               </View>
             }
             renderItem={({ item, index }) => {
-              const role = transactionAmountRole(item.type);
+              const role = entryAmountRole(item);
               const isTransfer = item.type === 'transfer';
-              const isForeign = item.currency !== 'ETB';
-              const title = transactionTitle(item, goals);
+              const isSystem = item.type === 'opening' || item.type === 'adjustment';
+              const isForeign = item.currency !== 'ETB' && !isTransfer;
+              const title = transactionTitle(item, accounts);
               const discColor = role === 'expense' ? colors.expenseDisc : role === 'income' ? colors.incomeDisc : colors.transferDisc;
               const glyphColor = role === 'expense' ? colors.expenseGlyph : role === 'income' ? colors.incomeGlyph : colors.transferGlyph;
               const amountColor = role === 'expense' ? colors.expense : role === 'income' ? colors.income : colors.text;
-              const emoji = isTransfer ? '' : (categoryIcons[item.category] ?? '').trim();
-              const signed = formatTransactionAmount(item.type, item.amountETB);
-              const sub = `${formatDateKey(item.date)}${item.account ? ` · ${item.type === 'income' ? 'into' : 'from'} ${item.account === 'saved' ? 'Saved' : 'Available'}` : ''}`;
+              const emoji = isTransfer || isSystem ? '' : (categoryIcons[item.category] ?? '').trim();
+              const signed = formatEntryAmount(item);
+              // Which account it is in ("into CBE" / "from Cash"). A transfer between accounts of different currencies also shows both amounts.
+              const toCurrency = accounts.find((account) => account.id === item.toAccountId)?.currency ?? item.currency;
+              const where =
+                item.type === 'income' || item.type === 'opening'
+                  ? ` · into ${accountName(item.accountId, accounts)}`
+                  : item.type === 'expense'
+                    ? ` · from ${accountName(item.accountId, accounts)}`
+                    : item.type === 'adjustment'
+                      ? ` · ${accountName(item.accountId, accounts)}`
+                      : isTransfer && item.toAmount !== null && toCurrency !== item.currency
+                        ? ` · ${formatMoney(item.amount, item.currency)} → ${formatMoney(item.toAmount, toCurrency)}`
+                        : '';
+              const sub = `${formatDateKey(item.date)}${where}${item.linkedTransferId ? ' · transfer fee' : ''}`;
               const detail = detailLine(item.source, item.note);
               // One flat card made of rows: the first row rounds the top corners, the last the bottom ones, hairlines between.
               const first = index === 0;
@@ -143,7 +156,7 @@ export default function TransactionsScreen() {
 
               return (
                 <Pressable
-                  onPress={() => router.push(`/edit-transaction/${item.id}`)}
+                  onPress={() => router.push(`/edit-transaction/${item.linkedTransferId ?? item.id}`)}
                   accessibilityRole="button"
                   accessibilityLabel={`${title}, ${signed}, ${sub}. Opens the transaction.`}
                   style={({ pressed }) => [
@@ -158,6 +171,8 @@ export default function TransactionsScreen() {
                   <View style={[styles.disc, { backgroundColor: discColor }]}>
                     {isTransfer ? (
                       <Ionicons name="swap-horizontal" size={20} color={glyphColor} />
+                    ) : isSystem ? (
+                      <Ionicons name={item.type === 'opening' ? 'flag-outline' : 'construct-outline'} size={20} color={glyphColor} />
                     ) : emoji ? (
                       <AppText style={styles.emoji} maxFontSizeMultiplier={1.2}>
                         {emoji}
