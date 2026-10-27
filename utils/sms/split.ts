@@ -1,9 +1,12 @@
+import { isBoilerplate } from './boilerplate';
 import { stripChatPrefix } from './normalise';
 
 // Cuts a pasted block into separate messages. A message starts at a line beginning with "Dear", at a line with a chat-export prefix
 // ("[date time] Name:", which is removed), or at the first line after a blank line, except a paragraph starting with "Alert:", which stays
 // attached to the message above it (the parser drops it later). Text before the
-// first "Dear" becomes its own item, so nothing pasted is lost, and the pieces are returned trimmed with plain "\n" line endings.
+// first "Dear" becomes its own item, so nothing pasted is lost, and the pieces are returned trimmed with plain "\n" line endings. A piece
+// that is only known boilerplate (a footer or a lone greeting, see boilerplate.ts) is dropped: attaching it to the message above would
+// change that message's hash, and counting it would show noise under "Not transactions".
 export function splitMessages(text: string): string[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const messages: string[][] = [];
@@ -27,5 +30,5 @@ export function splitMessages(text: string): string[] {
     afterBlank = false;
   }
 
-  return messages.map((m) => m.join('\n').trim()).filter((m) => m !== '');
+  return messages.map((m) => m.join('\n').trim()).filter((m) => m !== '' && !isBoilerplate(m));
 }
