@@ -60,8 +60,8 @@ export function planCreateAccount(
     colour: accountColour(input.type),
     sortOrder: state.accounts.reduce((max, item) => Math.max(max, item.sortOrder), -1) + 1,
     archived: false,
-    smsSender: input.smsSender ?? null,
-    lastDigits: input.lastDigits ?? null,
+    smsSender: cleanSmsSender(input.smsSender),
+    lastDigits: cleanLastDigits(input.lastDigits),
     createdAt: nowIso,
   };
 
@@ -229,4 +229,25 @@ export function planRenameAccount(state: AccountsState, accountId: string, name:
     throw new AccountsError('DUPLICATE_ACCOUNT_NAME', taken);
   }
   return { ...state, accounts: state.accounts.map((item) => (item.id === account.id ? { ...item, name: cleaned } : item)) };
+}
+
+// The optional SMS link of an account (V2_SPEC Part Z): who the messages come from ("127", "CBE") and the last digits of the account.
+// Digits only and at most four, because that is all a message ever prints; empty means none.
+export const MAX_SMS_SENDER_LENGTH = 40;
+
+export function cleanSmsSender(value: string | null | undefined): string | null {
+  const cleaned = (value ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_SMS_SENDER_LENGTH);
+  return cleaned === '' ? null : cleaned;
+}
+
+export function cleanLastDigits(value: string | null | undefined): string | null {
+  const digits = (value ?? '').replace(/\D/g, '').slice(0, 4);
+  return digits === '' ? null : digits;
+}
+
+// Changes only the two SMS fields: the account keeps its id, name, balance and history.
+export function planUpdateAccountSms(state: AccountsState, accountId: string, input: { smsSender: string | null; lastDigits: string | null }): AccountsState {
+  const account = findAccount(state, accountId);
+  const next = { ...account, smsSender: cleanSmsSender(input.smsSender), lastDigits: cleanLastDigits(input.lastDigits) };
+  return { ...state, accounts: state.accounts.map((item) => (item.id === account.id ? next : item)) };
 }

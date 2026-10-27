@@ -1,6 +1,6 @@
 import { BASE_CURRENCY } from '../../constants/accounts';
 import { FEES_CATEGORY } from '../../constants/categories';
-import { AccountEntry, AccountsState, MoneyAccount } from '../../types/accounts';
+import { AccountEntry, AccountsState, DateSource, MoneyAccount } from '../../types/accounts';
 import { mapAccounts, validateEntries } from './balances';
 import { Ctx, defaultCtx } from './context';
 import { AccountsError } from './errors';
@@ -21,6 +21,10 @@ export type EntryInput =
       date: string;
       note?: string | null;
       isAutomatic?: boolean;
+      // An import from an SMS: where the date came from, and the time the message printed (a UTC ISO string) so same-day entries keep the
+      // order they happened in. Both optional; a manual entry sets neither.
+      dateSource?: DateSource | null;
+      timestamp?: string | null;
     }
   | {
       type: 'transfer';
@@ -32,6 +36,9 @@ export type EntryInput =
       fee?: { amount: number; currency: string } | null;
       date: string;
       note?: string | null;
+      // A transfer imported from paired messages (V2_SPEC Part Z): where its date came from and the time a message printed. Optional.
+      dateSource?: DateSource | null;
+      timestamp?: string | null;
     }
   | {
       type: 'adjustment';
@@ -62,6 +69,15 @@ function requirePositive(amount: number): void {
   if (!Number.isFinite(amount) || toCents(amount) <= 0) {
     throw new AccountsError('INVALID_AMOUNT', 'Amount must be greater than zero.');
   }
+}
+
+// The date source an entry ends up with. An explicit one in the input wins (null clears it). Otherwise an edit keeps the existing source,
+// unless the DATE was changed: then it is the owner's own date now ('manual'), so an estimate stops being shown as one.
+function dateSourceFor(input: EntryInput, existing?: AccountEntry): { dateSource?: DateSource } {
+  const explicit = 'dateSource' in input ? input.dateSource : undefined;
+  const source: DateSource | null | undefined =
+    explicit !== undefined ? explicit : existing?.dateSource ? (input.date !== existing.date ? 'manual' : existing.dateSource) : undefined;
+  return source ? { dateSource: source } : {};
 }
 
 // Turns what the owner entered into ledger rows. Converts to ETB once, at entry time (V2_SPEC Part D). When editing, id / createdAt /
@@ -113,6 +129,9 @@ function buildEntries(input: EntryInput, state: AccountsState, ctx: Ctx, existin
         date: input.date,
         note: input.note?.trim() ? input.note.trim() : null,
         isAutomatic: existing?.isAutomatic ?? input.isAutomatic ?? false,
+        // A time printed in an imported message orders it within its day; an edit never moves an existing timestamp.
+        timestamp: existing?.timestamp ?? input.timestamp ?? nowIso,
+        ...dateSourceFor(input, existing),
       },
       fee: null,
     };
@@ -135,6 +154,7 @@ function buildEntries(input: EntryInput, state: AccountsState, ctx: Ctx, existin
         exchangeRate: rate,
         date: input.date,
         note: input.note?.trim() ? input.note.trim() : null,
+        ...dateSourceFor(input, existing),
       },
       fee: null,
     };
@@ -170,6 +190,8 @@ function buildEntries(input: EntryInput, state: AccountsState, ctx: Ctx, existin
     toAmountETB: toLeg.amountETB,
     date: input.date,
     note: input.note?.trim() ? input.note.trim() : null,
+    timestamp: existing?.timestamp ?? input.timestamp ?? nowIso,
+    ...dateSourceFor(input, existing),
   };
 
   const fee = input.fee && Number.isFinite(input.fee.amount) && input.fee.amount !== 0 ? input.fee : null;
@@ -199,7 +221,7 @@ function buildEntries(input: EntryInput, state: AccountsState, ctx: Ctx, existin
     fee: {
       ...base,
       id: existingFee?.id ?? ctx.newId(),
-      timestamp: existingFee?.timestamp ?? nowIso,
+      timestamp: existingFee?.timestamp ?? main.timestamp,
       createdAt: existingFee?.createdAt ?? nowIso,
       type: 'expense',
       accountId: from.id,
@@ -211,6 +233,8 @@ function buildEntries(input: EntryInput, state: AccountsState, ctx: Ctx, existin
       linkedTransferId: main.id,
       date: input.date,
       note: null,
+      // The fee happened with its transfer, so it shares its date source.
+      ...(main.dateSource ? { dateSource: main.dateSource } : {}),
     },
   };
 }
@@ -238,6 +262,25 @@ export function planAddEntry(state: AccountsState, input: EntryInput, ctx: Ctx =
   guardAnyAccount(state);
   const { main, fee } = buildEntries(input, state, ctx);
   return commit({ ...state, entries: [...state.entries, main, ...(fee ? [fee] : [])] }, ctx);
+}
+
+// Several entries as ONE write: every row is built, then the whole resulting ledger is validated and settled once. An import that saves a
+// payment and its fee uses this, so the two stand or fall together (a fee that overdraws the account blocks the payment too) and the
+// caller writes both in a single database transaction. `added` lists the new rows in input order (a transfer's own fee row follows it).
+export function planAddEntries(state: AccountsState, inputs: EntryInput[], ctx: Ctx = defaultCtx): WriteResult & { added: AccountEntry[] } {
+  guardAnyAccount(state);
+  if (inputs.length === 0) {
+    throw new AccountsError('INVALID_ENTRY', 'Nothing to add.');
+  }
+  const added: AccountEntry[] = [];
+  for (const input of inputs) {
+    const { main, fee } = buildEntries(input, state, ctx);
+    added.push(main);
+    if (fee) {
+      added.push(fee);
+    }
+  }
+  return { ...commit({ ...state, entries: [...state.entries, ...added] }, ctx), added };
 }
 
 export function planEditEntry(state: AccountsState, id: string, input: EntryInput, ctx: Ctx = defaultCtx): WriteResult {
@@ -285,4 +328,14 @@ export function planDeleteEntry(state: AccountsState, id: string, ctx: Ctx = def
     throw new AccountsError('FEE_LINKED', 'A transfer fee is removed by editing or deleting its transfer.');
   }
   return commit({ ...state, entries: state.entries.filter((entry) => entry.id !== id && entry.linkedTransferId !== id) }, ctx);
+}
+
+// "Date is right": the owner has looked at an imported entry's date and agrees with it, so it stops being shown as an estimate. Only the
+// label changes; no amount, date or balance does, so there is nothing to re-validate.
+export function planConfirmEntryDate(state: AccountsState, id: string): AccountsState {
+  const existing = state.entries.find((entry) => entry.id === id);
+  if (!existing) {
+    throw new AccountsError('INVALID_ENTRY', 'Transaction not found.');
+  }
+  return { ...state, entries: state.entries.map((entry) => (entry.id === id ? { ...entry, dateSource: 'manual' as const } : entry)) };
 }

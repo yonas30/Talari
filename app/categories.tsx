@@ -9,6 +9,7 @@ import FormInput from '../components/FormInput';
 import InlineError from '../components/InlineError';
 import SegmentedControl, { SegmentOption } from '../components/SegmentedControl';
 import SheetModal from '../components/SheetModal';
+import { isProtectedCategory } from '../constants/categories';
 import { radius, spacing } from '../constants/theme';
 import { useFinanceStore } from '../store/finance';
 import { useTheme } from '../theme/ThemeProvider';
@@ -179,22 +180,28 @@ export default function CategoriesScreen() {
                         </AppText>
                         {used > 0 && <AppText style={[styles.usage, { color: colors.textMuted }]}>{used} in use</AppText>}
                       </View>
-                      <Pressable
-                        onPress={() => openEditModal(item)}
-                        style={({ pressed }) => [styles.rowButton, pressed && { backgroundColor: colors.surfaceMuted }]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Edit ${item.name}`}
-                      >
-                        <Ionicons name="pencil-outline" size={18} color={colors.text} />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => onDelete(item)}
-                        style={({ pressed }) => [styles.rowButton, pressed && { backgroundColor: colors.surfaceMuted }]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Delete ${item.name}`}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={colors.expense} />
-                      </Pressable>
+                      {isProtectedCategory(item) ? (
+                        <AppText style={[styles.usage, { color: colors.textMuted }]}>Built in</AppText>
+                      ) : (
+                        <>
+                          <Pressable
+                            onPress={() => openEditModal(item)}
+                            style={({ pressed }) => [styles.rowButton, pressed && { backgroundColor: colors.surfaceMuted }]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Edit ${item.name}`}
+                          >
+                            <Ionicons name="pencil-outline" size={18} color={colors.text} />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => onDelete(item)}
+                            style={({ pressed }) => [styles.rowButton, pressed && { backgroundColor: colors.surfaceMuted }]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Delete ${item.name}`}
+                          >
+                            <Ionicons name="trash-outline" size={18} color={colors.expense} />
+                          </Pressable>
+                        </>
+                      )}
                     </View>
                   );
                 })

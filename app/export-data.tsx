@@ -11,6 +11,7 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import { exportBackup, restoreBackupPayload } from '../db/database';
 import { useFinanceStore } from '../store/finance';
+import { useSmsStore } from '../store/sms';
 import { useTheme } from '../theme/ThemeProvider';
 
 export default function ExportDataScreen() {
@@ -115,10 +116,12 @@ export default function ExportDataScreen() {
       const contents = await file.text();
       const payload: unknown = JSON.parse(contents);
 
-      // Reads a version 3 backup, or an older one (which lands in one "Cash" account); refuses anything that would break the ledger, with
+      // Reads a version 4 or 3 backup, or an older one (which lands in one "Cash" account); refuses anything that would break the ledger, with
       // nothing changed. The message says exactly what was done.
       const message = await restoreBackupPayload(payload);
       await loadData();
+      // The handled messages came back with it (version 4): the review screen must read them from the database, not keep the old list.
+      useSmsStore.getState().load();
       Alert.alert('Import complete', message);
     } catch (error) {
       Alert.alert('Import failed', error instanceof Error ? error.message : 'Unknown error');
@@ -141,7 +144,7 @@ export default function ExportDataScreen() {
             </AppText>
           </View>
           <AppText style={[styles.description, { color: colors.textMuted }]}>
-            Save a copy of all your accounts, transactions, categories, goals, and budgets as a JSON file you can keep safe or move to another device.
+            Save a copy of all your accounts, transactions, categories, goals, and budgets, which bank messages you have already handled (never the messages themselves), and your names as banks write them, as a JSON file you can keep safe or move to another device. Keep it private: it holds your transactions with their names and notes.
           </AppText>
           <Button title="Export backup (JSON)" variant="primary" onPress={() => void onExport()} disabled={isBusy} />
           <Button title="Export transactions (CSV)" variant="secondary" onPress={() => void onExportCsv()} disabled={isBusy} />

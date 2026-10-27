@@ -1,3 +1,4 @@
+import { UNCATEGORISED_NAME } from '../constants/categories';
 import { TransactionType } from '../types';
 import { AccountEntry, MoneyAccount } from '../types/accounts';
 import { accountName, transactionTitle } from './format';
@@ -66,4 +67,13 @@ export function filterTransactions(transactions: AccountEntry[], query: string, 
       return amount !== null && amountMatches(amount, transaction);
     });
   });
+}
+
+// An income or expense the owner has not categorised yet. A transfer's fee row is never one (it is always in Fees).
+export function isUncategorised(entry: AccountEntry): boolean {
+  return (entry.type === 'income' || entry.type === 'expense') && entry.category === UNCATEGORISED_NAME;
+}
+
+export function filterUncategorised(entries: AccountEntry[]): AccountEntry[] {
+  return entries.filter(isUncategorised);
 }

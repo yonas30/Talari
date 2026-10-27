@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 
+import { isProtectedCategory } from '../constants/categories';
 import {
   addCategory,
   addCurrency,
@@ -25,6 +26,9 @@ import {
   initializeDatabase,
   readLedger,
   saveLedgerDiff,
+  saveLedgerWithOpening,
+  saveLedgerWithPair,
+  saveLedgerWithSuggestion,
   toggleRecurringTransaction,
   updateCategory,
   updateRecurringTransaction,
@@ -50,7 +54,7 @@ import {
 } from '../types';
 import { AccountEntry, AccountGoal, AccountsState, GoalAllocation, MoneyAccount, ReserveNotification } from '../types/accounts';
 import { defaultCtx } from '../utils/accounts/context';
-import { EntryInput, planAddEntry, planDeleteEntry, planEditEntry } from '../utils/accounts/entries';
+import { EntryInput, planAddEntry, planConfirmEntryDate, planDeleteEntry, planEditEntry } from '../utils/accounts/entries';
 import { GoalInput, planAddToGoal, planCreateGoal, planDeleteGoal, planMoveGoal, planWithdrawFromGoal } from '../utils/accounts/goals';
 import {
   AccountInput,
@@ -60,9 +64,16 @@ import {
   planCreateAccount,
   planDeleteAccount,
   planRenameAccount,
+  planUpdateAccountSms,
 } from '../utils/accounts/manage';
 import { expiredIds, markReserveRead } from '../utils/accounts/notificationRetention';
 import { WriteResult } from '../utils/accounts/reserve';
+import { planFeeRepair } from '../utils/sms/feeRepair';
+import { SmsSuggestion } from '../types/sms';
+import { OpeningPlan } from '../utils/sms/opening';
+import { PairSavePlan } from '../utils/sms/pairSave';
+import { AdjustmentOptions, planReconcileAdjustment, ReconcileStatus } from '../utils/sms/reconcile';
+import { SuggestionSavePlan } from '../utils/sms/saveSuggestion';
 import { getNetSavingsChange, getPeriodSummary, getTotals, TotalsSummary } from '../utils/accounts/totals';
 import { getGoalProgress, nextGoalStatus } from '../utils/currency';
 import { todayKey } from '../utils/dates';
@@ -96,10 +107,31 @@ export interface FinanceStoreState {
   deleteAccount: (id: string) => Promise<void>;
   changeAccountCurrency: (id: string, currency: CurrencyCode) => Promise<void>;
   renameAccount: (id: string, name: string) => Promise<void>;
+  // The optional SMS link of an account: who its messages come from and its last digits.
+  updateAccountSms: (id: string, input: { smsSender: string | null; lastDigits: string | null }) => Promise<void>;
+  // Saves a planned SMS import (payment, fee, goal shrink) together with confirming its suggestion, in one database transaction.
+  commitSmsSave: (plan: SuggestionSavePlan) => Promise<void>;
+  // For "Save all that are clean": writes ONE planned message to the database (its own transaction) WITHOUT touching what the screens show, so a
+  // batch does not re-render the app once per message. `before` is the ledger the earlier messages left.
+  writeSmsSave: (plan: SuggestionSavePlan, before: AccountsState) => void;
+  // ...and then brings the screens up to date once, with the ledger the batch ended with.
+  showSavedLedger: (state: AccountsState) => Promise<void>;
+  // Saves a planned opening-balance change (the opening, the messages saved with it and their fees) together with confirming those messages, in
+  // one database transaction. Written first, shown only if it worked.
+  commitOpeningChange: (plan: OpeningPlan) => Promise<void>;
+  // Saves a planned pair (one transfer, or a converted entry, with its fee) together with confirming BOTH messages, in one database transaction.
+  commitPairSave: (plan: PairSavePlan) => Promise<void>;
 
   addTransaction: (input: EntryInput) => Promise<WriteResult>;
   updateTransaction: (id: string, input: EntryInput) => Promise<WriteResult>;
   deleteTransaction: (id: string) => Promise<WriteResult>;
+  // "Fee counted twice" (V2_SPEC Part Z): fixes the amount of the given entries, checked again against the ledger as it is now, in ONE database
+  // transaction (all or nothing). Throws an AccountsError, with nothing written, if any of them no longer matches or the ledger would be invalid.
+  repairFeesCountedTwice: (suggestions: SmsSuggestion[], entryIds: string[]) => Promise<void>;
+  // "Add adjustment" on the reconcile banner: one adjustment entry for the difference. Throws an AccountsError, with nothing written, if it cannot be added.
+  addReconcileAdjustment: (status: ReconcileStatus, options?: AdjustmentOptions) => Promise<void>;
+  // "Date is right": an imported entry's estimated date is confirmed, so it is no longer marked as an estimate.
+  confirmEntryDate: (id: string) => Promise<void>;
 
   addCategory: (input: Omit<Category, 'id' | 'isDefault'>) => Promise<Category>;
   updateCategory: (id: string, input: Omit<Category, 'id' | 'isDefault'>) => Promise<void>;
@@ -184,6 +216,11 @@ function syncReserveNotifications(): void {
 // and the database in step.
 function saveLedger(next: AccountsState): void {
   saveLedgerDiff(getAccountsState(), next);
+  showLedger(next);
+}
+
+// What the screens see after a successful save.
+function showLedger(next: AccountsState): void {
   useFinanceStore.setState({
     accounts: next.accounts,
     transactions: [...next.entries].sort(byNewestFirst),
@@ -299,6 +336,37 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
   renameAccount: async (id: string, name: string) => {
     saveLedger(planRenameAccount(getAccountsState(), id, name));
   },
+  updateAccountSms: async (id: string, input: { smsSender: string | null; lastDigits: string | null }) => {
+    saveLedger(planUpdateAccountSms(getAccountsState(), id, input));
+  },
+  writeSmsSave: (plan: SuggestionSavePlan, before: AccountsState) => {
+    saveLedgerWithSuggestion(before, plan.result.state, plan.confirmation);
+  },
+  showSavedLedger: async (state: AccountsState) => {
+    showLedger(state);
+    await reconcileAllGoals();
+  },
+  commitOpeningChange: async (plan: OpeningPlan) => {
+    saveLedgerWithOpening(
+      getAccountsState(),
+      plan.state,
+      plan.confirmations.map((item) => ({ suggestionId: item.suggestionId, entryId: item.entryId })),
+    );
+    showLedger(plan.state);
+    await reconcileAllGoals();
+  },
+  commitPairSave: async (plan: PairSavePlan) => {
+    // Same rule as an import: the database first, the screens only if it worked.
+    saveLedgerWithPair(getAccountsState(), plan.result.state, plan.confirmation);
+    showLedger(plan.result.state);
+    await reconcileAllGoals();
+  },
+  commitSmsSave: async (plan: SuggestionSavePlan) => {
+    // Written first and shown only if it worked: a failed transaction leaves the database AND the screens exactly as they were.
+    saveLedgerWithSuggestion(getAccountsState(), plan.result.state, plan.confirmation);
+    showLedger(plan.result.state);
+    await reconcileAllGoals();
+  },
 
   // Every write validates the WHOLE resulting ledger first (date-ordered running balance of every account), so a create, edit, delete or
   // back-dated entry that would push an account below zero is rejected with an AccountsError and nothing is written. If it uses money
@@ -314,6 +382,19 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
     saveLedger(result.state);
     await reconcileAllGoals();
     return result;
+  },
+  repairFeesCountedTwice: async (suggestions: SmsSuggestion[], entryIds: string[]) => {
+    const plan = planFeeRepair(getAccountsState(), suggestions, entryIds, defaultCtx);
+    saveLedger(plan.state);
+    await reconcileAllGoals();
+  },
+  addReconcileAdjustment: async (status: ReconcileStatus, options?: AdjustmentOptions) => {
+    const result = planReconcileAdjustment(getAccountsState(), status, options, defaultCtx);
+    saveLedger(result.state);
+    await reconcileAllGoals();
+  },
+  confirmEntryDate: async (id: string) => {
+    saveLedger(planConfirmEntryDate(getAccountsState(), id));
   },
   deleteTransaction: async (id: string) => {
     const result = planDeleteEntry(getAccountsState(), id, defaultCtx);
@@ -331,6 +412,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
   },
   updateCategory: async (id: string, input: Omit<Category, 'id' | 'isDefault'>) => {
     const previous = get().categories.find((item) => item.id === id);
+    // The built-in Uncategorised categories are referred to by name, so they are never renamed or re-typed.
+    if (previous && isProtectedCategory(previous)) {
+      throw new Error('This category is built in and cannot be changed.');
+    }
     await updateCategory(id, input);
     set((state) => {
       const renamed = previous && previous.name !== input.name && (previous.type === 'income' || previous.type === 'expense');
@@ -355,6 +440,10 @@ export const useFinanceStore = create<FinanceStoreState>((set, get) => ({
     });
   },
   deleteCategory: async (id: string) => {
+    const target = get().categories.find((item) => item.id === id);
+    if (target && isProtectedCategory(target)) {
+      throw new Error('This category is built in and cannot be deleted.');
+    }
     await deleteCategory(id);
     set((state) => ({
       categories: state.categories.filter((item) => item.id !== id),

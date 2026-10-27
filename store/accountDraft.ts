@@ -10,9 +10,14 @@ export interface AccountDraft {
   name: string;
   amount: string;
   currency: string;
+  // Optional (V2_SPEC Part Z): who the account's SMS come from, and its last digits. Filled in from the quick pick.
+  smsSender: string;
+  lastDigits: string;
+  // "Get it from my messages" (Phase 6C-3): the account is created with no opening entry.
+  fromMessages: boolean;
 }
 
-export const EMPTY_ACCOUNT_DRAFT: AccountDraft = { type: 'bank', name: '', amount: '', currency: 'ETB' };
+export const EMPTY_ACCOUNT_DRAFT: AccountDraft = { type: 'bank', name: '', amount: '', currency: 'ETB', smsSender: '', lastDigits: '', fromMessages: false };
 
 interface AccountDraftState {
   draft: AccountDraft;

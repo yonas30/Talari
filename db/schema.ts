@@ -1,5 +1,10 @@
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+// THE MIGRATIONS ARE THE TRUTH. The SQL that really creates and changes the tables is in db/migrations.ts and the db/*Migration.ts files, and
+// each step only ADDS (schema 9 now). This file is a Drizzle description of the result, kept for readers and typed queries; nothing at run time
+// reads it. scripts/verify-schema-mirror.ts builds a database with the real migrations and fails if a table or a column here differs from it,
+// so when a migration changes a table, change it here too.
+
 export const categories = sqliteTable('categories', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -53,6 +58,8 @@ export const transactions = sqliteTable('transactions', {
   isAutomatic: integer('is_automatic', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+  // Schema 7 (Phase 6C-0): where an imported entry's date came from (message, paired, receipt, batch, manual). A label only; never a balance.
+  dateSource: text('date_source'),
 });
 
 export const goals = sqliteTable('goals', {
@@ -136,6 +143,7 @@ export const milestones = sqliteTable('milestones', {
   description: text('description').notNull().default(''),
   date: text('date').notNull(),
   type: text('type', { enum: ['goal_completed', 'streak', 'income_growth', 'manual'] }).notNull(),
+  goalId: text('goal_id'),
   createdAt: text('created_at').notNull(),
 });
 
@@ -149,3 +157,79 @@ export const monthlySnapshots = sqliteTable('monthly_snapshots', {
   createdAt: text('created_at').notNull(),
 });
 
+
+// ---- Phase 6 (SMS import from pasted messages) ---------------------------------------------------------------------------------------------
+
+// Schema 5, plus counterparty_code (6), date_source and paired_with_id (7). A message is kept as its HASH and what was read from it, never its
+// text. The same table holds the messages a version 4 backup brings back: a restored message has an id of "restored-<hash>", no account, no
+// names and only the handled-message figures (service, direction, kind, amount, charges, total, typed fee, date, date source).
+export const smsSuggestions = sqliteTable('sms_suggestions', {
+  id: text('id').primaryKey(),
+  // FNV-1a 64 of the normalised text; unique, so a message is never staged twice.
+  rawHash: text('raw_hash').notNull(),
+  status: text('status', { enum: ['pending', 'confirmed', 'ignored'] }).notNull(),
+  service: text('service', { enum: ['telebirr', 'cbe', 'boa', 'awash'] }).notNull(),
+  direction: text('direction', { enum: ['in', 'out'] }).notNull(),
+  kind: text('kind').notNull(),
+  amount: real('amount').notNull(),
+  fee: real('fee'),
+  vat: real('vat'),
+  otherCharge: real('other_charge'),
+  totalDeducted: real('total_deducted'),
+  counterpartyName: text('counterparty_name'),
+  counterpartyPhoneTail: text('counterparty_phone_tail'),
+  counterpartyBank: text('counterparty_bank'),
+  counterpartyAccountTail: text('counterparty_account_tail'),
+  accountTail: text('account_tail'),
+  reference: text('reference'),
+  occurredAt: text('occurred_at'),
+  balanceAfter: real('balance_after'),
+  note: text('note'),
+  // A JSON list of the self-check results the reviewer sees (for example total_mismatch).
+  flags: text('flags').notNull().default('[]'),
+  accountId: text('account_id'),
+  category: text('category').notNull().default(''),
+  // The fee the owner typed on the card, replacing the printed charges.
+  feeOverride: real('fee_override'),
+  date: text('date').notNull(),
+  createdAt: text('created_at').notNull(),
+  // The entry a confirmed message became (the main entry, or the transfer).
+  confirmedEntryId: text('confirmed_entry_id'),
+  counterpartyCode: text('counterparty_code'),
+  dateSource: text('date_source'),
+  pairedWithId: text('paired_with_id'),
+});
+
+// The category last used for a recipient (key from utils/sms/recipient.ts).
+export const recipientRules = sqliteTable('recipient_rules', {
+  key: text('key').primaryKey(),
+  category: text('category').notNull(),
+  lastUsed: text('last_used').notNull(),
+});
+
+// Schema 8: pairs the owner said are not transfers ("not a pair", "keep separate"); never offered again.
+export const pairRejections = sqliteTable('pair_rejections', {
+  pairKey: text('pair_key').primaryKey(),
+  reason: text('reason', { enum: ['not_pair', 'keep_separate'] }).notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+// Schema 7: the message whose "balance doesn't match your bank" banner was dismissed, per account.
+export const reconcileDismissals = sqliteTable('reconcile_dismissals', {
+  accountId: text('account_id').primaryKey(),
+  dismissedHash: text('dismissed_hash').notNull(),
+  dismissedAt: text('dismissed_at').notNull(),
+});
+
+// Schema 9: the owner's own names as banks write them (pairing rule 3). Personal data; they are in a backup.
+export const ownNames = sqliteTable('own_names', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+// Which notifications have been read (created in db/migrations.ts, used by db/notificationReads.ts).
+export const notificationReads = sqliteTable('notification_reads', {
+  id: text('id').primaryKey(),
+  readAt: text('read_at').notNull(),
+});

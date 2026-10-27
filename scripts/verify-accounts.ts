@@ -1061,11 +1061,11 @@ console.log('\nNotification retention: 30 days from creation (read or not); rest
 // ---- Migration schema 3 -> 4 (real SQLite) -----------------------------------------------------------------------------------------------
 console.log('\nMigration 3 -> 4: reset transactions / goals / recurring, clear milestones and snapshots, keep the rest');
 {
-  check('the app is on schema 4 and runMigrations runs the accounts step', SCHEMA_VERSION === 4 && ACCOUNTS_SCHEMA_VERSION === 4);
+  check('the app is on schema 9 (SMS, Uncategorised, date sources, pair rejections and own names, additive) and runMigrations still runs the accounts step (4)', SCHEMA_VERSION === 9 && ACCOUNTS_SCHEMA_VERSION === 4);
   const freshDb = new DatabaseSync(':memory:');
   const freshResult = runMigrations(runnerFor(freshDb), 0);
-  check('a fresh install goes 0 -> 4 in one call and gets the accounts tables', versionOf(freshDb) === 4 && freshResult.accounts !== null && tableExists(freshDb, 'accounts') && tableExists(freshDb, 'goal_allocations') && tableExists(freshDb, 'notifications'));
-  check('...and running it again changes nothing', runMigrations(runnerFor(freshDb), 4).accounts === null && versionOf(freshDb) === 4);
+  check('a fresh install goes 0 -> 9 in one call and gets the accounts tables', versionOf(freshDb) === 9 && freshResult.accounts !== null && tableExists(freshDb, 'accounts') && tableExists(freshDb, 'goal_allocations') && tableExists(freshDb, 'notifications'));
+  check('...and running it again changes nothing', runMigrations(runnerFor(freshDb), 9).accounts === null && versionOf(freshDb) === 9);
   check('a fresh install keeps an EMPTY categories table, so the first launch still seeds every default (Fees among them)', countOf(freshDb, 'categories') === 0 && !freshResult.accounts?.feesCategoryAdded);
 
   const schema3Device = (): NodeDb => {
@@ -1097,10 +1097,10 @@ console.log('\nMigration 3 -> 4: reset transactions / goals / recurring, clear m
   const wired = runMigrations(run, 3);
   const result = wired.accounts!;
   check('the migration reports what it removed (2 transactions, 1 goal, 1 recurring rule, 1 milestone, 1 snapshot)', result.droppedTransactions === 2 && result.droppedGoals === 1 && result.droppedRecurring === 1 && result.clearedMilestones === 1 && result.clearedSnapshots === 1);
-  check('the schema is now version 4', versionOf(db) === 4);
+  check('the schema is now version 9', versionOf(db) === 9);
   check('transactions, goals and recurring rules are recreated empty', countOf(db, 'transactions') === 0 && countOf(db, 'goals') === 0 && countOf(db, 'recurring_transactions') === 0);
   check('milestones and monthly snapshots are cleared', countOf(db, 'milestones') === 0 && countOf(db, 'monthly_snapshots') === 0);
-  check('categories, budgets, currencies, exchange rates and the origin story are kept', countOf(db, 'budgets') === 1 && countOf(db, 'currencies') === 2 && countOf(db, 'exchange_rates') === 1 && countOf(db, 'user_origin') === 1 && countOf(db, 'categories') === 4);
+  check('categories (3 + Fees + the two built-in Uncategorised), budgets, currencies, exchange rates and the origin story are kept', countOf(db, 'budgets') === 1 && countOf(db, 'currencies') === 2 && countOf(db, 'exchange_rates') === 1 && countOf(db, 'user_origin') === 1 && countOf(db, 'categories') === 6);
   check('the user\'s own category and the stored rate are untouched', (db.prepare("SELECT COUNT(*) AS c FROM categories WHERE id = 'mine'").get() as { c: number }).c === 1 && (db.prepare("SELECT rate FROM exchange_rates WHERE id = 'USD-ETB'").get() as { rate: number }).rate === 57);
   check('stored notification read ids are kept', countOf(db, 'notification_reads') === 1);
   check('a Fees expense category was added', result.feesCategoryAdded && (db.prepare("SELECT COUNT(*) AS c FROM categories WHERE name = 'Fees' AND type = 'expense'").get() as { c: number }).c === 1);

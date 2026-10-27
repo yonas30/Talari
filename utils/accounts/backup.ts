@@ -1,5 +1,5 @@
 import { BASE_CURRENCY, accountColour } from '../../constants/accounts';
-import { FEES_CATEGORY } from '../../constants/categories';
+import { FEES_CATEGORY, UNCATEGORISED_EXPENSE, UNCATEGORISED_INCOME } from '../../constants/categories';
 import { Budget, Category, ExchangeRate, GoalStatus } from '../../types';
 import {
   AccountEntry,
@@ -9,6 +9,10 @@ import {
   MoneyAccount,
   ReserveNotification,
 } from '../../types/accounts';
+import { DATE_SOURCES } from '../../types/accounts';
+import { SmsSuggestion } from '../../types/sms';
+import { HandledRecord, readHandledRecords, restoredSuggestions, toHandledRecords } from '../sms/handledBackup';
+import { MAX_OWN_NAME_LENGTH, MAX_OWN_NAMES, cleanOwnNameInput, normaliseOwnName } from '../sms/ownNames';
 import { getAccountBalances, validateEntries } from './balances';
 import { pruneExpired } from './notificationRetention';
 import { Ctx, defaultCtx } from './context';
@@ -29,6 +33,15 @@ export interface BackupV3 {
   goalAllocations: GoalAllocation[];
   budgets: Budget[];
   notifications: ReserveNotification[];
+}
+
+// Version 4 (Phase 6D-1): version 3 plus the handled messages (hashes and a few figures, never message text; see utils/sms/handledBackup.ts).
+export interface BackupV4 extends Omit<BackupV3, 'version'> {
+  version: 4;
+  handledMessages: HandledRecord[];
+  // The owner's own names as banks write them (Phase 6D-3): personal data, so the file is private. Optional: a backup without it leaves the
+  // device's names as they are, and no version change was needed.
+  ownNames?: string[];
 }
 
 // The old payload, as the Available / Saved build wrote it. These shapes exist only to read such a file; the app no longer has the
@@ -79,6 +92,11 @@ export interface RestoreResult {
   backup: BackupV3;
   // Shown to the owner after a restore. For an old backup it says exactly how the data was mapped.
   message: string;
+  // The message rows a restore writes in the same transaction, replacing the device's confirmed and skipped ones. null for an older backup
+  // (version 3 or 2): those carry none, so the device's handled messages are left exactly as they are.
+  handled: SmsSuggestion[] | null;
+  // The owner's names a restore writes, replacing the device's. null: the backup carries none (an older one), so the device's stay.
+  ownNames: string[] | null;
 }
 
 export function createBackupV3(source: { categories: Category[]; budgets: Budget[]; state: AccountsState }, now: Date = new Date()): BackupV3 {
@@ -97,6 +115,13 @@ export function createBackupV3(source: { categories: Category[]; budgets: Budget
   };
 }
 
+// What an export writes: the ledger as version 3 does, and the messages the owner has handled (confirmed or skipped) as hashes with a few figures.
+export function createBackupV4(source: { categories: Category[]; budgets: Budget[]; state: AccountsState; suggestions: SmsSuggestion[]; ownNames?: string[] }, now: Date = new Date()): BackupV4 {
+  const { version: _version, ...ledger } = createBackupV3(source, now);
+  void _version;
+  return { version: 4, ...ledger, handledMessages: toHandledRecords(source.suggestions), ownNames: source.ownNames ?? [] };
+}
+
 function fail(message: string): never {
   throw new AccountsError('RESTORE_FAILED', message);
 }
@@ -104,7 +129,23 @@ function fail(message: string): never {
 function withFees(categories: Category[]): Category[] {
   // The legacy 'savings' classification has no meaning any more, so it is not restored.
   const kept = categories.filter((item) => item.type !== 'savings');
-  return kept.some((item) => item.type === 'expense' && item.name === FEES_CATEGORY.name) ? kept : [...kept, FEES_CATEGORY];
+  // The built-in categories always exist after a restore, whatever the file holds: Fees (transfer fees) and the two Uncategorised ones
+  // (the default for an imported message). An older backup was made before the latter existed.
+  const has = (category: Category) => kept.some((item) => item.type === category.type && item.name === category.name);
+  return [...kept, ...[FEES_CATEGORY, UNCATEGORISED_INCOME, UNCATEGORISED_EXPENSE].filter((category) => !has(category))];
+}
+
+// An entry's date source is optional: a backup without it restores with none, and a value this app does not know is dropped.
+function cleanDateSources(entries: AccountEntry[]): AccountEntry[] {
+  return entries.map((entry) => {
+    const source = (entry as { dateSource?: unknown }).dateSource;
+    if (source === undefined || (typeof source === 'string' && (DATE_SOURCES as readonly string[]).includes(source))) {
+      return entry;
+    }
+    const { dateSource: _dropped, ...rest } = entry as AccountEntry & { dateSource?: unknown };
+    void _dropped;
+    return rest as AccountEntry;
+  });
 }
 
 // Never restores a ledger that breaks an invariant: valid rows, no account below zero, every allocation pointing at a real goal in
@@ -162,8 +203,10 @@ function restoreV3(payload: BackupV3, now: Date): RestoreResult {
   }
   // Notifications older than the retention are dropped, as they would be on the next app load anyway.
   return {
-    backup: { ...payload, categories: withFees(payload.categories), notifications: pruneExpired(payload.notifications, now) },
+    backup: { ...payload, transactions: cleanDateSources(payload.transactions), categories: withFees(payload.categories), notifications: pruneExpired(payload.notifications, now) },
     message: 'Your data has been restored from the backup.',
+    handled: null,
+    ownNames: null,
   };
 }
 
@@ -313,16 +356,68 @@ function mapLegacyV2(payload: LegacyBackupV2, ctx: Ctx): RestoreResult {
       notifications: [],
     },
     message,
+    handled: null,
+    ownNames: null,
   };
 }
 
-// Reads any backup this app has ever written. Version 3 is restored as is (after the invariant checks); version 2 is mapped into one
+// The optional list of the owner's names in a version 4 backup. A list that is not a list of texts, or too long, is refused; texts are tidied the
+// way a typed name is, and a name that is the same as an earlier one (ignoring case and spacing) is dropped.
+function readOwnNamesList(raw: unknown): string[] | string {
+  if (!Array.isArray(raw) || raw.length > MAX_OWN_NAMES * 5) {
+    return 'The list of your names in this backup is damaged.';
+  }
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== 'string' || item.length > MAX_OWN_NAME_LENGTH * 4) {
+      return 'A name in this backup is damaged.';
+    }
+    const text = cleanOwnNameInput(item);
+    const key = text === null ? '' : normaliseOwnName(text);
+    if (text === null || key === '') {
+      return 'A name in this backup is empty.';
+    }
+    if (!seen.has(key)) {
+      seen.add(key);
+      names.push(text);
+    }
+  }
+  return names.length > MAX_OWN_NAMES ? `This backup has more than ${MAX_OWN_NAMES} names.` : names;
+}
+
+// Version 4: the ledger is checked exactly as version 3 is, and the handled list is read strictly (a damaged file is refused, nothing written).
+// A confirmed message whose entry is not in the restored ledger is kept as skipped, so it can never hide a message that has no entry.
+function restoreV4(payload: BackupV4, ctx: Ctx): RestoreResult {
+  const { handledMessages, ownNames: rawNames, version: _version, ...ledger } = payload;
+  void _version;
+  const records = readHandledRecords(handledMessages);
+  if (typeof records === 'string') {
+    fail(`This backup cannot be restored. ${records} Nothing was changed.`);
+  }
+  const names = rawNames === undefined ? null : readOwnNamesList(rawNames);
+  if (typeof names === 'string') {
+    fail(`This backup cannot be restored. ${names} Nothing was changed.`);
+  }
+  const restored = restoreV3({ version: 3, ...ledger }, ctx.now());
+  const result = restoredSuggestions(records, new Set(restored.backup.transactions.map((entry) => entry.id)), ctx.now().toISOString());
+  const count = result.rows.length;
+  const note = count === 0 ? 'The backup had no handled messages.' : `${count} handled ${count === 1 ? 'message' : 'messages'} restored (${result.confirmed} saved, ${result.skipped} skipped), so they are not offered again.`;
+  const demoted = result.demoted > 0 ? ` ${result.demoted} saved ${result.demoted === 1 ? 'message points' : 'messages point'} at an entry that is not in the backup, so ${result.demoted === 1 ? 'it was' : 'they were'} kept as skipped.` : '';
+  const namesNote = names === null ? '' : names.length === 0 ? ' Your list of names as banks write them was cleared, as the backup has none.' : ` ${names.length} ${names.length === 1 ? 'name' : 'names'} as banks write them restored.`;
+  return { backup: restored.backup, message: `${restored.message} ${note}${demoted}${namesNote}`, handled: result.rows, ownNames: names };
+}
+
+// Reads any backup this app has ever written. Version 4 and 3 are restored as is (after the invariant checks); version 2 is mapped into one
 // Cash account; anything else is refused with a clear message. Throws AccountsError('RESTORE_FAILED'); nothing is written here.
 export function restoreBackup(payload: unknown, ctx: Ctx = defaultCtx): RestoreResult {
   if (typeof payload !== 'object' || payload === null || !('version' in payload)) {
     fail('This file does not look like a valid backup.');
   }
   const version = (payload as { version: unknown }).version;
+  if (version === 4) {
+    return restoreV4(payload as BackupV4, ctx);
+  }
   if (version === 3) {
     return restoreV3(payload as BackupV3, ctx.now());
   }

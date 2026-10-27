@@ -12,6 +12,7 @@ import WelcomeScreen from '../components/WelcomeScreen';
 import { useAppFonts } from '../theme/fonts';
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 import { useFinanceStore } from '../store/finance';
+import { useSmsStore } from '../store/sms';
 import { useProfileStore } from '../store/profile';
 import { useUiStore } from '../store/ui';
 import { statusBarStyleForBackground } from '../utils/statusBar';
@@ -51,7 +52,8 @@ function RootLayoutContent() {
   const fonts = useAppFonts();
 
   useEffect(() => {
-    void loadData();
+    // The SMS suggestions are read after the ledger so a card can be matched to its account.
+    void loadData().then(() => useSmsStore.getState().load());
   }, [loadData]);
 
   // Welcome or app? Needs the ledger loaded (someone with data skips the full Welcome screen). It is decided here, while

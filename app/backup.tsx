@@ -11,6 +11,7 @@ import NameSheet from '../components/NameSheet';
 import SettingsGroup from '../components/SettingsGroup';
 import SettingsRow from '../components/SettingsRow';
 import { useProfileStore } from '../store/profile';
+import { useSmsStore } from '../store/sms';
 import { useUiStore } from '../store/ui';
 import { useTheme } from '../theme/ThemeProvider';
 import { isAppLockEnabled, setAppLockEnabled } from '../utils/appLock';
@@ -24,6 +25,7 @@ export default function SettingsScreen() {
   const saveName = useProfileStore((state) => state.saveName);
   const clearName = useProfileStore((state) => state.clearName);
   const [nameSheetOpen, setNameSheetOpen] = useState(false);
+  const ownNameCount = useSmsStore((state) => state.ownNames.length);
 
   useEffect(() => {
     void isAppLockEnabled().then(setLockEnabled);
@@ -84,6 +86,12 @@ export default function SettingsScreen() {
             title="Your name"
             subtitle={name ?? 'Not set'}
             onPress={() => setNameSheetOpen(true)}
+          />
+          <SettingsRow
+            icon="people-outline"
+            title="Your name as banks write it"
+            subtitle={ownNameCount === 0 ? 'Helps find transfers between your accounts' : `${ownNameCount} ${ownNameCount === 1 ? 'name' : 'names'}`}
+            onPress={() => router.push('/own-names')}
             isLast
           />
         </SettingsGroup>

@@ -23,15 +23,40 @@ import {
   UserOriginInput,
 } from '../types';
 import { AccountEntry, AccountsState } from '../types/accounts';
-import { BackupV3, createBackupV3, restoreBackup } from '../utils/accounts/backup';
+import { RecipientRule, SmsSuggestion } from '../types/sms';
+import { BackupV4, createBackupV4, restoreBackup } from '../utils/accounts/backup';
 import { defaultCtx } from '../utils/accounts/context';
 import { AccountsError } from '../utils/accounts/errors';
 import { planAddEntry } from '../utils/accounts/entries';
 import { parseDateKey, toLocalDateKey } from '../utils/dates';
 import { advanceDate, getNextDueDate, planRecurringEdit } from '../utils/recurring';
-import { AccountsData, deleteNotifications, readAccountsData, saveAccountsDiff, writeAccountsData } from './accountsRepo';
+import { applyBackupRows } from './backupRepo';
+import { AccountsData, deleteNotifications, readAccountsData, saveAccountsDiff } from './accountsRepo';
 import { forgetReads, getReadIds, markRead, pruneReads } from './notificationReads';
 import { runMigrations, SqlRunner } from './migrations';
+import {
+  addPairRejection,
+  commitOpeningChange,
+  commitPairSave,
+  commitSuggestionSave,
+  deleteOwnName,
+  insertOwnName,
+  insertSuggestions,
+  OpeningConfirmationRow,
+  OwnName,
+  PairConfirmation,
+  PairRejectionReason,
+  saveReconcileDismissal,
+  readPairRejections,
+  readReconcileDismissals,
+  readOwnNames,
+  readRules,
+  readSuggestions,
+  renameOwnName,
+  SuggestionChoices,
+  SuggestionConfirmation,
+  updateSuggestionChoices,
+} from './smsRepo';
 
 export const database = openDatabaseSync('my-finances.db');
 export const db = drizzle(database);
@@ -169,6 +194,66 @@ export function readLedger(): AccountsData {
 
 export function saveLedgerDiff(before: AccountsState, after: AccountsState): void {
   saveAccountsDiff(sqlRunner, before, after);
+}
+
+// ---- imported SMS (V2_SPEC Part Z) ------------------------------------------------------------------------------------------------
+export function readSmsData(): { suggestions: SmsSuggestion[]; rules: RecipientRule[] } {
+  return { suggestions: readSuggestions(sqlRunner), rules: readRules(sqlRunner) };
+}
+
+export function readOwnNamesData(): OwnName[] {
+  return readOwnNames(sqlRunner);
+}
+
+export function saveOwnName(row: OwnName): void {
+  insertOwnName(sqlRunner, row);
+}
+
+export function saveOwnNameText(id: string, name: string): void {
+  renameOwnName(sqlRunner, id, name);
+}
+
+export function removeOwnName(id: string): void {
+  deleteOwnName(sqlRunner, id);
+}
+
+export function saveSuggestions(rows: SmsSuggestion[]): void {
+  insertSuggestions(sqlRunner, rows);
+}
+
+export function saveSuggestionChoices(id: string, patch: SuggestionChoices): void {
+  updateSuggestionChoices(sqlRunner, id, patch);
+}
+
+export function readReconcileDismissalMap(): Record<string, string> {
+  return readReconcileDismissals(sqlRunner);
+}
+
+export function dismissReconcileMismatch(accountId: string, hash: string, at: string): void {
+  saveReconcileDismissal(sqlRunner, accountId, hash, at);
+}
+
+export function readPairRejectionKeys(): Set<string> {
+  return readPairRejections(sqlRunner);
+}
+
+export function savePairRejection(key: string, reason: PairRejectionReason, at: string): void {
+  addPairRejection(sqlRunner, key, reason, at);
+}
+
+// A transfer (or a converted entry) and the confirmation of BOTH messages it came from, in ONE transaction.
+export function saveLedgerWithPair(before: AccountsState, after: AccountsState, confirmation: PairConfirmation): void {
+  commitPairSave(sqlRunner, before, after, confirmation);
+}
+
+// An opening-balance change, the entries of the messages saved with it and their confirmation, in ONE transaction.
+export function saveLedgerWithOpening(before: AccountsState, after: AccountsState, confirmations: OpeningConfirmationRow[]): void {
+  commitOpeningChange(sqlRunner, before, after, confirmations);
+}
+
+// A ledger write and the confirmation of the suggestion it came from, in ONE transaction.
+export function saveLedgerWithSuggestion(before: AccountsState, after: AccountsState, confirmation: SuggestionConfirmation): void {
+  commitSuggestionSave(sqlRunner, before, after, confirmation);
 }
 
 export async function addCategory(input: Omit<Category, 'id' | 'isDefault'>): Promise<Category> {
@@ -696,90 +781,31 @@ export async function addMonthlySnapshotIfMissing(
   return snapshot;
 }
 
-// ---- backup and restore (version 3) ---------------------------------------------------------------------------------------------
-export async function exportBackup(): Promise<BackupV3> {
+// ---- backup and restore (version 4; version 3 and 2 still restore) ------------------------------------------------------------------
+export async function exportBackup(): Promise<BackupV4> {
   const [categoriesData, budgetsData, ratesData] = await Promise.all([getCategories(), getBudgets(), getExchangeRates()]);
   const data = readAccountsData(sqlRunner);
-  return createBackupV3({
+  return createBackupV4({
     categories: categoriesData,
     budgets: budgetsData,
     state: { ...data, rates: ratesData, currencies: [] },
+    suggestions: readSuggestions(sqlRunner),
+    ownNames: readOwnNames(sqlRunner).map((row) => row.name),
   });
 }
 
-// Replaces the accounts, ledger, goals, categories, budgets and rates with the backup's, all or nothing. Recurring rules are not part of
-// a backup and point at accounts by id, so they are cleared (the returned count says how many). A currency the restored accounts or
-// rates use that is not on this device's list is added to it, so no account is left in a currency the app does not know.
-function applyBackup(backup: BackupV3): number {
-  const known = new Set((database.getAllSync('SELECT code FROM currencies') as Array<{ code: string }>).map((row) => row.code));
-  const needed = new Set<string>([...backup.accounts.map((account) => account.currency), ...backup.exchangeRates.map((rate) => rate.fromCurrency)]);
-  const clearedRules = Number((database.getFirstSync('SELECT COUNT(*) AS c FROM recurring_transactions') as { c: number } | null)?.c ?? 0);
-
-  database.execSync('BEGIN');
-  try {
-    writeAccountsData(sqlRunner, {
-      accounts: backup.accounts,
-      entries: backup.transactions,
-      goals: backup.goals,
-      allocations: backup.goalAllocations,
-      notifications: backup.notifications,
-    });
-    database.execSync('DELETE FROM recurring_transactions');
-    database.execSync('DELETE FROM categories');
-    database.execSync('DELETE FROM exchange_rates');
-    database.execSync('DELETE FROM budgets');
-
-    for (const category of backup.categories) {
-      database.runSync(
-        'INSERT INTO categories (id, name, type, icon, color, is_default) VALUES (?, ?, ?, ?, ?, ?)',
-        category.id,
-        category.name,
-        category.type,
-        category.icon,
-        category.color,
-        category.isDefault ? 1 : 0,
-      );
-    }
-    for (const rate of backup.exchangeRates) {
-      database.runSync(
-        'INSERT INTO exchange_rates (id, from_currency, to_currency, rate, updated_at) VALUES (?, ?, ?, ?, ?)',
-        rate.id,
-        rate.fromCurrency,
-        rate.toCurrency,
-        rate.rate,
-        rate.updatedAt,
-      );
-    }
-    for (const budget of backup.budgets) {
-      database.runSync(
-        'INSERT INTO budgets (id, category, monthly_limit, currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-        budget.id,
-        budget.category,
-        budget.monthlyLimit,
-        budget.currency,
-        budget.createdAt,
-        budget.updatedAt,
-      );
-    }
-    for (const code of needed) {
-      if (!known.has(code)) {
-        database.runSync('INSERT INTO currencies (code, name, is_default) VALUES (?, ?, 0)', code, code);
-      }
-    }
-
-    database.execSync('COMMIT');
-    return clearedRules;
-  } catch (error) {
-    database.execSync('ROLLBACK');
-    throw error;
-  }
-}
-
-// Reads any backup this app has written (version 3, or an old version 2 which lands in one "Cash" account), checks it, and replaces
-// the data with it. Returns the message to show the owner. Throws AccountsError('RESTORE_FAILED') when it cannot be restored, with nothing changed.
+// Reads any backup this app has written (version 4, 3, or an old version 2 which lands in one "Cash" account), checks it, and replaces the data
+// with it in ONE transaction (db/backupRepo.ts). Returns the message to show the owner. Throws AccountsError('RESTORE_FAILED') when it cannot be
+// restored, with nothing changed.
 export async function restoreBackupPayload(payload: unknown): Promise<string> {
-  const { backup, message } = restoreBackup(payload);
-  const clearedRules = applyBackup(backup);
+  const { backup, message, handled, ownNames } = restoreBackup(payload);
+  const stamp = new Date().toISOString();
+  const clearedRules = applyBackupRows(
+    sqlRunner,
+    backup,
+    handled,
+    ownNames === null ? null : ownNames.map((name, index) => ({ id: `own-${Date.now()}-${index}`, name, createdAt: stamp })),
+  );
   return clearedRules > 0
     ? `${message} Your ${clearedRules} recurring ${clearedRules === 1 ? 'rule was' : 'rules were'} cleared, because they belong to accounts and are not part of a backup.`
     : message;

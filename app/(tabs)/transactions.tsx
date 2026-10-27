@@ -3,6 +3,7 @@ import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
+import FeeRepairCard from '../../components/accounts/FeeRepairCard';
 import AppHeader from '../../components/AppHeader';
 import AppText from '../../components/AppText';
 import AppTextInput from '../../components/AppTextInput';
@@ -11,7 +12,8 @@ import { useFinanceStore } from '../../store/finance';
 import { useTheme } from '../../theme/ThemeProvider';
 import { accountName, formatDateKey, formatMoney, formatNumber, transactionTitle } from '../../utils/format';
 import { entryAmountRole, formatEntryAmount } from '../../utils/homeModel';
-import { filterByType, filterTransactions, TypeFilter } from '../../utils/search';
+import { filterByType, filterTransactions, filterUncategorised, TypeFilter } from '../../utils/search';
+import { isEstimatedDate } from '../../utils/sms/dateSource';
 
 const TYPE_TABS: SegmentOption<TypeFilter>[] = [
   { key: 'all', label: 'All' },
@@ -41,10 +43,14 @@ export default function TransactionsScreen() {
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [onlyUncategorised, setOnlyUncategorised] = useState(false);
 
   // The tab narrows by type first; the search then looks only inside that tab ("food" on Expense searches expenses).
   // Filters live as you type: merchant/source, category, note, a transfer's From -> To, and amounts.
-  const inTab = useMemo(() => filterByType(transactions, typeFilter), [transactions, typeFilter]);
+  // "Uncategorised (N)": just the entries still waiting for a category (saved from SMS without one), so they can be fixed one by one.
+  const uncategorised = useMemo(() => filterUncategorised(transactions), [transactions]);
+  const showOnlyUncategorised = onlyUncategorised && uncategorised.length > 0;
+  const inTab = useMemo(() => filterByType(showOnlyUncategorised ? uncategorised : transactions, typeFilter), [showOnlyUncategorised, uncategorised, transactions, typeFilter]);
   const visible = useMemo(() => filterTransactions(inTab, query, accounts), [inTab, query, accounts]);
   const isSearching = query.trim().length > 0;
   const noun = TAB_NOUNS[typeFilter];
@@ -60,6 +66,7 @@ export default function TransactionsScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Transactions" />
+      <FeeRepairCard />
       {transactions.length === 0 ? (
         <View style={styles.emptyContainer}>
           <AppText style={[styles.emptyState, { color: colors.textMuted }]}>No transactions yet — add your first one.</AppText>
@@ -69,6 +76,24 @@ export default function TransactionsScreen() {
           <View style={styles.tabsWrap}>
             <SegmentedControl options={TYPE_TABS} value={typeFilter} onChange={setTypeFilter} />
           </View>
+          {uncategorised.length > 0 ? (
+            <Pressable
+              onPress={() => setOnlyUncategorised((value) => !value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: showOnlyUncategorised }}
+              accessibilityLabel={showOnlyUncategorised ? `Showing ${uncategorised.length} uncategorised. Show all` : `Show ${uncategorised.length} uncategorised`}
+              style={({ pressed }) => [
+                styles.uncategorisedChip,
+                { backgroundColor: showOnlyUncategorised ? colors.accentDisc : colors.surface, borderColor: showOnlyUncategorised ? colors.primary : colors.border },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Ionicons name={showOnlyUncategorised ? 'close-circle-outline' : 'help-circle-outline'} size={16} color={colors.primaryText} />
+              <AppText style={[styles.uncategorisedText, { color: colors.text }]}>
+                {showOnlyUncategorised ? `Showing Uncategorised (${uncategorised.length}) · Show all` : `Uncategorised (${uncategorised.length})`}
+              </AppText>
+            </Pressable>
+          ) : null}
           <View
             style={[
               styles.searchBox,
@@ -148,7 +173,8 @@ export default function TransactionsScreen() {
                       : isTransfer && item.toAmount !== null && toCurrency !== item.currency
                         ? ` · ${formatMoney(item.amount, item.currency)} → ${formatMoney(item.toAmount, toCurrency)}`
                         : '';
-              const sub = `${formatDateKey(item.date)}${where}${item.linkedTransferId ? ' · transfer fee' : ''}`;
+              // An imported entry whose date is only the batch default: a quiet note until the owner edits or confirms the date.
+              const sub = `${formatDateKey(item.date)}${where}${item.linkedTransferId ? ' · transfer fee' : ''}${isEstimatedDate(item.dateSource) ? ' · date estimated' : ''}`;
               const detail = detailLine(item.source, item.note);
               // One flat card made of rows: the first row rounds the top corners, the last the bottom ones, hairlines between.
               const first = index === 0;
@@ -241,6 +267,22 @@ const styles = StyleSheet.create({
   tabsWrap: {
     marginHorizontal: 20,
     marginTop: 8,
+  },
+  uncategorisedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    minHeight: 36,
+    marginHorizontal: 20,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  uncategorisedText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   searchBox: {
     flexDirection: 'row',

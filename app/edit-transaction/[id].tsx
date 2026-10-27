@@ -13,6 +13,7 @@ import { defaultCtx } from '../../utils/accounts/context';
 import { EntryInput, planDeleteEntry } from '../../utils/accounts/entries';
 import { AccountsError } from '../../utils/accounts/errors';
 import { accountName, formatDateKey, formatETB, formatMoney, formatNumber } from '../../utils/format';
+import { isEstimatedDate } from '../../utils/sms/dateSource';
 
 export default function EditTransactionScreen() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function EditTransactionScreen() {
   const accounts = useFinanceStore((state) => state.accounts);
   const updateTransaction = useFinanceStore((state) => state.updateTransaction);
   const deleteTransaction = useFinanceStore((state) => state.deleteTransaction);
+  const confirmEntryDate = useFinanceStore((state) => state.confirmEntryDate);
 
   const found = transactions.find((item) => item.id === id);
   // A transfer fee is edited through its transfer: open that instead.
@@ -101,7 +103,7 @@ export default function EditTransactionScreen() {
             </AppText>
             <AppText style={[styles.note, { color: colors.textMuted }]}>
               This counts in {name}&apos;s balance but is not income or spending, so it is in no report.{' '}
-              {original.type === 'opening' ? 'To change the starting amount, add an adjustment on the account.' : 'To change it, delete it and add a new one.'}
+              {original.type === 'opening' ? 'To change the starting amount, use Opening balance on the account screen (it shows before and after first), or add an adjustment.' : 'To change it, delete it and add a new one.'}
               {currency !== 'ETB' ? ` (About ETB ${formatNumber(original.amountETB)} when it was recorded.)` : ''}
             </AppText>
           </Card>
@@ -114,6 +116,14 @@ export default function EditTransactionScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Edit transaction" />
+      {isEstimatedDate(original.dateSource) ? (
+        <View style={[styles.estimated, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]} accessibilityLiveRegion="polite">
+          <AppText style={[styles.estimatedText, { color: colors.text }]}>
+            This date is an estimate: it is the day the messages were imported. Check it, then change it or confirm it.
+          </AppText>
+          <Button title="Date is right" variant="secondary" onPress={() => void confirmEntryDate(original.id)} />
+        </View>
+      ) : null}
       <TransactionForm
         // Remount if the user navigates between two different transactions.
         key={original.id}
@@ -129,6 +139,18 @@ export default function EditTransactionScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  estimated: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  estimatedText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   container: {
     flexGrow: 1,

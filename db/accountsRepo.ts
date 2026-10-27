@@ -1,4 +1,5 @@
-import type { AccountEntry, AccountGoal, AccountsState, GoalAllocation, MoneyAccount, ReserveNotification } from '../types/accounts';
+import { DATE_SOURCES } from '../types/accounts';
+import type { AccountEntry, AccountGoal, AccountsState, DateSource, GoalAllocation, MoneyAccount, ReserveNotification } from '../types/accounts';
 import type { SqlRunner } from './migrations';
 
 // Reads and writes the schema 4 tables through the same engine-agnostic SqlRunner as db/migrations.ts, so the verify script can run
@@ -27,16 +28,18 @@ export function readAccountsData(db: SqlRunner): AccountsData {
       id: string; type: AccountEntry['type']; accountId: string | null; amount: number; currency: string; amountETB: number;
       exchangeRate: number; category: string; source: string; fromAccountId: string | null; toAccountId: string | null;
       toAmount: number | null; toAmountETB: number | null; linkedTransferId: string | null; date: string; timestamp: string;
-      note: string | null; isAutomatic: number; createdAt: string; updatedAt: string;
+      note: string | null; isAutomatic: number; createdAt: string; updatedAt: string; dateSource: DateSource | null;
     }>(
       `SELECT id, type, account_id AS accountId, amount, currency, amount_etb AS amountETB, exchange_rate AS exchangeRate,
               category, source, from_account_id AS fromAccountId, to_account_id AS toAccountId, to_amount AS toAmount,
               to_amount_etb AS toAmountETB, linked_transfer_id AS linkedTransferId, date, timestamp, note,
-              is_automatic AS isAutomatic, created_at AS createdAt, updated_at AS updatedAt
+              is_automatic AS isAutomatic, created_at AS createdAt, updated_at AS updatedAt, date_source AS dateSource
          FROM transactions ORDER BY date, timestamp, id`,
     )
-    .map((row) => ({
+    .map(({ dateSource, ...row }) => ({
       ...row,
+      // Absent (not null) for an entry with no source, so entries that never came from an SMS look exactly as they always did.
+      ...(dateSource && DATE_SOURCES.includes(dateSource) ? { dateSource } : {}),
       amount: Number(row.amount),
       amountETB: Number(row.amountETB),
       exchangeRate: Number(row.exchangeRate),
@@ -81,10 +84,10 @@ function putAccount(db: SqlRunner, a: MoneyAccount): void {
 function putEntry(db: SqlRunner, e: AccountEntry): void {
   db.run(
     `INSERT OR REPLACE INTO transactions (id, type, account_id, amount, currency, amount_etb, exchange_rate, category, source, from_account_id,
-       to_account_id, to_amount, to_amount_etb, linked_transfer_id, date, timestamp, note, is_automatic, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       to_account_id, to_amount, to_amount_etb, linked_transfer_id, date, timestamp, note, is_automatic, created_at, updated_at, date_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     e.id, e.type, e.accountId, e.amount, e.currency, e.amountETB, e.exchangeRate, e.category, e.source, e.fromAccountId,
-    e.toAccountId, e.toAmount, e.toAmountETB, e.linkedTransferId, e.date, e.timestamp, e.note, e.isAutomatic ? 1 : 0, e.createdAt, e.updatedAt,
+    e.toAccountId, e.toAmount, e.toAmountETB, e.linkedTransferId, e.date, e.timestamp, e.note, e.isAutomatic ? 1 : 0, e.createdAt, e.updatedAt, e.dateSource ?? null,
   );
 }
 
@@ -162,18 +165,24 @@ export function deleteNotifications(db: SqlRunner, ids: string[]): void {
   }
 }
 
+// The statements of a ledger write, with no transaction of their own: the caller owns BEGIN / COMMIT. This is what lets one database
+// transaction cover a ledger write AND something else (an imported SMS being marked confirmed) so they succeed or fail together.
+export function applyAccountsDiff(db: SqlRunner, before: AccountsState, after: AccountsState): void {
+  const deleteBy = (table: string) => (id: string) => db.run(`DELETE FROM ${table} WHERE id = ?`, id);
+  syncTable(before.accounts, after.accounts, (row) => putAccount(db, row), deleteBy('accounts'));
+  syncTable(before.entries, after.entries, (row) => putEntry(db, row), deleteBy('transactions'));
+  syncTable(before.goals, after.goals, (row) => putGoal(db, row), deleteBy('goals'));
+  syncTable(before.allocations, after.allocations, (row) => putAllocation(db, row), deleteBy('goal_allocations'));
+  syncTable(before.notifications, after.notifications, (row) => putNotification(db, row), deleteBy('notifications'));
+}
+
 // Saves the difference between two states in ONE transaction: a ledger write, the allocation rows and notifications it caused, all or
 // nothing. Rows are compared by identity (the pure planners reuse the objects they did not change), so a write that touched three
 // rows does three statements, not a rewrite of the ledger.
 export function saveAccountsDiff(db: SqlRunner, before: AccountsState, after: AccountsState): void {
-  const deleteBy = (table: string) => (id: string) => db.run(`DELETE FROM ${table} WHERE id = ?`, id);
   db.exec('BEGIN');
   try {
-    syncTable(before.accounts, after.accounts, (row) => putAccount(db, row), deleteBy('accounts'));
-    syncTable(before.entries, after.entries, (row) => putEntry(db, row), deleteBy('transactions'));
-    syncTable(before.goals, after.goals, (row) => putGoal(db, row), deleteBy('goals'));
-    syncTable(before.allocations, after.allocations, (row) => putAllocation(db, row), deleteBy('goal_allocations'));
-    syncTable(before.notifications, after.notifications, (row) => putNotification(db, row), deleteBy('notifications'));
+    applyAccountsDiff(db, before, after);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

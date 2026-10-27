@@ -60,3 +60,6 @@ build/
 # local tooling
 .claude/settings.local.json
 .tmp-verify/
+
+# private working files (real message samples, never commit)
+.private/

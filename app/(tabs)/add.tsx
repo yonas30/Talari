@@ -1,7 +1,9 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../../components/AppHeader';
+import AppText from '../../components/AppText';
 import TransactionForm from '../../components/TransactionForm';
 import { useFinanceStore } from '../../store/finance';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -22,6 +24,16 @@ export default function AddTransactionScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title="Add transaction" />
+      <Pressable
+        onPress={() => router.push('/import-sms')}
+        accessibilityRole="button"
+        accessibilityLabel="Import from SMS"
+        hitSlop={8}
+        style={({ pressed }) => [styles.importRow, pressed && { opacity: 0.6 }]}
+      >
+        <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.primaryText} />
+        <AppText style={[styles.importText, { color: colors.primaryText }]}>Import from SMS</AppText>
+      </Pressable>
       <TransactionForm submitLabel="Save" onSubmit={onSubmit} resetOnSuccess />
     </View>
   );
@@ -30,5 +42,17 @@ export default function AddTransactionScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  importRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 20,
+  },
+  importText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

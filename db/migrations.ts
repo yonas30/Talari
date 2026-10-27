@@ -3,6 +3,11 @@
 // SqlRunner and calls runMigrations() once at start-up.
 
 import { AccountsMigrationResult, migrateToAccounts } from './accountsMigration';
+import { migrateToDateSource } from './dateSourceMigration';
+import { migrateToOwnNames } from './ownNamesMigration';
+import { migrateToPairs } from './pairRejectionMigration';
+import { migrateToSms } from './smsMigration';
+import { migrateToUncategorised } from './uncategorisedMigration';
 
 export interface SqlRunner {
   exec(sql: string): void;
@@ -15,7 +20,14 @@ export interface SqlRunner {
 //    savings categories) and link goal-completed milestones to their goal by id.
 // 4: Phase 5 accounts model (db/accountsMigration.ts): accounts, goal allocations and notifications tables; transactions, goals and
 //    recurring rules are dropped and recreated; milestones and monthly snapshots are cleared.
-export const SCHEMA_VERSION = 4;
+// 5: Phase 6B SMS import (db/smsMigration.ts): sms_suggestions and recipient_rules tables. Additive only: nothing existing is touched.
+// 6: Phase 6B follow-up (db/uncategorisedMigration.ts): a counterparty_code column on sms_suggestions and the built-in Uncategorised
+//    categories. Additive only.
+// 7: Phase 6C-0 (db/dateSourceMigration.ts): date_source on transactions and sms_suggestions, paired_with_id on sms_suggestions and a
+//    reconcile_dismissals table. Additive only.
+// 8: Phase 6C-1 (db/pairRejectionMigration.ts): a pair_rejections table. Additive only.
+// 9: Phase 6D-3 (db/ownNamesMigration.ts): an own_names table (the owner's names as banks write them). Additive only.
+export const SCHEMA_VERSION = 9;
 
 // The schema this file's own step builds. SCHEMA_DDL below is the SCHEMA 3 base (it still creates the old ledger tables, which step 4
 // then replaces); the schema 4 tables are created by accountsMigration.ts.
@@ -253,6 +265,12 @@ export interface MigrationResult {
 export function runMigrations(db: SqlRunner, fromVersion: number): MigrationResult {
   const purged = fromVersion < SCHEMA_VERSION_V3 ? migrateToSchema3(db, fromVersion) : null;
   const accounts = migrateToAccounts(db, Math.max(fromVersion, SCHEMA_VERSION_V3));
+  // After the accounts step the database is at 4 at least; the SMS step only adds tables.
+  migrateToSms(db, Math.max(fromVersion, 4));
+  migrateToUncategorised(db, Math.max(fromVersion, 5));
+  migrateToDateSource(db, Math.max(fromVersion, 6));
+  migrateToPairs(db, Math.max(fromVersion, 7));
+  migrateToOwnNames(db, Math.max(fromVersion, 8));
   return { purged, accounts };
 }
 

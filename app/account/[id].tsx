@@ -5,6 +5,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AccountIcon from '../../components/accounts/AccountIcon';
+import FeeRepairCard from '../../components/accounts/FeeRepairCard';
+import OpeningCard from '../../components/accounts/OpeningCard';
+import OpeningSection from '../../components/accounts/OpeningSection';
+import ReconcileBanner from '../../components/accounts/ReconcileBanner';
 import AppHeader from '../../components/AppHeader';
 import AppText from '../../components/AppText';
 import Button from '../../components/Button';
@@ -15,6 +19,7 @@ import OverlayModal from '../../components/OverlayModal';
 import SegmentedControl, { SegmentOption } from '../../components/SegmentedControl';
 import SheetModal from '../../components/SheetModal';
 import { useAccountsState, useFinanceStore } from '../../store/finance';
+import { useSmsStore } from '../../store/sms';
 import { useUiStore } from '../../store/ui';
 import { useTheme } from '../../theme/ThemeProvider';
 import { AccountEntry } from '../../types/accounts';
@@ -25,6 +30,9 @@ import { accountNameProblem, cleanAccountName } from '../../utils/accounts/manag
 import { TYPE_LABELS, signedAmountFor, touchesAccount } from '../../utils/accounts/groups';
 import { getGoalAmounts, getReserve } from '../../utils/accounts/reserve';
 import { getRateToETB } from '../../utils/currency';
+import { openingCards, reconcileSuppressed } from '../../utils/sms/opening';
+import { reconcileStatus } from '../../utils/sms/reconcile';
+import { defaultCtx } from '../../utils/accounts/context';
 import { todayKey } from '../../utils/dates';
 import { formatDateKey, formatMoney, formatNumber, maskAmount, transactionTitle } from '../../utils/format';
 
@@ -42,8 +50,8 @@ const TYPE_NAMES: Record<AccountEntry['type'], string> = {
   adjustment: 'Adjustment',
 };
 
-// One account: its balance, what is reserved for goals and what is free to spend, and its recent entries. (The orange "balance does not
-// match your bank" banner of the mockup comes with SMS capture, Phase 6, and is not built.)
+// One account: its balance, what is reserved for goals and what is free to spend, and its recent entries. When imported messages show a
+// balance that differs from Talari's, the orange "balance doesn't match your bank" banner (Phase 6C-2) offers an adjustment.
 export default function AccountDetailScreen() {
   const { colors } = useTheme();
   const router = useRouter();
@@ -55,6 +63,13 @@ export default function AccountDetailScreen() {
   const deleteAccount = useFinanceStore((store) => store.deleteAccount);
   const addTransaction = useFinanceStore((store) => store.addTransaction);
   const renameAccount = useFinanceStore((store) => store.renameAccount);
+  const updateAccountSms = useFinanceStore((store) => store.updateAccountSms);
+  const addReconcileAdjustment = useFinanceStore((store) => store.addReconcileAdjustment);
+  const suggestions = useSmsStore((store) => store.suggestions);
+  const reconcileDismissals = useSmsStore((store) => store.reconcileDismissals);
+  const dismissReconcile = useSmsStore((store) => store.dismissReconcile);
+  const openingOptions = useSmsStore((store) => store.openingOptions);
+  const [typeOpen, setTypeOpen] = useState(false);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
@@ -62,6 +77,9 @@ export default function AccountDetailScreen() {
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustNote, setAdjustNote] = useState('');
   const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [smsOpen, setSmsOpen] = useState(false);
+  const [smsSender, setSmsSender] = useState('');
+  const [smsDigits, setSmsDigits] = useState('');
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -85,6 +103,14 @@ export default function AccountDetailScreen() {
   const isEtb = account.currency === 'ETB';
   const rate = isEtb ? 1 : getRateToETB(account.currency, state.rates);
   const mask = (text: string) => maskAmount(text, isBalanceHidden);
+  // Imported messages say what the bank has: if that differs from Talari's balance as of the newest message's day, offer an adjustment.
+  // The quiet opening card (an account with no opening that has messages, or messages older than its opening). While it shows for an account with
+  // no opening the banner steps aside: the opening is the explanation, and an adjustment must not stand in for it.
+  const openingCard = isEtb ? (openingCards(state, suggestions, { ...openingOptions(mask), ctx: defaultCtx }).get(account.id) ?? null) : null;
+  const reconcile =
+    isEtb && !(openingCard !== null && reconcileSuppressed(state, account.id, new Map([[account.id, openingCard]])))
+      ? reconcileStatus(state, suggestions, account.id, reconcileDismissals[account.id] ?? null)
+      : null;
   const recent = state.entries.filter((entry) => touchesAccount(entry, account.id)).slice(0, 12);
   const heldGoals = state.goals.filter((goal) => goal.heldInAccountId === account.id && (goalAmounts[goal.id] ?? 0) > 0);
 
@@ -177,6 +203,11 @@ export default function AccountDetailScreen() {
     <View style={[styles.screen, { backgroundColor: colors.bg }]}>
       <AppHeader title={account.name} />
       <ScrollView contentContainerStyle={styles.container}>
+        <FeeRepairCard accountId={account.id} />
+        {openingCard !== null ? <OpeningCard proposal={openingCard} accountName={account.name} onType={() => setTypeOpen(true)} inset /> : null}
+        {reconcile !== null ? (
+          <ReconcileBanner status={reconcile} mask={mask} onAdjust={(options) => addReconcileAdjustment(reconcile, options)} onDismiss={() => dismissReconcile(account.id, reconcile.rawHash)} />
+        ) : null}
         <Card style={styles.balanceCard}>
           <View style={styles.typeRow}>
             <AccountIcon type={account.type} size={32} />
@@ -212,6 +243,8 @@ export default function AccountDetailScreen() {
             </View>
           )}
         </Card>
+
+        {isEtb && !account.archived ? <OpeningSection accountId={account.id} typeOpen={typeOpen} onTypeOpenChange={setTypeOpen} /> : null}
 
         {heldGoals.length > 0 ? (
           <Card style={styles.card}>
@@ -289,6 +322,16 @@ export default function AccountDetailScreen() {
                 setRenameOpen(true);
               }}
             />
+            <MenuOption
+              icon="chatbubble-ellipses-outline"
+              label="SMS details"
+              onPress={() => {
+                setMenuOpen(false);
+                setSmsSender(account.smsSender ?? '');
+                setSmsDigits(account.lastDigits ?? '');
+                setSmsOpen(true);
+              }}
+            />
             {!account.archived ? (
               <>
                 <MenuOption
@@ -321,6 +364,31 @@ export default function AccountDetailScreen() {
           </View>
         </Pressable>
       </OverlayModal>
+
+      {/* SMS details: only used to match pasted messages to this account. Empty clears them. */}
+      <SheetModal visible={smsOpen} onClose={() => setSmsOpen(false)}>
+        <AppText variant="title" style={styles.sheetTitle} accessibilityRole="header">
+          SMS details
+        </AppText>
+        <AppText style={[styles.helper, { color: colors.textMuted }]}>
+          Where this account&apos;s messages come from, and its last digits. Used only to match messages you paste. Nothing is read from your phone.
+        </AppText>
+        <FormInput value={smsSender} onChangeText={setSmsSender} placeholder="Messages come from, e.g. 127 or CBE" autoCapitalize="none" accessibilityLabel="SMS sender" />
+        <FormInput
+          value={smsDigits}
+          onChangeText={(value) => setSmsDigits(value.replace(/\D/g, '').slice(0, 4))}
+          placeholder="Last digits of the account"
+          keyboardType="number-pad"
+          maxLength={4}
+          accessibilityLabel="Last digits of the account"
+        />
+        <Button
+          title="Save"
+          onPress={() => {
+            void updateAccountSms(account.id, { smsSender, lastDigits: smsDigits }).then(() => setSmsOpen(false));
+          }}
+        />
+      </SheetModal>
 
       {/* Rename: the name must be free; the account keeps its id, so its history is untouched. */}
       <SheetModal visible={renameOpen} onClose={closeRename}>

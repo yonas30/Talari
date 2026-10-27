@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAccountDraft } from '../../store/accountDraft';
@@ -8,8 +8,9 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { accountColors } from '../../theme/tokens';
 import { AccountType, MoneyAccount } from '../../types/accounts';
 import { AccountsError } from '../../utils/accounts/errors';
-import { accountNameProblem } from '../../utils/accounts/manage';
+import { accountNameProblem, MAX_SMS_SENDER_LENGTH } from '../../utils/accounts/manage';
 import { getRateToETB } from '../../utils/currency';
+import { SERVICE_SENDER } from '../../utils/sms/accountMatch';
 import { formatNumber } from '../../utils/format';
 import AppText from '../AppText';
 import Button from '../Button';
@@ -28,19 +29,21 @@ interface QuickPick {
   label: string;
   // The name it fills in. Empty for "Other": the owner types their own.
   name: string;
+  // The SMS sender it pre-fills (Telebirr 127, CBE CBE, BOA BOA, Awash Awash Bank). Other picks leave the field as it is.
+  sender?: string;
 }
 
 // Quick picks under the name field. Banks are the ones the owner named; wallets and cash get a short list of their own.
 const QUICK_PICKS: Record<AccountType, QuickPick[]> = {
   bank: [
-    { label: 'CBE', name: 'CBE' },
-    { label: 'BOA', name: 'BOA' },
-    { label: 'Awash', name: 'Awash Bank' },
+    { label: 'CBE', name: 'CBE', sender: SERVICE_SENDER.cbe },
+    { label: 'BOA', name: 'BOA', sender: SERVICE_SENDER.boa },
+    { label: 'Awash', name: 'Awash Bank', sender: SERVICE_SENDER.awash },
     { label: 'Dashen', name: 'Dashen Bank' },
     { label: 'Other', name: '' },
   ],
   wallet: [
-    { label: 'Telebirr', name: 'Telebirr' },
+    { label: 'Telebirr', name: 'Telebirr', sender: SERVICE_SENDER.telebirr },
     { label: 'M-Pesa', name: 'M-Pesa' },
     { label: 'CBE Birr', name: 'CBE Birr' },
     { label: 'Other', name: '' },
@@ -75,7 +78,8 @@ export default function AccountForm({ submitLabel = 'Add account', onCreated, on
   const rate = draft.currency === 'ETB' ? 1 : getRateToETB(draft.currency, exchangeRates);
   // Never create a foreign account without a rate: it could not be valued (V2_SPEC Part B section 1).
   const needsRate = rate === null;
-  const numericAmount = draft.amount.trim() === '' ? 0 : Number(draft.amount);
+  // "Get it from my messages": no starting amount is typed, so the account has no opening entry until the first import creates one.
+  const numericAmount = draft.fromMessages || draft.amount.trim() === '' ? 0 : Number(draft.amount);
   const amountOk = Number.isFinite(numericAmount) && numericAmount >= 0;
   const matchesPick = picks.some((pick) => pick.name !== '' && pick.name === draft.name);
   // A name another account (archived ones included) already has: shown under the field as the owner types, with a free name to try, and the
@@ -107,7 +111,14 @@ export default function AccountForm({ submitLabel = 'Add account', onCreated, on
     setIsSaving(true);
     setError(null);
     try {
-      const account = await addAccount({ name: draft.name, type: draft.type, currency: draft.currency, openingAmount: numericAmount });
+      const account = await addAccount({
+        name: draft.name,
+        type: draft.type,
+        currency: draft.currency,
+        openingAmount: numericAmount,
+        smsSender: draft.smsSender,
+        lastDigits: draft.lastDigits,
+      });
       resetDraft();
       onCreated(account);
     } catch (reason) {
@@ -136,7 +147,7 @@ export default function AccountForm({ submitLabel = 'Add account', onCreated, on
             return (
               <Pressable
                 key={pick.label}
-                onPress={() => edit({ name: pick.name })}
+                onPress={() => edit(pick.sender !== undefined ? { name: pick.name, smsSender: pick.sender } : { name: pick.name })}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
                 accessibilityLabel={pick.name === '' ? 'Other, type your own name' : pick.label}
@@ -169,7 +180,8 @@ export default function AccountForm({ submitLabel = 'Add account', onCreated, on
         <AppText style={[styles.label, { color: colors.textMuted }]}>What&apos;s in it right now?</AppText>
         <FormInput
           style={styles.amountInput}
-          value={draft.amount}
+          value={draft.fromMessages ? '' : draft.amount}
+          editable={!draft.fromMessages}
           onChangeText={(amount) => edit({ amount })}
           placeholder="0.00"
           keyboardType="decimal-pad"
@@ -177,6 +189,22 @@ export default function AccountForm({ submitLabel = 'Add account', onCreated, on
           accessibilityLabel="What is in the account right now"
           invalid={error !== null && !amountOk}
         />
+        {draft.currency === 'ETB' ? (
+          <View style={styles.switchRow}>
+            <AppText style={[styles.helper, styles.switchLabel, { color: colors.text }]}>Get it from my messages</AppText>
+            <Switch
+              value={draft.fromMessages}
+              onValueChange={(fromMessages) => edit({ fromMessages })}
+              trackColor={{ true: colors.primary, false: colors.border }}
+              accessibilityLabel="Get the starting amount from my messages"
+            />
+          </View>
+        ) : null}
+        {draft.fromMessages && draft.currency === 'ETB' ? (
+          <AppText style={[styles.helper, { color: colors.textMuted }]}>
+            The account starts with no opening balance. When you import its messages, Talari offers the balance just before the oldest one, and you confirm it.
+          </AppText>
+        ) : null}
         <AppText style={[styles.label, styles.currencyLabel, { color: colors.textMuted }]}>Currency</AppText>
         <CurrencyChips value={draft.currency} onChange={(currency) => edit({ currency })} />
         <AppText style={[styles.helper, { color: colors.textMuted }]}>
@@ -187,6 +215,30 @@ export default function AccountForm({ submitLabel = 'Add account', onCreated, on
             At today&apos;s rate (1 {draft.currency} = ETB {formatNumber(rate)}) that is about ETB {formatNumber(numericAmount * rate)}.
           </AppText>
         ) : null}
+      </View>
+
+      <View>
+        <AppText style={[styles.label, { color: colors.textMuted }]}>Bank messages (optional)</AppText>
+        <FormInput
+          value={draft.smsSender}
+          onChangeText={(smsSender) => edit({ smsSender })}
+          placeholder="Messages come from, e.g. 127 or CBE"
+          autoCapitalize="none"
+          maxLength={MAX_SMS_SENDER_LENGTH}
+          accessibilityLabel="SMS sender, optional"
+        />
+        <FormInput
+          style={styles.digitsInput}
+          value={draft.lastDigits}
+          onChangeText={(lastDigits) => edit({ lastDigits: lastDigits.replace(/\D/g, '').slice(0, 4) })}
+          placeholder="Last digits of the account"
+          keyboardType="number-pad"
+          maxLength={4}
+          accessibilityLabel="Last digits of the account, optional"
+        />
+        <AppText style={[styles.helper, { color: colors.textMuted }]}>
+          Used only to match messages you paste to this account. Nothing is read from your phone.
+        </AppText>
       </View>
 
       {needsRate ? (
@@ -241,11 +293,16 @@ const styles = StyleSheet.create({
   currencyLabel: {
     marginTop: 12,
   },
+  digitsInput: {
+    marginTop: 8,
+  },
   amountInput: {
     fontSize: 18,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8 },
+  switchLabel: { flex: 1, marginTop: 0 },
   helper: {
     fontSize: 12,
     lineHeight: 17,
